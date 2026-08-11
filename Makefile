@@ -7,7 +7,7 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = FilzaApplySandboxExt
 
-FilzaApplySandboxExt_FILES = Tweak.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
+FilzaApplySandboxExt_FILES = Tweak.m ArchiveSafety.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
 
 # The original jailed Filza kernel path is used only by the exact iOS 18.5
 # target gate in Tweak.m. Newer systems continue to use the MCM path.
