@@ -1,0 +1,56 @@
+name: Verify safe Filza fixes
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  syntax-and-integration:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Xcode and iPhoneOS SDK
+        run: |
+          set -euxo pipefail
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Verify correctness layers are compiled by the real tweak target
+        run: |
+          set -euxo pipefail
+          grep -q 'ArchiveSafety.m' Makefile
+          grep -q 'ArchiveCreationSafety.m' Makefile
+          grep -q 'RuntimeStability.m' Makefile
+          grep -q 'CompatibilityDiagnostics.m' Makefile
+
+      - name: Syntax-check non-exploit correctness modules for real iOS arm64
+        run: |
+          set -euxo pipefail
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          COMMON=(
+            -isysroot "$SDK"
+            -target arm64-apple-ios15.0
+            -fobjc-arc
+            -fblocks
+            -fsyntax-only
+            -I.
+            -Wno-deprecated-declarations
+            -Wno-arc-performSelector-leaks
+          )
+          xcrun --sdk iphoneos clang "${COMMON[@]}" ArchiveSafety.m
+          xcrun --sdk iphoneos clang "${COMMON[@]}" ArchiveCreationSafety.m
+          xcrun --sdk iphoneos clang "${COMMON[@]}" RuntimeStability.m
+          xcrun --sdk iphoneos clang "${COMMON[@]}" CompatibilityDiagnostics.m
+
+      - name: Verify archive hardening invariants are present
+        run: |
+          set -euxo pipefail
+          grep -q 'O_NOFOLLOW' ArchiveSafety.m
+          grep -q 'ASMaxExpandedArchiveBytes' ArchiveSafety.m
+          grep -q 'ASMaxExpandedFileBytes' ArchiveSafety.m
+          grep -q 'ASMaxArchiveEntries' ArchiveSafety.m
+          grep -q 'O_NOFOLLOW' ArchiveCreationSafety.m
+          grep -q 'fstat(input' ArchiveCreationSafety.m
