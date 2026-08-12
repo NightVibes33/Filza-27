@@ -68,15 +68,16 @@ jobs:
           )
           xcrun --sdk iphoneos clang "${COMMON[@]}" AppsMusicFix.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" ByeTunesMusicBridge.m
-          xcrun --sdk iphoneos clang "${COMMON[@]}" FilzaByeTunesUI.m
-          xcrun --sdk iphoneos clang "${COMMON[@]}" ByeTunesFullAppLauncher.m
+          xcrun --sdk iphoneos clang "${COMMON[@]}" ByeTunesFilzaLibraryEmbed.m
 
-      - name: Verify full-app integration invariants
+      - name: Verify in-place ByeTunes Music Library port invariants
         run: |
           set -euxo pipefail
           grep -q '^ARCHS = arm64$' Makefile
           grep -q 'TARGET := iphone:clang:latest:16.0' Makefile
-          grep -q 'ByeTunesFullAppLauncher.m' Makefile
+          grep -q 'ByeTunesFilzaLibraryEmbed.m' Makefile
+          ! grep -q 'ByeTunesFullAppLauncher.m' Makefile
+          ! grep -q 'FilzaByeTunesUI.m' Makefile
           grep -q 'BYETUNES_SWIFT_FILES' Makefile
           grep -q "! -name 'MusicManagerApp.swift'" Makefile
           grep -q 'ByeTunesEmbeddedHost.swift' Makefile
@@ -90,9 +91,12 @@ jobs:
           test -f scripts/generate-appintents-metadata.sh
           grep -q '#import "idevice.h"' FilzaApplySandboxExt-Bridging-Header.h
           grep -q 'UIHostingController(rootView: ContentView())' ByeTunesEmbeddedHost.swift
-          grep -q 'ByeTunesEmbeddedHostFactory' ByeTunesFullAppLauncher.m
-          grep -q 'TGMusicLibraryViewController' ByeTunesFullAppLauncher.m
-          grep -q 'performActionForShortcutItem' ByeTunesFullAppLauncher.m
+          grep -q 'makeLibraryViewController' ByeTunesEmbeddedHost.swift
+          grep -q 'TGMusicLibraryViewController' ByeTunesFilzaLibraryEmbed.m
+          grep -q 'makeLibraryViewController' ByeTunesFilzaLibraryEmbed.m
+          grep -q 'addChildViewController' ByeTunesFilzaLibraryEmbed.m
+          grep -q 'didMoveToParentViewController' ByeTunesFilzaLibraryEmbed.m
+          ! grep -q 'presentViewController' ByeTunesFilzaLibraryEmbed.m
           grep -q 'MCMEnumerateIdentifiersForClass(2' AppsMusicFix.m
           ! grep -q 'TGMusicLibraryViewController' AppsMusicFix.m
           grep -q 'tunnel_create_rppairing' ByeTunesMusicBridge.m
@@ -135,7 +139,8 @@ jobs:
           test "$(lipo -archs "$DYLIB")" = "arm64"
           otool -L "$DYLIB"
           grep -aFq 'ByeTunesEmbeddedHostFactory' "$DYLIB"
-          grep -aFq '[ByeTunesFull]' "$DYLIB"
+          grep -aFq '[ByeTunesPort]' "$DYLIB"
+          grep -aFq 'TGMusicLibraryViewController' "$DYLIB"
           grep -aFq 'DownloadView' "$DYLIB"
           grep -aFq 'RingtonesView' "$DYLIB"
           grep -aFq 'SettingsView' "$DYLIB"
