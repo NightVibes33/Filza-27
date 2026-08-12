@@ -12,7 +12,7 @@ BYETUNES_ROOT := ByeTunes/MusicManager
 
 # Runtime/file-operation correctness layers that must actually ship with the
 # real tweak target. These do not alter the sandbox/container primitive.
-FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m ByeTunesMusicBridge.m FilzaByeTunesUI.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
+FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m ByeTunesMusicBridge.m FilzaByeTunesUI.m ByeTunesFullAppLauncher.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
 
 # The original jailed Filza kernel path is used only by the exact iOS 18.5
 # target gate in Tweak.m. Newer systems continue to use the MCM path.
