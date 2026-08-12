@@ -11,8 +11,11 @@ IDEVICE_STATIC := $(IDEVICE_VENDOR)/lib/libidevice_ffi.a
 BYETUNES_ROOT := ByeTunes/MusicManager
 
 # Runtime/file-operation correctness layers that must actually ship with the
-# real tweak target. These do not alter the sandbox/container primitive.
-FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m ByeTunesMusicBridge.m FilzaByeTunesUI.m ByeTunesFullAppLauncher.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
+# real tweak target. ByeTunesFilzaLibraryEmbed.m replaces Filza's existing
+# TGMusicLibraryViewController contents in-place with the real ByeTunes SwiftUI
+# root; the older custom table and modal full-app launcher are intentionally not
+# linked anymore.
+FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
 
 # The original jailed Filza kernel path is used only by the exact iOS 18.5
 # target gate in Tweak.m. Newer systems continue to use the MCM path.
@@ -27,8 +30,8 @@ FilzaApplySandboxExt_FILES += XPF/external/ChOma/src/arm64.c XPF/external/ChOma/
 # app, including all screens, downloader, ringtones, settings, metadata tools,
 # DeviceManager, intents and YouTubeKit. Only MusicManagerApp.swift is omitted
 # because its @main owns a standalone UIApplication lifecycle; Filza already
-# owns that lifecycle. ByeTunesEmbeddedHost.swift mounts the unchanged
-# ContentView() as the complete app root inside Filza.
+# owns that lifecycle. ByeTunesEmbeddedHost.swift exposes ContentView() as a
+# child controller that is mounted directly inside Filza's Music Library.
 BYETUNES_SWIFT_FILES := $(shell find $(BYETUNES_ROOT) -type f -name '*.swift' ! -name 'MusicManagerApp.swift' -print)
 FilzaApplySandboxExt_SWIFT_FILES = ByeTunesEmbeddedHost.swift $(BYETUNES_SWIFT_FILES)
 
