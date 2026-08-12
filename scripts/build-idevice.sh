@@ -16,16 +16,21 @@ cargo --version
 rustup target add "$TARGET_TRIPLE"
 
 export SDKROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
-export IPHONEOS_DEPLOYMENT_TARGET=15.0
+export IPHONEOS_DEPLOYMENT_TARGET=16.0
 export CARGO_TARGET_AARCH64_APPLE_IOS_LINKER="$(xcrun --sdk iphoneos --find clang)"
 
 cd "$SOURCE_ROOT"
+
+# The complete ByeTunes DeviceManager uses substantially more than AFC: it
+# opens heartbeat, lockdown/notification-proxy and RSD/CoreDevice paths too.
+# Build idevice-ffi with its normal default feature set, matching ByeTunes'
+# own successful unsigned-device workflow instead of the old reduced bridge's
+# AFC-only feature subset.
 cargo build \
   --manifest-path ffi/Cargo.toml \
   --release \
-  --target "$TARGET_TRIPLE" \
-  --no-default-features \
-  --features "afc,tunnel_tcp_stack,rustcrypto"
+  --locked \
+  --target "$TARGET_TRIPLE"
 
 LIBRARY="$SOURCE_ROOT/target/$TARGET_TRIPLE/release/libidevice_ffi.a"
 test -f "$LIBRARY"
