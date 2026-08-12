@@ -46,6 +46,17 @@ jobs:
           test -f ByeTunes/MusicManager/YouTubeKit/Resources/astring.umd.js
           test -f ByeTunes/MusicManager/YouTubeKit/Resources/yt_ejs_helper.js
 
+      - name: Stage complete ByeTunes runtime resources
+        run: |
+          set -euxo pipefail
+          bash scripts/stage-byetunes-resources.sh .theos/byetunes-resources
+          test -s .theos/byetunes-resources/meriyah.umd.js
+          test -s .theos/byetunes-resources/astring.umd.js
+          test -s .theos/byetunes-resources/yt_ejs_helper.js
+          test -s .theos/byetunes-resources/AppIconImage.png
+          plutil -lint .theos/byetunes-resources/ByeTunes-Info.plist
+          test -s .theos/byetunes-resources/SHA256SUMS
+
       - name: Syntax-check Objective-C integration shell
         run: |
           set -euxo pipefail
@@ -135,9 +146,11 @@ jobs:
           grep -aFq 'SettingsView' "$DYLIB"
           shasum -a 256 "$DYLIB"
 
-      - name: Upload linked tweak
+      - name: Upload complete embedded target
         uses: actions/upload-artifact@v4
         with:
           name: FilzaApplySandboxExt-full-ByeTunes-arm64
-          path: .theos/obj/FilzaApplySandboxExt.dylib
+          path: |
+            .theos/obj/FilzaApplySandboxExt.dylib
+            .theos/byetunes-resources/**
           retention-days: 14
