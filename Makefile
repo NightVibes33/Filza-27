@@ -1,8 +1,6 @@
-# Use the newest SDK bundled with this Theos installation. ContainerManager
-# entry points are resolved at runtime, so private SDK headers are not needed.
-TARGET := iphone:clang:17.5:15.0
-# The upstream jailed Filza host executable is arm64-only. Keep the injected
-# tweak on the same slice so the pinned Rust idevice FFI can be linked exactly.
+# Build against the modern iOS SDK because the complete ByeTunes app uses
+# iOS 16+ SwiftUI/AppIntents APIs. The upstream jailed Filza host is arm64-only.
+TARGET := iphone:clang:latest:16.0
 ARCHS = arm64
 
 include $(THEOS)/makefiles/common.mk
@@ -10,6 +8,7 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = FilzaApplySandboxExt
 IDEVICE_VENDOR ?= $(PWD)/Vendor/idevice
 IDEVICE_STATIC := $(IDEVICE_VENDOR)/lib/libidevice_ffi.a
+BYETUNES_ROOT := ByeTunes/MusicManager
 
 # Runtime/file-operation correctness layers that must actually ship with the
 # real tweak target. These do not alter the sandbox/container primitive.
@@ -24,6 +23,15 @@ FilzaApplySandboxExt_FILES += kpf/patchfinder.m
 FilzaApplySandboxExt_FILES += XPF/src/xpf.c XPF/src/common.c XPF/src/decompress.c XPF/src/bad_recovery.c XPF/src/non_ppl.c XPF/src/ppl.c
 FilzaApplySandboxExt_FILES += XPF/external/ChOma/src/arm64.c XPF/external/ChOma/src/Base64.c XPF/external/ChOma/src/BufferedStream.c XPF/external/ChOma/src/CodeDirectory.c XPF/external/ChOma/src/CSBlob.c XPF/external/ChOma/src/DER.c XPF/external/ChOma/src/DyldSharedCache.c XPF/external/ChOma/src/Entitlements.c XPF/external/ChOma/src/Fat.c XPF/external/ChOma/src/FileStream.c XPF/external/ChOma/src/Host.c XPF/external/ChOma/src/MachO.c XPF/external/ChOma/src/MachOLoadCommand.c XPF/external/ChOma/src/MemoryStream.c XPF/external/ChOma/src/PatchFinder.c XPF/external/ChOma/src/PatchFinder_arm64.c XPF/external/ChOma/src/Util.c
 
+# Full ByeTunes embedding. Compile every Swift source from the pinned ByeTunes
+# app, including all screens, downloader, ringtones, settings, metadata tools,
+# DeviceManager, intents and YouTubeKit. Only MusicManagerApp.swift is omitted
+# because its @main owns a standalone UIApplication lifecycle; Filza already
+# owns that lifecycle. ByeTunesEmbeddedHost.swift mounts the unchanged
+# ContentView() as the complete app root inside Filza.
+BYETUNES_SWIFT_FILES := $(shell find $(BYETUNES_ROOT) -type f -name '*.swift' ! -name 'MusicManagerApp.swift' -print)
+FilzaApplySandboxExt_SWIFT_FILES = ByeTunesEmbeddedHost.swift $(BYETUNES_SWIFT_FILES)
+
 # --- Flags ---
 FilzaApplySandboxExt_CFLAGS = -I$(PWD)/compat -I$(PWD) -I$(PWD)/XPF/src -I$(PWD)/XPF/external/ChOma/include -I$(IDEVICE_VENDOR)/include \
     -fobjc-arc -include errno.h -include math.h \
@@ -35,9 +43,12 @@ FilzaApplySandboxExt_CFLAGS += -Wno-arc-performSelector-leaks
 FilzaApplySandboxExt_CCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 FilzaApplySandboxExt_OBJCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 FilzaApplySandboxExt_OBJCCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
+FilzaApplySandboxExt_SWIFTFLAGS += -swift-version 5 -default-isolation MainActor -Xcc -I$(IDEVICE_VENDOR)/include
 FilzaApplySandboxExt_LDFLAGS += $(IDEVICE_STATIC)
 
-FilzaApplySandboxExt_FRAMEWORKS = UIKit Foundation IOKit CoreFoundation
+# Framework coverage matches the complete ByeTunes source tree rather than the
+# old reduced music-library bridge.
+FilzaApplySandboxExt_FRAMEWORKS = UIKit Foundation SwiftUI Combine AVFoundation CoreMedia AudioToolbox CryptoKit UniformTypeIdentifiers PhotosUI JavaScriptCore AppIntents
 FilzaApplySandboxExt_PRIVATE_FRAMEWORKS = IOSurface
 FilzaApplySandboxExt_LIBRARIES = z sandbox sqlite3
 
@@ -45,5 +56,8 @@ FilzaApplySandboxExt_INSTALL_TARGET_PROCESSES = Filza
 
 before-FilzaApplySandboxExt-all::
 	@test -s "$(IDEVICE_STATIC)" || (echo "Missing $(IDEVICE_STATIC). Run: bash scripts/build-idevice.sh" >&2; exit 1)
+	@test -d "$(BYETUNES_ROOT)" || (echo "Missing ByeTunes submodule. Run: git submodule update --init --recursive" >&2; exit 1)
+	@test -f "$(BYETUNES_ROOT)/ContentView.swift" || (echo "Incomplete ByeTunes submodule" >&2; exit 1)
+	@test -f "$(BYETUNES_ROOT)/YouTubeKit/Resources/meriyah.umd.js" || (echo "Incomplete ByeTunes resources" >&2; exit 1)
 
 include $(THEOS_MAKE_PATH)/tweak.mk
