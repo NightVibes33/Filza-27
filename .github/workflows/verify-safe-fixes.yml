@@ -31,26 +31,6 @@ jobs:
           test "$(xcrun --sdk iphoneos --show-sdk-version)" = "26.2"
           xcrun --sdk iphoneos --show-sdk-path
 
-      - name: Install Procursus build tools
-        uses: dhinakg/procursus-action@main
-        with:
-          packages: ldid make
-
-      - name: Install Theos
-        run: |
-          set -euxo pipefail
-          rm -rf "$THEOS"
-          git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
-          test -f "$THEOS/makefiles/common.mk"
-
-      - name: Build pinned idevice FFI for iOS arm64
-        run: |
-          set -euxo pipefail
-          bash scripts/build-idevice.sh "$GITHUB_WORKSPACE/Vendor/idevice"
-          test "$(cat Vendor/idevice/COMMIT)" = "37ee77cf713f483551f3cf33ea8b2087a40058ca"
-          test -s Vendor/idevice/lib/libidevice_ffi.a
-          file Vendor/idevice/lib/libidevice_ffi.a
-
       - name: Syntax-check Apps Manager and ByeTunes subsystem
         run: |
           set -euxo pipefail
@@ -64,7 +44,6 @@ jobs:
             -fsyntax-only
             -include errno.h
             -I.
-            -IVendor/idevice/include
             -Wno-deprecated-declarations
             -Wno-arc-performSelector-leaks
           )
@@ -90,6 +69,26 @@ jobs:
           grep -q 'performActionForShortcutItem' FilzaByeTunesUI.m
           grep -q 'Music Library' FilzaByeTunesUI.m
           grep -q 'BTMusicEnsureLocalFile' FilzaByeTunesUI.m
+
+      - name: Install Procursus build tools
+        uses: dhinakg/procursus-action@main
+        with:
+          packages: ldid make
+
+      - name: Install Theos
+        run: |
+          set -euxo pipefail
+          rm -rf "$THEOS"
+          git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
+          test -f "$THEOS/makefiles/common.mk"
+
+      - name: Build pinned idevice FFI for iOS arm64
+        run: |
+          set -euxo pipefail
+          bash scripts/build-idevice.sh "$GITHUB_WORKSPACE/Vendor/idevice"
+          test "$(cat Vendor/idevice/COMMIT)" = "37ee77cf713f483551f3cf33ea8b2087a40058ca"
+          test -s Vendor/idevice/lib/libidevice_ffi.a
+          file Vendor/idevice/lib/libidevice_ffi.a
 
       - name: Build and link real Filza tweak
         run: |
