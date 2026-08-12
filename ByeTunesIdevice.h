@@ -55,6 +55,10 @@ IdeviceFfiError *afc_file_open(AfcClientHandle *client,
                                AfcFopenMode mode,
                                AfcFileHandle **handle);
 IdeviceFfiError *afc_file_close(AfcFileHandle *handle);
+IdeviceFfiError *afc_file_read(AfcFileHandle *handle,
+                               uint8_t **data,
+                               size_t length,
+                               size_t *bytes_read);
 IdeviceFfiError *afc_file_read_entire(AfcFileHandle *handle,
                                       uint8_t **data,
                                       size_t *length);
