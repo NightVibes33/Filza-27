@@ -1,6 +1,7 @@
 @import Foundation;
 @import UIKit;
 
+#import <math.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
 
@@ -88,7 +89,6 @@ static UIViewController *FBTTopController(void)
 @property(nonatomic, copy) NSArray *displayRows;
 @property(nonatomic, strong) UISegmentedControl *modeControl;
 @property(nonatomic, strong) UISearchController *searchController;
-@property(nonatomic, strong) UIActivityIndicatorView *spinner;
 @property(nonatomic, strong) UILabel *statusLabel;
 @property(nonatomic) FBTLibraryMode mode;
 @property(nonatomic) BOOL fixedSongList;
@@ -146,19 +146,14 @@ static UIViewController *FBTTopController(void)
             target:self action:@selector(refreshLibrary)];
     }
 
-    self.spinner = [[UIActivityIndicatorView alloc]
-        initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     self.statusLabel = [UILabel new];
     self.statusLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
     self.statusLabel.textColor = UIColor.secondaryLabelColor;
     self.statusLabel.textAlignment = NSTextAlignmentCenter;
     self.statusLabel.numberOfLines = 0;
 
-    if (self.fixedSongList) {
-        [self rebuildRows];
-    } else {
-        [self refreshLibrary];
-    }
+    if (self.fixedSongList) [self rebuildRows];
+    else [self refreshLibrary];
 }
 
 - (void)modeChanged:(UISegmentedControl *)sender
@@ -169,7 +164,6 @@ static UIViewController *FBTTopController(void)
 
 - (void)refreshLibrary
 {
-    [self.spinner startAnimating];
     self.navigationItem.rightBarButtonItem.enabled = NO;
     self.statusLabel.text = @"Connecting to the on-device music library…";
     self.tableView.backgroundView = self.statusLabel;
@@ -181,7 +175,6 @@ static UIViewController *FBTTopController(void)
         dispatch_async(dispatch_get_main_queue(), ^{
             typeof(self) self = weakSelf;
             if (!self) return;
-            [self.spinner stopAnimating];
             self.navigationItem.rightBarButtonItem.enabled = YES;
             if (!songs) {
                 self.allSongs = @[];
@@ -286,8 +279,9 @@ static UIViewController *FBTTopController(void)
     NSArray *members = row[@"Songs"];
     if ([members isKindOfClass:NSArray.class]) {
         cell.textLabel.text = row[@"GroupName"];
+        NSString *groupDetail = [row[@"GroupDetail"] isKindOfClass:NSString.class] ? row[@"GroupDetail"] : @"";
         cell.detailTextLabel.text = [NSString stringWithFormat:@"%@%@%lu track%@",
-            row[@"GroupDetail"] ?: @"", [row[@"GroupDetail"] length] ? @" · " : @"",
+            groupDetail, groupDetail.length ? @" · " : @"",
             (unsigned long)members.count, members.count == 1 ? @"" : @"s"];
         cell.imageView.image = [UIImage systemImageNamed:self.mode == FBTLibraryModeArtists
             ? @"person.crop.circle" : @"square.stack"];
@@ -389,29 +383,41 @@ static void FBTLegacyMusicViewDidLoad(id self, SEL _cmd)
     if (FBTUseReplacementMusicLibrary()) FBTEmbedReplacementController(self);
 }
 
-void FilzaPresentByeTunesLibrary(UIViewController *presenter)
-{
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *host = presenter ?: FBTTopController();
-        if (!host) return;
-        FilzaByeTunesMusicController *library = [FilzaByeTunesMusicController new];
-        UINavigationController *navigation = [[UINavigationController alloc]
-            initWithRootViewController:library];
-        navigation.navigationBar.prefersLargeTitles = NO;
-        library.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc]
-            initWithBarButtonSystemItem:UIBarButtonSystemItemClose
-            target:navigation action:@selector(dismissViewControllerAnimated:completion:)];
-        navigation.modalPresentationStyle = UIModalPresentationFullScreen;
-        [host presentViewController:navigation animated:YES completion:nil];
-    });
-}
-
 static void FBTClosePresentedNavigation(id self, SEL _cmd)
 {
     [(UIViewController *)self dismissViewControllerAnimated:YES completion:nil];
 }
 
+void FilzaPresentByeTunesLibrary(UIViewController *presenter)
+{
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIViewController *host = presenter ?: FBTTopController();
+        if (!host) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC),
+                           dispatch_get_main_queue(), ^{
+                UIViewController *retryHost = FBTTopController();
+                if (retryHost) FilzaPresentByeTunesLibrary(retryHost);
+            });
+            return;
+        }
+        FilzaByeTunesMusicController *library = [FilzaByeTunesMusicController new];
+        UINavigationController *navigation = [[UINavigationController alloc]
+            initWithRootViewController:library];
+        navigation.navigationBar.prefersLargeTitles = NO;
+        SEL closeSelector = NSSelectorFromString(@"fbt_closePresentedMusicLibrary");
+        if (![navigation respondsToSelector:closeSelector])
+            class_addMethod(UINavigationController.class, closeSelector,
+                            (IMP)FBTClosePresentedNavigation, "v@:");
+        library.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc]
+            initWithBarButtonSystemItem:UIBarButtonSystemItemClose
+            target:navigation action:closeSelector];
+        navigation.modalPresentationStyle = UIModalPresentationFullScreen;
+        [host presentViewController:navigation animated:YES completion:nil];
+    });
+}
+
 static IMP gOriginalShortcutHandler = NULL;
+typedef void (*FBTShortcutIMP)(id, SEL, UIApplication *, UIApplicationShortcutItem *, void (^)(BOOL));
 
 static BOOL FBTShortcutIsMusic(UIApplicationShortcutItem *item)
 {
@@ -429,8 +435,7 @@ static void FBTShortcutHandler(id self, SEL _cmd, UIApplication *application,
         return;
     }
     if (gOriginalShortcutHandler)
-        ((void (*)(id, SEL, id, id, id))gOriginalShortcutHandler)(self, _cmd,
-            application, item, completion);
+        ((FBTShortcutIMP)gOriginalShortcutHandler)(self, _cmd, application, item, completion);
     else if (completion) completion(NO);
 }
 
@@ -440,12 +445,15 @@ static void FBTInstallShortcutHook(void)
     Class cls = delegate ? [delegate class] : Nil;
     if (!cls) return;
     SEL selector = @selector(application:performActionForShortcutItem:completionHandler:);
-    Method method = class_getInstanceMethod(cls, selector);
-    if (method) {
-        IMP current = method_getImplementation(method);
-        if (current != (IMP)FBTShortcutHandler) {
-            gOriginalShortcutHandler = current;
-            method_setImplementation(method, (IMP)FBTShortcutHandler);
+    Method inherited = class_getInstanceMethod(cls, selector);
+    if (inherited) {
+        IMP current = method_getImplementation(inherited);
+        if (current == (IMP)FBTShortcutHandler) return;
+        gOriginalShortcutHandler = current;
+        const char *types = method_getTypeEncoding(inherited);
+        if (!class_addMethod(cls, selector, (IMP)FBTShortcutHandler, types)) {
+            Method own = class_getInstanceMethod(cls, selector);
+            if (own) method_setImplementation(own, (IMP)FBTShortcutHandler);
         }
     } else {
         class_addMethod(cls, selector, (IMP)FBTShortcutHandler, "v@:@@@?");
@@ -461,12 +469,15 @@ void FilzaByeTunesUIStart(void)
         Method viewDidLoad = legacy ? class_getInstanceMethod(legacy, @selector(viewDidLoad)) : NULL;
         if (viewDidLoad) {
             gLegacyMusicViewDidLoad = method_getImplementation(viewDidLoad);
-            method_setImplementation(viewDidLoad, (IMP)FBTLegacyMusicViewDidLoad);
+            const char *types = method_getTypeEncoding(viewDidLoad);
+            if (!class_addMethod(legacy, @selector(viewDidLoad),
+                    (IMP)FBTLegacyMusicViewDidLoad, types))
+                method_setImplementation(viewDidLoad, (IMP)FBTLegacyMusicViewDidLoad);
         }
 
-        Class navClass = UINavigationController.class;
         SEL closeSelector = NSSelectorFromString(@"fbt_closePresentedMusicLibrary");
-        class_addMethod(navClass, closeSelector, (IMP)FBTClosePresentedNavigation, "v@:");
+        class_addMethod(UINavigationController.class, closeSelector,
+                        (IMP)FBTClosePresentedNavigation, "v@:");
 
         [[NSNotificationCenter defaultCenter]
             addObserverForName:UIApplicationDidFinishLaunchingNotification
