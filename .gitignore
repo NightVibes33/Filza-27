@@ -2,6 +2,7 @@
 .DS_Store
 Build/
 packages/
+Vendor/idevice/
 MCMIdentifiers.plist
 *.deb
 *.ipa
