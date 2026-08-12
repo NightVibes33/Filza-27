@@ -1,0 +1,35 @@
+name: Probe Xcode AppIntents metadata processor
+
+on:
+  push:
+    paths:
+      - '.github/workflows/probe-appintents-tool.yml'
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: macos-26-intel
+    steps:
+      - name: Xcode 26.2 setup
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.2'
+
+      - name: Capture AppIntents metadata processor interface
+        run: |
+          set -euxo pipefail
+          xcodebuild -version
+          TOOL="$(xcrun --find appintentsmetadataprocessor)"
+          echo "TOOL=$TOOL"
+          file "$TOOL"
+          "$TOOL" --help > appintents-help.txt 2>&1 || true
+          "$TOOL" -help >> appintents-help.txt 2>&1 || true
+          "$TOOL" --version >> appintents-help.txt 2>&1 || true
+          cat appintents-help.txt
+
+      - name: Upload probe output
+        uses: actions/upload-artifact@v4
+        with:
+          name: appintentsmetadataprocessor-help-xcode-26.2
+          path: appintents-help.txt
+          if-no-files-found: error
