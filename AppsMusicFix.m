@@ -1,10 +1,10 @@
 @import Foundation;
 @import UIKit;
-@import MediaPlayer;
 
 #import <objc/message.h>
 #import <objc/runtime.h>
 
+#import "ByeTunesMusicBridge.h"
 #import "MCMBridge.h"
 #import "MCMFilzaIntegration.h"
 
@@ -17,44 +17,29 @@
 @end
 
 @interface MediaFileItem : NSObject
-- (void)setPersistentID:(long long)persistentID;
-- (long long)perID;
-- (void)setPerID:(long long)persistentID;
-- (id)item;
-- (void)setItem:(id)item;
-- (id)track;
-- (void)set_fileName:(NSString *)name;
-- (NSString *)fileName;
-- (NSString *)filePath;
-- (NSString *)realPath;
-- (NSUInteger)mediaType;
-- (BOOL)isDownloaded;
-- (double)duration;
-- (NSString *)album;
-- (void)reload;
+- (instancetype)initWithLibraryPath:(NSString *)libraryPath
+                          trackData:(NSDictionary *)trackData
+                       playlistData:(NSDictionary *)playlistData;
 @end
 
-static BOOL FilzaUseModernMediaFallback(void)
-{
-    return NSProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26;
-}
-
-#pragma mark - Apps Manager
+#pragma mark - Apps Manager: ContainerManager-backed discovery
 
 static IMP gPreviousAllApplications = NULL;
 static IMP gPreviousAppsDidSelect = NULL;
 
 static NSString *FilzaProxyIdentifier(id proxy)
 {
-    if ([proxy respondsToSelector:@selector(applicationIdentifier)])
-        return ((id (*)(id, SEL))objc_msgSend)(proxy, @selector(applicationIdentifier));
+    SEL selector = NSSelectorFromString(@"applicationIdentifier");
+    if ([proxy respondsToSelector:selector])
+        return ((id (*)(id, SEL))objc_msgSend)(proxy, selector);
     return nil;
 }
 
 static NSString *FilzaProxyDisplayName(id proxy)
 {
-    if ([proxy respondsToSelector:@selector(localizedName)]) {
-        NSString *name = ((id (*)(id, SEL))objc_msgSend)(proxy, @selector(localizedName));
+    SEL selector = NSSelectorFromString(@"localizedName");
+    if ([proxy respondsToSelector:selector]) {
+        NSString *name = ((id (*)(id, SEL))objc_msgSend)(proxy, selector);
         if (name.length) return name;
     }
     return FilzaProxyIdentifier(proxy) ?: @"";
@@ -63,11 +48,11 @@ static NSString *FilzaProxyDisplayName(id proxy)
 static id FilzaAllApplications(id self, SEL _cmd)
 {
     NSArray *existing = gPreviousAllApplications
-        ? ((id (*)(id, SEL))gPreviousAllApplications)(self, _cmd)
-        : @[];
+        ? ((id (*)(id, SEL))gPreviousAllApplications)(self, _cmd) : @[];
+    if (![existing isKindOfClass:NSArray.class]) existing = @[];
 
     NSMutableDictionary<NSString *, id> *byIdentifier = [NSMutableDictionary dictionary];
-    for (id proxy in [existing isKindOfClass:NSArray.class] ? existing : @[]) {
+    for (id proxy in existing) {
         NSString *identifier = FilzaProxyIdentifier(proxy);
         if (identifier.length) byIdentifier[identifier] = proxy;
     }
@@ -78,7 +63,7 @@ static id FilzaAllApplications(id self, SEL _cmd)
     SEL proxySelector = NSSelectorFromString(@"applicationProxyForIdentifier:");
     if (proxyClass && [proxyClass respondsToSelector:proxySelector]) {
         for (NSString *identifier in identifiers ?: @[]) {
-            if (identifier.length == 0 || byIdentifier[identifier]) continue;
+            if (!identifier.length || byIdentifier[identifier]) continue;
             id proxy = ((id (*)(id, SEL, id))objc_msgSend)(proxyClass,
                 proxySelector, identifier);
             if (proxy) byIdentifier[identifier] = proxy;
@@ -86,31 +71,14 @@ static id FilzaAllApplications(id self, SEL _cmd)
     }
 
     NSArray *result = [byIdentifier.allValues sortedArrayUsingComparator:
-        ^NSComparisonResult(id lhs, id rhs) {
-            return [FilzaProxyDisplayName(lhs) localizedCaseInsensitiveCompare:
-                FilzaProxyDisplayName(rhs)];
+        ^NSComparisonResult(id left, id right) {
+            return [FilzaProxyDisplayName(left) localizedCaseInsensitiveCompare:
+                FilzaProxyDisplayName(right)];
         }];
     NSLog(@"[AppsManagerFix] workspace=%lu mcm=%lu merged=%lu detail=%@",
         (unsigned long)existing.count, (unsigned long)identifiers.count,
         (unsigned long)result.count, detail);
     return result;
-}
-
-static NSString *FilzaApplicationItemBundleIdentifier(id item)
-{
-    for (NSString *selectorName in @[@"bundleId", @"applicationIdentifier"]) {
-        SEL selector = NSSelectorFromString(selectorName);
-        if ([item respondsToSelector:selector]) {
-            id value = ((id (*)(id, SEL))objc_msgSend)(item, selector);
-            if ([value isKindOfClass:NSString.class] && [value length]) return value;
-        }
-    }
-    SEL proxySelector = NSSelectorFromString(@"appProxy");
-    if ([item respondsToSelector:proxySelector]) {
-        id proxy = ((id (*)(id, SEL))objc_msgSend)(item, proxySelector);
-        return FilzaProxyIdentifier(proxy);
-    }
-    return nil;
 }
 
 static id FilzaObjectAtIndexSafely(id collection, NSUInteger index)
@@ -123,6 +91,21 @@ static id FilzaObjectAtIndexSafely(id collection, NSUInteger index)
         @selector(objectAtIndex:), index);
 }
 
+static NSString *FilzaApplicationItemIdentifier(id item)
+{
+    for (NSString *name in @[@"bundleId", @"applicationIdentifier"]) {
+        SEL selector = NSSelectorFromString(name);
+        if ([item respondsToSelector:selector]) {
+            NSString *value = ((id (*)(id, SEL))objc_msgSend)(item, selector);
+            if ([value isKindOfClass:NSString.class] && value.length) return value;
+        }
+    }
+    SEL proxySelector = NSSelectorFromString(@"appProxy");
+    if ([item respondsToSelector:proxySelector])
+        return FilzaProxyIdentifier(((id (*)(id, SEL))objc_msgSend)(item, proxySelector));
+    return nil;
+}
+
 static void FilzaAppsDidSelect(id self, SEL _cmd, id browserView, id indexPath)
 {
     SEL fileListSelector = NSSelectorFromString(@"fileList");
@@ -131,292 +114,307 @@ static void FilzaAppsDidSelect(id self, SEL _cmd, id browserView, id indexPath)
     NSUInteger row = [indexPath respondsToSelector:@selector(row)]
         ? ((NSUInteger (*)(id, SEL))objc_msgSend)(indexPath, @selector(row)) : NSNotFound;
     id item = row == NSNotFound ? nil : FilzaObjectAtIndexSafely(fileList, row);
-    NSString *identifier = FilzaApplicationItemBundleIdentifier(item);
-
+    NSString *identifier = FilzaApplicationItemIdentifier(item);
     if (identifier.length) {
         NSString *detail = nil;
         NSString *container = MCMFilzaDataContainerPath(identifier, &detail);
-        SEL setDocumentPath = NSSelectorFromString(@"setDocumentPath:");
-        if (container.length && [item respondsToSelector:setDocumentPath]) {
-            ((void (*)(id, SEL, id))objc_msgSend)(item, setDocumentPath, container);
-            NSLog(@"[AppsManagerFix] activated %@ -> %@", identifier, container);
-        } else if (!container.length) {
-            NSLog(@"[AppsManagerFix] activation denied id=%@ detail=%@", identifier, detail);
-        }
+        SEL setter = NSSelectorFromString(@"setDocumentPath:");
+        if (container.length && [item respondsToSelector:setter])
+            ((void (*)(id, SEL, id))objc_msgSend)(item, setter, container);
+        NSLog(@"[AppsManagerFix] id=%@ container=%@ detail=%@",
+              identifier, container, detail);
     }
-
     if (gPreviousAppsDidSelect)
         ((void (*)(id, SEL, id, id))gPreviousAppsDidSelect)(self, _cmd,
             browserView, indexPath);
 }
 
-#pragma mark - Public MediaPlayer fallback
+#pragma mark - Music Library: ByeTunes AFC + MediaLibrary.sqlitedb
 
-static IMP gOriginalMusicLoad = NULL;
-static IMP gOriginalMediaSetPersistentID = NULL;
-static IMP gOriginalMediaType = NULL;
-static IMP gOriginalMediaIsDownloaded = NULL;
-static IMP gOriginalMediaDuration = NULL;
-static IMP gOriginalMediaAlbum = NULL;
-static IMP gOriginalMediaReload = NULL;
+static const void *kByeTunesSongKey = &kByeTunesSongKey;
+static IMP gPreviousMusicLoad = NULL;
+static IMP gPreviousMusicDidSelect = NULL;
+static IMP gPreviousFilePath = NULL;
+static IMP gPreviousRealPath = NULL;
+static IMP gPreviousFileName = NULL;
+static IMP gPreviousMediaType = NULL;
+static IMP gPreviousIsDownloaded = NULL;
+static IMP gPreviousDuration = NULL;
+static IMP gPreviousAlbum = NULL;
+static IMP gPreviousArtist = NULL;
 
-static MPMediaItem *FilzaPublicMediaItem(MPMediaEntityPersistentID persistentID)
+static NSDictionary *FilzaByeTunesSong(id item)
 {
-    if (persistentID == 0) return nil;
-    for (MPMediaItem *item in [MPMediaQuery songsQuery].items ?: @[])
-        if (item.persistentID == persistentID) return item;
-    return nil;
+    return objc_getAssociatedObject(item, kByeTunesSongKey);
 }
 
-static void FilzaPopulatePublicMediaItem(id object, MPMediaItem *item)
+static NSDictionary *FilzaTrackData(NSDictionary *song)
 {
-    if (!object || !item) return;
-    if ([object respondsToSelector:NSSelectorFromString(@"setPerID:")])
-        ((void (*)(id, SEL, long long))objc_msgSend)(object,
-            NSSelectorFromString(@"setPerID:"), (long long)item.persistentID);
-    if ([object respondsToSelector:NSSelectorFromString(@"setItem:")])
-        ((void (*)(id, SEL, id))objc_msgSend)(object,
-            NSSelectorFromString(@"setItem:"), item);
-    NSString *title = item.title.length ? item.title
-        : [NSString stringWithFormat:@"%llu", item.persistentID];
-    if ([object respondsToSelector:NSSelectorFromString(@"set_fileName:")])
-        ((void (*)(id, SEL, id))objc_msgSend)(object,
-            NSSelectorFromString(@"set_fileName:"), title);
+    NSString *title = [song[@"Title"] isKindOfClass:NSString.class] ? song[@"Title"] : @"";
+    NSString *artist = [song[@"Artist"] isKindOfClass:NSString.class] ? song[@"Artist"] : @"";
+    NSString *album = [song[@"Album"] isKindOfClass:NSString.class] ? song[@"Album"] : @"";
+    NSString *location = [song[@"Location"] isKindOfClass:NSString.class] ? song[@"Location"] : @"";
+    return @{
+        @"item_pid": song[@"PersistentID"] ?: @0,
+        @"track_number": song[@"TrackNumber"] ?: @0,
+        @"media_type": @8,
+        @"item_extra.title": title,
+        @"item_artist.item_artist": artist,
+        @"album.album": album,
+        @"item_extra.year": song[@"Year"] ?: @0,
+        @"item_extra.location": location,
+        @"item_extra.file_size": song[@"FileSize"] ?: @0,
+        @"item_extra.total_time_ms": song[@"DurationMS"] ?: @0,
+        @"base_location_id": @3840,
+    };
 }
 
-static void FilzaMediaSetPersistentID(id self, SEL _cmd, long long persistentID)
+static id FilzaMediaItemForSong(NSDictionary *song)
 {
-    if (!FilzaUseModernMediaFallback()) {
-        if (gOriginalMediaSetPersistentID)
-            ((void (*)(id, SEL, long long))gOriginalMediaSetPersistentID)(self,
-                _cmd, persistentID);
-        return;
+    Class cls = NSClassFromString(@"MediaFileItem");
+    if (!cls) return nil;
+    id item = nil;
+    SEL initializer = NSSelectorFromString(@"initWithLibraryPath:trackData:playlistData:");
+    @try {
+        id allocated = [cls alloc];
+        if ([allocated respondsToSelector:initializer])
+            item = ((id (*)(id, SEL, id, id, id))objc_msgSend)(allocated,
+                initializer, @"/var/mobile/Media", FilzaTrackData(song), @{});
+        else
+            item = [allocated init];
+    } @catch (NSException *exception) {
+        NSLog(@"[ByeTunesBridge] MediaFileItem init exception=%@", exception);
+        item = [[cls alloc] init];
     }
+    if (!item) return nil;
+    objc_setAssociatedObject(item, kByeTunesSongKey, song,
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
-    if (gOriginalMediaSetPersistentID) {
-        @try {
-            ((void (*)(id, SEL, long long))gOriginalMediaSetPersistentID)(self,
-                _cmd, persistentID);
-        } @catch (__unused NSException *exception) {}
+    SEL setPerID = NSSelectorFromString(@"setPerID:");
+    if ([item respondsToSelector:setPerID])
+        ((void (*)(id, SEL, long long))objc_msgSend)(item, setPerID,
+            [song[@"PersistentID"] longLongValue]);
+    SEL setName = NSSelectorFromString(@"set_fileName:");
+    if ([item respondsToSelector:setName])
+        ((void (*)(id, SEL, id))objc_msgSend)(item, setName, song[@"Title"] ?: @"Track");
+    return item;
+}
+
+static void FilzaFinishMusicLoad(id controller, NSArray *items)
+{
+    SEL listSelector = NSSelectorFromString(@"fileList");
+    id list = [controller respondsToSelector:listSelector]
+        ? ((id (*)(id, SEL))objc_msgSend)(controller, listSelector) : nil;
+    if ([list respondsToSelector:@selector(removeAllObjects)])
+        ((void (*)(id, SEL))objc_msgSend)(list, @selector(removeAllObjects));
+    if ([list respondsToSelector:@selector(addObjectsFromArray:)])
+        ((void (*)(id, SEL, id))objc_msgSend)(list, @selector(addObjectsFromArray:), items ?: @[]);
+
+    for (NSString *name in @[@"updateDirectoryInfo", @"hideLoadingProgress"]) {
+        SEL selector = NSSelectorFromString(name);
+        if ([controller respondsToSelector:selector])
+            ((void (*)(id, SEL))objc_msgSend)(controller, selector);
     }
-
-    id track = [self respondsToSelector:NSSelectorFromString(@"track")]
-        ? ((id (*)(id, SEL))objc_msgSend)(self, NSSelectorFromString(@"track")) : nil;
-    if (track) return;
-
-    MPMediaItem *item = FilzaPublicMediaItem((MPMediaEntityPersistentID)persistentID);
-    if (item) FilzaPopulatePublicMediaItem(self, item);
-}
-
-static NSUInteger FilzaMediaType(id self, SEL _cmd)
-{
-    id item = [self respondsToSelector:NSSelectorFromString(@"item")]
-        ? ((id (*)(id, SEL))objc_msgSend)(self, NSSelectorFromString(@"item")) : nil;
-    id track = [self respondsToSelector:NSSelectorFromString(@"track")]
-        ? ((id (*)(id, SEL))objc_msgSend)(self, NSSelectorFromString(@"track")) : nil;
-    if (FilzaUseModernMediaFallback() && item && !track) return 8;
-    return gOriginalMediaType
-        ? ((NSUInteger (*)(id, SEL))gOriginalMediaType)(self, _cmd) : 0;
-}
-
-static BOOL FilzaMediaIsDownloaded(id self, SEL _cmd)
-{
-    MPMediaItem *item = [self respondsToSelector:NSSelectorFromString(@"item")]
-        ? ((id (*)(id, SEL))objc_msgSend)(self, NSSelectorFromString(@"item")) : nil;
-    id track = [self respondsToSelector:NSSelectorFromString(@"track")]
-        ? ((id (*)(id, SEL))objc_msgSend)(self, NSSelectorFromString(@"track")) : nil;
-    if (FilzaUseModernMediaFallback() && item && !track)
-        return item.assetURL.isFileURL;
-    return gOriginalMediaIsDownloaded
-        ? ((BOOL (*)(id, SEL))gOriginalMediaIsDownloaded)(self, _cmd) : NO;
-}
-
-static double FilzaMediaDuration(id self, SEL _cmd)
-{
-    MPMediaItem *item = [self respondsToSelector:NSSelectorFromString(@"item")]
-        ? ((id (*)(id, SEL))objc_msgSend)(self, NSSelectorFromString(@"item")) : nil;
-    id track = [self respondsToSelector:NSSelectorFromString(@"track")]
-        ? ((id (*)(id, SEL))objc_msgSend)(self, NSSelectorFromString(@"track")) : nil;
-    if (FilzaUseModernMediaFallback() && item && !track)
-        return item.playbackDuration;
-    return gOriginalMediaDuration
-        ? ((double (*)(id, SEL))gOriginalMediaDuration)(self, _cmd) : 0.0;
-}
-
-static NSString *FilzaMediaAlbum(id self, SEL _cmd)
-{
-    MPMediaItem *item = [self respondsToSelector:NSSelectorFromString(@"item")]
-        ? ((id (*)(id, SEL))objc_msgSend)(self, NSSelectorFromString(@"item")) : nil;
-    id track = [self respondsToSelector:NSSelectorFromString(@"track")]
-        ? ((id (*)(id, SEL))objc_msgSend)(self, NSSelectorFromString(@"track")) : nil;
-    if (FilzaUseModernMediaFallback() && item && !track)
-        return item.albumTitle ?: @"";
-    return gOriginalMediaAlbum
-        ? ((id (*)(id, SEL))gOriginalMediaAlbum)(self, _cmd) : @"";
-}
-
-static void FilzaMediaReload(id self, SEL _cmd)
-{
-    id item = [self respondsToSelector:NSSelectorFromString(@"item")]
-        ? ((id (*)(id, SEL))objc_msgSend)(self, NSSelectorFromString(@"item")) : nil;
-    id track = [self respondsToSelector:NSSelectorFromString(@"track")]
-        ? ((id (*)(id, SEL))objc_msgSend)(self, NSSelectorFromString(@"track")) : nil;
-    if (FilzaUseModernMediaFallback() && item && !track) {
-        FilzaPopulatePublicMediaItem(self, item);
-        return;
-    }
-    if (gOriginalMediaReload)
-        ((void (*)(id, SEL))gOriginalMediaReload)(self, _cmd);
-}
-
-static void FilzaFinishMusicLoad(id controller, NSArray *files)
-{
-    SEL fileListSelector = NSSelectorFromString(@"fileList");
-    id fileList = [controller respondsToSelector:fileListSelector]
-        ? ((id (*)(id, SEL))objc_msgSend)(controller, fileListSelector) : nil;
-    if ([fileList respondsToSelector:@selector(removeAllObjects)])
-        ((void (*)(id, SEL))objc_msgSend)(fileList, @selector(removeAllObjects));
-    if ([fileList respondsToSelector:@selector(addObjectsFromArray:)])
-        ((void (*)(id, SEL, id))objc_msgSend)(fileList,
-            @selector(addObjectsFromArray:), files ?: @[]);
-
-    SEL updateInfo = NSSelectorFromString(@"updateDirectoryInfo");
-    if ([controller respondsToSelector:updateInfo])
-        ((void (*)(id, SEL))objc_msgSend)(controller, updateInfo);
-    SEL hideLoading = NSSelectorFromString(@"hideLoadingProgress");
-    if ([controller respondsToSelector:hideLoading])
-        ((void (*)(id, SEL))objc_msgSend)(controller, hideLoading);
+    SEL setLoading = NSSelectorFromString(@"setIsLoading:");
+    if ([controller respondsToSelector:setLoading])
+        ((void (*)(id, SEL, BOOL))objc_msgSend)(controller, setLoading, NO);
     SEL browserSelector = NSSelectorFromString(@"browserView");
     id browser = [controller respondsToSelector:browserSelector]
         ? ((id (*)(id, SEL))objc_msgSend)(controller, browserSelector) : nil;
     if ([browser respondsToSelector:@selector(reloadData)])
         ((void (*)(id, SEL))objc_msgSend)(browser, @selector(reloadData));
-    SEL setLoading = NSSelectorFromString(@"setIsLoading:");
-    if ([controller respondsToSelector:setLoading])
-        ((void (*)(id, SEL, BOOL))objc_msgSend)(controller, setLoading, NO);
+}
+
+static void FilzaShowMusicError(id controller, NSString *detail)
+{
+    if (![controller isKindOfClass:UIViewController.class] || !detail.length) return;
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Music Library"
+        message:detail preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"OK"
+        style:UIAlertActionStyleDefault handler:nil]];
+    [(UIViewController *)controller presentViewController:alert animated:YES completion:nil];
 }
 
 static void FilzaLoadMusic(id self, SEL _cmd, int sortMode, BOOL preserveSelected)
 {
-    if (!FilzaUseModernMediaFallback()) {
-        if (gOriginalMusicLoad)
-            ((void (*)(id, SEL, int, BOOL))gOriginalMusicLoad)(self, _cmd,
-                sortMode, preserveSelected);
-        return;
-    }
-
-    MPMediaLibraryAuthorizationStatus status = [MPMediaLibrary authorizationStatus];
-    if (status == MPMediaLibraryAuthorizationStatusNotDetermined) {
-        __weak id weakController = self;
-        [MPMediaLibrary requestAuthorization:^(__unused MPMediaLibraryAuthorizationStatus newStatus) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                id controller = weakController;
-                SEL reload = NSSelectorFromString(@"doLoadingPage");
-                if (controller && [controller respondsToSelector:reload])
-                    ((void (*)(id, SEL))objc_msgSend)(controller, reload);
-            });
-        }];
-        return;
-    }
-
-    if (status != MPMediaLibraryAuthorizationStatusAuthorized &&
-        status != MPMediaLibraryAuthorizationStatusRestricted) {
-        NSLog(@"[MusicLibraryFix] media-library access unavailable status=%ld",
-            (long)status);
-        FilzaFinishMusicLoad(self, @[]);
-        return;
-    }
-
-    SEL isLoading = NSSelectorFromString(@"isLoading");
-    if ([self respondsToSelector:isLoading] &&
-        ((BOOL (*)(id, SEL))objc_msgSend)(self, isLoading)) return;
     SEL setLoading = NSSelectorFromString(@"setIsLoading:");
     if ([self respondsToSelector:setLoading])
         ((void (*)(id, SEL, BOOL))objc_msgSend)(self, setLoading, YES);
-    SEL showLoading = NSSelectorFromString(@"showLoadingProgress");
-    if ([self respondsToSelector:showLoading])
-        ((BOOL (*)(id, SEL))objc_msgSend)(self, showLoading);
+    SEL show = NSSelectorFromString(@"showLoadingProgress");
+    if ([self respondsToSelector:show])
+        ((void (*)(id, SEL))objc_msgSend)(self, show);
 
     __weak id weakController = self;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        NSArray<MPMediaItem *> *items = [MPMediaQuery songsQuery].items ?: @[];
-        NSMutableArray *files = [NSMutableArray arrayWithCapacity:items.count];
-        Class itemClass = NSClassFromString(@"MediaFileItem");
-        for (MPMediaItem *mediaItem in items) {
-            if (!itemClass || mediaItem.persistentID == 0) continue;
-            id file = [[itemClass alloc] init];
-            FilzaPopulatePublicMediaItem(file, mediaItem);
-            [files addObject:file];
+        NSString *detail = nil;
+        NSArray<NSDictionary *> *songs = BTMusicLoadLibrary(&detail);
+        NSMutableArray *items = [NSMutableArray arrayWithCapacity:songs.count];
+        for (NSDictionary *song in songs ?: @[]) {
+            id item = FilzaMediaItemForSong(song);
+            if (item) [items addObject:item];
         }
-        [files sortUsingComparator:^NSComparisonResult(id lhs, id rhs) {
-            NSString *left = [lhs respondsToSelector:NSSelectorFromString(@"fileName")]
-                ? ((id (*)(id, SEL))objc_msgSend)(lhs,
-                    NSSelectorFromString(@"fileName")) : @"";
-            NSString *right = [rhs respondsToSelector:NSSelectorFromString(@"fileName")]
-                ? ((id (*)(id, SEL))objc_msgSend)(rhs,
-                    NSSelectorFromString(@"fileName")) : @"";
-            return [(left ?: @"") localizedCaseInsensitiveCompare:(right ?: @"")];
-        }];
         dispatch_async(dispatch_get_main_queue(), ^{
             id controller = weakController;
             if (!controller) return;
-            NSLog(@"[MusicLibraryFix] loaded %lu MediaPlayer item(s)",
-                (unsigned long)files.count);
-            FilzaFinishMusicLoad(controller, files);
+            FilzaFinishMusicLoad(controller, items);
+            if (!songs) {
+                NSLog(@"[ByeTunesBridge] library load failed detail=%@", detail);
+                FilzaShowMusicError(controller, detail);
+            } else {
+                NSLog(@"[ByeTunesBridge] rendered %lu songs", (unsigned long)items.count);
+            }
         });
     });
 }
 
-#pragma mark - Hook installation
-
-static void FilzaReplaceInstanceMethod(Class cls, SEL selector, IMP replacement,
-                                       IMP *previous)
+static NSString *FilzaMusicLocalPath(id self, BOOL materialize)
 {
-    Method method = cls ? class_getInstanceMethod(cls, selector) : NULL;
-    if (!method) return;
-    if (previous) *previous = method_getImplementation(method);
-    method_setImplementation(method, replacement);
+    NSDictionary *song = FilzaByeTunesSong(self);
+    if (!song) return nil;
+    if (materialize) {
+        NSString *detail = nil;
+        NSString *path = BTMusicEnsureLocalFile(song, &detail);
+        if (!path.length) NSLog(@"[ByeTunesBridge] materialize failed: %@", detail);
+        return path;
+    }
+    NSString *remote = song[@"RemotePath"];
+    NSString *extension = [remote pathExtension].length ? [remote pathExtension] : @"m4a";
+    NSString *identifier = [song[@"PersistentID"] stringValue] ?: @"track";
+    NSString *documents = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,
+        NSUserDomainMask, YES).firstObject;
+    NSString *base = [documents stringByAppendingPathComponent:
+        @"Device Storage/[ByeTunes] Music Cache"];
+    return [[base stringByAppendingPathComponent:identifier]
+        stringByAppendingPathExtension:extension];
 }
 
-static void FilzaInstallAppsAndMusicFixes(void)
+static NSString *FilzaMusicFilePath(id self, SEL _cmd)
 {
-    Class workspaceClass = NSClassFromString(@"LSApplicationWorkspace");
-    FilzaReplaceInstanceMethod(workspaceClass, NSSelectorFromString(@"allApplications"),
-        (IMP)FilzaAllApplications, &gPreviousAllApplications);
+    NSDictionary *song = FilzaByeTunesSong(self);
+    if (song) return FilzaMusicLocalPath(self, NO);
+    return gPreviousFilePath ? ((id (*)(id, SEL))gPreviousFilePath)(self, _cmd) : nil;
+}
 
-    Class appsController = NSClassFromString(@"TGApplicationsViewController");
-    FilzaReplaceInstanceMethod(appsController,
+static NSString *FilzaMusicRealPath(id self, SEL _cmd)
+{
+    NSDictionary *song = FilzaByeTunesSong(self);
+    if (song) return FilzaMusicLocalPath(self, YES);
+    return gPreviousRealPath ? ((id (*)(id, SEL))gPreviousRealPath)(self, _cmd) : nil;
+}
+
+static NSString *FilzaMusicFileName(id self, SEL _cmd)
+{
+    NSDictionary *song = FilzaByeTunesSong(self);
+    if (song) return song[@"Title"] ?: @"Track";
+    return gPreviousFileName ? ((id (*)(id, SEL))gPreviousFileName)(self, _cmd) : @"";
+}
+
+static NSUInteger FilzaMusicMediaType(id self, SEL _cmd)
+{
+    if (FilzaByeTunesSong(self)) return 8;
+    return gPreviousMediaType ? ((NSUInteger (*)(id, SEL))gPreviousMediaType)(self, _cmd) : 0;
+}
+
+static BOOL FilzaMusicIsDownloaded(id self, SEL _cmd)
+{
+    if (FilzaByeTunesSong(self)) return YES;
+    return gPreviousIsDownloaded ? ((BOOL (*)(id, SEL))gPreviousIsDownloaded)(self, _cmd) : NO;
+}
+
+static double FilzaMusicDuration(id self, SEL _cmd)
+{
+    NSDictionary *song = FilzaByeTunesSong(self);
+    if (song) return [song[@"DurationMS"] doubleValue] / 1000.0;
+    return gPreviousDuration ? ((double (*)(id, SEL))gPreviousDuration)(self, _cmd) : 0;
+}
+
+static NSString *FilzaMusicAlbum(id self, SEL _cmd)
+{
+    NSDictionary *song = FilzaByeTunesSong(self);
+    if (song) return song[@"Album"] ?: @"";
+    return gPreviousAlbum ? ((id (*)(id, SEL))gPreviousAlbum)(self, _cmd) : @"";
+}
+
+static NSString *FilzaMusicArtist(id self, SEL _cmd)
+{
+    NSDictionary *song = FilzaByeTunesSong(self);
+    if (song) return song[@"Artist"] ?: @"";
+    return gPreviousArtist ? ((id (*)(id, SEL))gPreviousArtist)(self, _cmd) : @"";
+}
+
+static void FilzaMusicDidSelect(id self, SEL _cmd, id browserView, id indexPath)
+{
+    SEL listSelector = NSSelectorFromString(@"fileList");
+    id list = [self respondsToSelector:listSelector]
+        ? ((id (*)(id, SEL))objc_msgSend)(self, listSelector) : nil;
+    NSUInteger row = [indexPath respondsToSelector:@selector(row)]
+        ? ((NSUInteger (*)(id, SEL))objc_msgSend)(indexPath, @selector(row)) : NSNotFound;
+    id item = row == NSNotFound ? nil : FilzaObjectAtIndexSafely(list, row);
+    if (FilzaByeTunesSong(item)) {
+        NSString *detail = nil;
+        NSString *path = BTMusicEnsureLocalFile(FilzaByeTunesSong(item), &detail);
+        if (!path.length) {
+            FilzaShowMusicError(self, detail ?: @"Unable to fetch track through AFC.");
+            return;
+        }
+    }
+    if (gPreviousMusicDidSelect)
+        ((void (*)(id, SEL, id, id))gPreviousMusicDidSelect)(self, _cmd,
+            browserView, indexPath);
+}
+
+#pragma mark - Hook installation
+
+static IMP FilzaReplaceInstanceMethod(Class cls, SEL selector, IMP replacement)
+{
+    Method method = cls ? class_getInstanceMethod(cls, selector) : NULL;
+    if (!method) return NULL;
+    IMP old = method_getImplementation(method);
+    method_setImplementation(method, replacement);
+    return old;
+}
+
+static void FilzaInstallAppsMusicFixes(void)
+{
+    Class workspace = NSClassFromString(@"LSApplicationWorkspace");
+    gPreviousAllApplications = FilzaReplaceInstanceMethod(workspace,
+        NSSelectorFromString(@"allApplications"), (IMP)FilzaAllApplications);
+
+    Class apps = NSClassFromString(@"TGApplicationsViewController");
+    gPreviousAppsDidSelect = FilzaReplaceInstanceMethod(apps,
         NSSelectorFromString(@"browserView:didSelectItemAtIndexPath:"),
-        (IMP)FilzaAppsDidSelect, &gPreviousAppsDidSelect);
+        (IMP)FilzaAppsDidSelect);
 
-    Class mediaFileItem = NSClassFromString(@"MediaFileItem");
-    FilzaReplaceInstanceMethod(mediaFileItem, NSSelectorFromString(@"setPersistentID:"),
-        (IMP)FilzaMediaSetPersistentID, &gOriginalMediaSetPersistentID);
-    FilzaReplaceInstanceMethod(mediaFileItem, NSSelectorFromString(@"mediaType"),
-        (IMP)FilzaMediaType, &gOriginalMediaType);
-    FilzaReplaceInstanceMethod(mediaFileItem, NSSelectorFromString(@"isDownloaded"),
-        (IMP)FilzaMediaIsDownloaded, &gOriginalMediaIsDownloaded);
-    FilzaReplaceInstanceMethod(mediaFileItem, NSSelectorFromString(@"duration"),
-        (IMP)FilzaMediaDuration, &gOriginalMediaDuration);
-    FilzaReplaceInstanceMethod(mediaFileItem, NSSelectorFromString(@"album"),
-        (IMP)FilzaMediaAlbum, &gOriginalMediaAlbum);
-    FilzaReplaceInstanceMethod(mediaFileItem, NSSelectorFromString(@"reload"),
-        (IMP)FilzaMediaReload, &gOriginalMediaReload);
-
-    Class musicController = NSClassFromString(@"TGMusicLibraryViewController");
-    FilzaReplaceInstanceMethod(musicController,
+    Class music = NSClassFromString(@"TGMusicLibraryViewController");
+    gPreviousMusicLoad = FilzaReplaceInstanceMethod(music,
         NSSelectorFromString(@"loadFilesWithSortMode:preserveSeletedItems:"),
-        (IMP)FilzaLoadMusic, &gOriginalMusicLoad);
+        (IMP)FilzaLoadMusic);
+    gPreviousMusicDidSelect = FilzaReplaceInstanceMethod(music,
+        NSSelectorFromString(@"browserView:didSelectItemAtIndexPath:"),
+        (IMP)FilzaMusicDidSelect);
 
-    NSLog(@"[RuntimeFix] Apps Manager + Music Library hooks installed");
+    Class media = NSClassFromString(@"MediaFileItem");
+    gPreviousFilePath = FilzaReplaceInstanceMethod(media, NSSelectorFromString(@"filePath"),
+        (IMP)FilzaMusicFilePath);
+    gPreviousRealPath = FilzaReplaceInstanceMethod(media, NSSelectorFromString(@"realPath"),
+        (IMP)FilzaMusicRealPath);
+    gPreviousFileName = FilzaReplaceInstanceMethod(media, NSSelectorFromString(@"fileName"),
+        (IMP)FilzaMusicFileName);
+    gPreviousMediaType = FilzaReplaceInstanceMethod(media, NSSelectorFromString(@"mediaType"),
+        (IMP)FilzaMusicMediaType);
+    gPreviousIsDownloaded = FilzaReplaceInstanceMethod(media, NSSelectorFromString(@"isDownloaded"),
+        (IMP)FilzaMusicIsDownloaded);
+    gPreviousDuration = FilzaReplaceInstanceMethod(media, NSSelectorFromString(@"duration"),
+        (IMP)FilzaMusicDuration);
+    gPreviousAlbum = FilzaReplaceInstanceMethod(media, NSSelectorFromString(@"album"),
+        (IMP)FilzaMusicAlbum);
+    gPreviousArtist = FilzaReplaceInstanceMethod(media, NSSelectorFromString(@"artist"),
+        (IMP)FilzaMusicArtist);
+
+    NSLog(@"[AppsMusicFix] Apps Manager + ByeTunes Music hooks installed");
 }
 
 __attribute__((constructor)) static void FilzaAppsMusicFixInit(void)
 {
-    // Tweak.m installs its compatibility hooks in another constructor. Queueing
-    // this installation onto the main queue guarantees that these replacements
-    // wrap the final implementations rather than racing constructor order.
-    dispatch_async(dispatch_get_main_queue(), ^{
-        FilzaInstallAppsAndMusicFixes();
-    });
+    dispatch_async(dispatch_get_main_queue(), ^{ FilzaInstallAppsMusicFixes(); });
 }
