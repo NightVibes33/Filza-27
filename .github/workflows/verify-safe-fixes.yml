@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: verify-full-byetunes-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   real-arm64-build:
     runs-on: macos-26-intel
