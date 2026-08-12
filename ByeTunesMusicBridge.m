@@ -2,6 +2,7 @@
 #import "ByeTunesIdevice.h"
 
 #import <arpa/inet.h>
+#import <errno.h>
 #import <fcntl.h>
 #import <sqlite3.h>
 #import <unistd.h>
@@ -73,12 +74,14 @@ static BTMusicSession *BTConnect(NSString **error)
     }
 
     BTMusicSession *session = [BTMusicSession new];
+    RpPairingFileHandle *pairing = NULL;
     IdeviceFfiError *ffi = rp_pairing_file_read(pairingPath.fileSystemRepresentation,
-                                                 &session->_pairing);
+                                                 &pairing);
     if (ffi) {
         if (error) *error = BTFFIError(ffi, @"rp_pairing_file_read");
         return nil;
     }
+    session.pairing = pairing;
 
     struct sockaddr_in address = {0};
     address.sin_len = sizeof(address);
@@ -89,21 +92,26 @@ static BTMusicSession *BTConnect(NSString **error)
         return nil;
     }
 
+    AdapterHandle *adapter = NULL;
+    RsdHandshakeHandle *handshake = NULL;
     ffi = tunnel_create_rppairing((const struct sockaddr *)&address,
-        (socklen_t)sizeof(address), "FilzaSlop", session->_pairing,
-        NULL, NULL, &session->_adapter, &session->_handshake);
+        (socklen_t)sizeof(address), "FilzaSlop", pairing,
+        NULL, NULL, &adapter, &handshake);
     if (ffi) {
         if (error) *error = BTFFIError(ffi,
             @"tunnel_create_rppairing (is LocalDevVPN active?)");
         return nil;
     }
+    session.adapter = adapter;
+    session.handshake = handshake;
 
-    ffi = afc_client_connect_rsd(session->_adapter, session->_handshake,
-                                 &session->_afc);
+    AfcClientHandle *afc = NULL;
+    ffi = afc_client_connect_rsd(adapter, handshake, &afc);
     if (ffi) {
         if (error) *error = BTFFIError(ffi, @"afc_client_connect_rsd");
         return nil;
     }
+    session.afc = afc;
     return session;
 }
 
