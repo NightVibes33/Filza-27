@@ -9,7 +9,7 @@ TWEAK_NAME = FilzaApplySandboxExt
 
 # Runtime/file-operation correctness layers that must actually ship with the
 # real tweak target. These do not alter the sandbox/container primitive.
-FilzaApplySandboxExt_FILES = Tweak.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
+FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
 
 # The original jailed Filza kernel path is used only by the exact iOS 18.5
 # target gate in Tweak.m. Newer systems continue to use the MCM path.
@@ -32,7 +32,7 @@ FilzaApplySandboxExt_CCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 FilzaApplySandboxExt_OBJCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 FilzaApplySandboxExt_OBJCCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 
-FilzaApplySandboxExt_FRAMEWORKS = UIKit Foundation IOKit CoreFoundation
+FilzaApplySandboxExt_FRAMEWORKS = UIKit Foundation IOKit CoreFoundation MediaPlayer
 FilzaApplySandboxExt_PRIVATE_FRAMEWORKS = IOSurface
 FilzaApplySandboxExt_LIBRARIES = z sandbox
 
