@@ -12,32 +12,47 @@ jobs:
     env:
       THEOS: ${{ github.workspace }}/theos
       DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+      BYETUNES_COMMIT: 1a90f9e0f2b1a1787b208809ad2373f5c52175c8
     steps:
       - name: Xcode 26.2 setup
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '26.2'
 
-      - name: Checkout
+      - name: Checkout complete source tree
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Verify Xcode and device SDK
+      - name: Verify Xcode, SDK, and pinned ByeTunes app
         run: |
           set -euxo pipefail
           test "$(uname -m)" = "x86_64"
           xcodebuild -version
           test "$(xcrun --sdk iphoneos --show-sdk-version)" = "26.2"
           xcrun --sdk iphoneos --show-sdk-path
+          test -d ByeTunes/MusicManager
+          test "$(git -C ByeTunes rev-parse HEAD)" = "$BYETUNES_COMMIT"
+          test -f ByeTunes/MusicManager/ContentView.swift
+          test -f ByeTunes/MusicManager/MusicView.swift
+          test -f ByeTunes/MusicManager/DownloadView.swift
+          test -f ByeTunes/MusicManager/RingtonesView.swift
+          test -f ByeTunes/MusicManager/SettingsView.swift
+          test -f ByeTunes/MusicManager/MediaLibraryBuilder.swift
+          test -f ByeTunes/MusicManager/iDeviceManager.swift
+          test -f ByeTunes/MusicManager/MusicManagerIntents.swift
+          test -f ByeTunes/MusicManager/YouTubeKit/SignatureSolver.swift
+          test -f ByeTunes/MusicManager/YouTubeKit/Resources/meriyah.umd.js
+          test -f ByeTunes/MusicManager/YouTubeKit/Resources/astring.umd.js
+          test -f ByeTunes/MusicManager/YouTubeKit/Resources/yt_ejs_helper.js
 
-      - name: Syntax-check Apps Manager and ByeTunes subsystem
+      - name: Syntax-check Objective-C integration shell
         run: |
           set -euxo pipefail
           SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
           COMMON=(
             -isysroot "$SDK"
-            -target arm64-apple-ios15.0
+            -target arm64-apple-ios16.0
             -fmodules
             -fobjc-arc
             -fblocks
@@ -50,25 +65,37 @@ jobs:
           xcrun --sdk iphoneos clang "${COMMON[@]}" AppsMusicFix.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" ByeTunesMusicBridge.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" FilzaByeTunesUI.m
+          xcrun --sdk iphoneos clang "${COMMON[@]}" ByeTunesFullAppLauncher.m
 
-      - name: Verify integration invariants
+      - name: Verify full-app integration invariants
         run: |
           set -euxo pipefail
           grep -q '^ARCHS = arm64$' Makefile
-          grep -q 'AppsMusicFix.m' Makefile
-          grep -q 'ByeTunesMusicBridge.m' Makefile
-          grep -q 'FilzaByeTunesUI.m' Makefile
+          grep -q 'TARGET := iphone:clang:latest:16.0' Makefile
+          grep -q 'ByeTunesFullAppLauncher.m' Makefile
+          grep -q 'BYETUNES_SWIFT_FILES' Makefile
+          grep -q "! -name 'MusicManagerApp.swift'" Makefile
+          grep -q 'ByeTunesEmbeddedHost.swift' Makefile
+          grep -q 'SwiftUI' Makefile
+          grep -q 'AppIntents' Makefile
+          grep -q 'PhotosUI' Makefile
+          grep -q 'JavaScriptCore' Makefile
           grep -q 'libidevice_ffi.a' Makefile
           grep -q 'sqlite3' Makefile
+          grep -q '#import "idevice.h"' FilzaApplySandboxExt-Bridging-Header.h
+          grep -q 'UIHostingController(rootView: ContentView())' ByeTunesEmbeddedHost.swift
+          grep -q 'ByeTunesEmbeddedHostFactory' ByeTunesFullAppLauncher.m
+          grep -q 'TGMusicLibraryViewController' ByeTunesFullAppLauncher.m
+          grep -q 'performActionForShortcutItem' ByeTunesFullAppLauncher.m
           grep -q 'MCMEnumerateIdentifiersForClass(2' AppsMusicFix.m
           ! grep -q 'TGMusicLibraryViewController' AppsMusicFix.m
           grep -q 'tunnel_create_rppairing' ByeTunesMusicBridge.m
           grep -q '/iTunes_Control/iTunes/MediaLibrary.sqlitedb' ByeTunesMusicBridge.m
           grep -q '/iTunes_Control/Music' ByeTunesMusicBridge.m
-          grep -q 'TGMusicLibraryViewController' FilzaByeTunesUI.m
-          grep -q 'performActionForShortcutItem' FilzaByeTunesUI.m
-          grep -q 'Music Library' FilzaByeTunesUI.m
-          grep -q 'BTMusicEnsureLocalFile' FilzaByeTunesUI.m
+
+          SWIFT_COUNT="$(find ByeTunes/MusicManager -type f -name '*.swift' ! -name 'MusicManagerApp.swift' | wc -l | tr -d ' ')"
+          echo "Complete embedded ByeTunes Swift file count: $SWIFT_COUNT"
+          test "$SWIFT_COUNT" -ge 30
 
       - name: Install Procursus build tools
         uses: dhinakg/procursus-action@main
@@ -90,22 +117,27 @@ jobs:
           test -s Vendor/idevice/lib/libidevice_ffi.a
           file Vendor/idevice/lib/libidevice_ffi.a
 
-      - name: Build and link real Filza tweak
+      - name: Build and link complete ByeTunes + Filza tweak
         run: |
           set -euxo pipefail
           export PATH="/opt/procursus/bin:$PATH"
           gmake clean || true
-          gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:15.0
+          gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:16.0
           DYLIB=".theos/obj/FilzaApplySandboxExt.dylib"
           test -f "$DYLIB"
           file "$DYLIB"
           test "$(lipo -archs "$DYLIB")" = "arm64"
           otool -L "$DYLIB"
+          grep -aFq 'ByeTunesEmbeddedHostFactory' "$DYLIB"
+          grep -aFq '[ByeTunesFull]' "$DYLIB"
+          grep -aFq 'DownloadView' "$DYLIB"
+          grep -aFq 'RingtonesView' "$DYLIB"
+          grep -aFq 'SettingsView' "$DYLIB"
           shasum -a 256 "$DYLIB"
 
       - name: Upload linked tweak
         uses: actions/upload-artifact@v4
         with:
-          name: FilzaApplySandboxExt-arm64
+          name: FilzaApplySandboxExt-full-ByeTunes-arm64
           path: .theos/obj/FilzaApplySandboxExt.dylib
           retention-days: 14
