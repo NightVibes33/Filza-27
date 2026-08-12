@@ -58,9 +58,11 @@ jobs:
           COMMON=(
             -isysroot "$SDK"
             -target arm64-apple-ios15.0
+            -fmodules
             -fobjc-arc
             -fblocks
             -fsyntax-only
+            -include errno.h
             -I.
             -IVendor/idevice/include
             -Wno-deprecated-declarations
