@@ -7,11 +7,22 @@ private final class ByeTunesEmbeddedNavigationController: UINavigationController
     }
 }
 
-/// Replaces only ByeTunes' standalone `@main` application shell. Every
-/// original ByeTunes screen and service is compiled into this same module and
-/// the unmodified `ContentView` remains the app root.
+/// Hosts the complete ByeTunes SwiftUI application inside Filza's process.
+/// `makeLibraryViewController()` is the actual Filza Music Library port: it
+/// returns the unmodified ByeTunes ContentView without wrapping/presenting a
+/// second app-style modal controller.
 @objc(ByeTunesEmbeddedHostFactory)
 public final class ByeTunesEmbeddedHostFactory: NSObject {
+    @objc(makeLibraryViewController)
+    public static func makeLibraryViewController() -> UIViewController {
+        let host = UIHostingController(rootView: ContentView())
+        host.view.backgroundColor = .systemGroupedBackground
+        return host
+    }
+
+    /// Retained for callers that intentionally need a standalone presentation,
+    /// such as a future shortcut/fallback route. Filza's Music Library itself
+    /// uses `makeLibraryViewController()` and embeds the returned controller.
     @objc(makeViewController)
     public static func makeViewController() -> UIViewController {
         let host = UIHostingController(rootView: ContentView())
