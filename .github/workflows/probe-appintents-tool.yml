@@ -1,4 +1,4 @@
-name: Probe Xcode AppIntents metadata processor
+name: Validate embedded ByeTunes AppIntents metadata
 
 on:
   push:
@@ -6,30 +6,87 @@ on:
       - '.github/workflows/probe-appintents-tool.yml'
   workflow_dispatch:
 
+concurrency:
+  group: validate-byetunes-appintents-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  probe:
+  validate:
     runs-on: macos-26-intel
+    env:
+      THEOS: ${{ github.workspace }}/theos
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+      BYETUNES_COMMIT: 1a90f9e0f2b1a1787b208809ad2373f5c52175c8
     steps:
       - name: Xcode 26.2 setup
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '26.2'
 
-      - name: Capture AppIntents metadata processor interface
+      - name: Checkout latest full source tree
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Verify pinned ByeTunes and processor
         run: |
           set -euxo pipefail
-          xcodebuild -version
-          TOOL="$(xcrun --find appintentsmetadataprocessor)"
-          echo "TOOL=$TOOL"
-          file "$TOOL"
-          "$TOOL" --help > appintents-help.txt 2>&1 || true
-          "$TOOL" -help >> appintents-help.txt 2>&1 || true
-          "$TOOL" --version >> appintents-help.txt 2>&1 || true
-          cat appintents-help.txt
+          test "$(git -C ByeTunes rev-parse HEAD)" = "$BYETUNES_COMMIT"
+          test "$(xcrun --sdk iphoneos --show-sdk-version)" = "26.2"
+          xcrun --find appintentsmetadataprocessor
+          grep -q 'emit-const-values-path' Makefile
+          test -f scripts/generate-appintents-metadata.sh
 
-      - name: Upload probe output
+      - name: Install Procursus build tools
+        uses: dhinakg/procursus-action@main
+        with:
+          packages: ldid make
+
+      - name: Install Theos
+        run: |
+          set -euxo pipefail
+          rm -rf "$THEOS"
+          git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
+          test -f "$THEOS/makefiles/common.mk"
+
+      - name: Build complete idevice FFI
+        run: |
+          set -euxo pipefail
+          bash scripts/build-idevice.sh "$GITHUB_WORKSPACE/Vendor/idevice"
+          test "$(cat Vendor/idevice/COMMIT)" = "37ee77cf713f483551f3cf33ea8b2087a40058ca"
+          test -s Vendor/idevice/lib/libidevice_ffi.a
+
+      - name: Build actual embedded ByeTunes module
+        run: |
+          set -euxo pipefail
+          export PATH="/opt/procursus/bin:$PATH"
+          gmake clean || true
+          gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:16.0
+          DYLIB=.theos/obj/FilzaApplySandboxExt.dylib
+          test -f "$DYLIB"
+          test "$(lipo -archs "$DYLIB")" = "arm64"
+          grep -aFq 'MusicManagerShortcuts' "$DYLIB"
+          find .theos -type f -name '*.swiftconstvalues' -print -exec test -s {} \;
+          test -n "$(find .theos -type f -name '*.swiftconstvalues' -print -quit)"
+
+      - name: Extract AppIntents metadata from actual module
+        run: |
+          set -euxo pipefail
+          bash scripts/generate-appintents-metadata.sh .theos/byetunes-appintents
+          META=.theos/byetunes-appintents/Metadata.appintents
+          test -d "$META"
+          find "$META" -type f -print
+          test "$(find "$META" -type f | wc -l | tr -d ' ')" -gt 0
+          grep -aR -q 'InjectMusicIntent' "$META"
+          grep -aR -q 'InjectRingtoneIntent' "$META"
+          grep -aR -q 'MusicManagerShortcuts' "$META"
+
+      - name: Upload proven metadata and module
         uses: actions/upload-artifact@v4
         with:
-          name: appintentsmetadataprocessor-help-xcode-26.2
-          path: appintents-help.txt
+          name: ByeTunes-AppIntents-Metadata-FilzaApplySandboxExt
+          path: |
+            .theos/byetunes-appintents/Metadata.appintents/**
+            .theos/obj/FilzaApplySandboxExt.dylib
           if-no-files-found: error
+          retention-days: 14
