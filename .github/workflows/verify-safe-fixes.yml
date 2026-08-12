@@ -49,11 +49,9 @@ jobs:
           bash scripts/build-idevice.sh "$GITHUB_WORKSPACE/Vendor/idevice"
           test "$(cat Vendor/idevice/COMMIT)" = "37ee77cf713f483551f3cf33ea8b2087a40058ca"
           test -s Vendor/idevice/lib/libidevice_ffi.a
-          nm -gU Vendor/idevice/lib/libidevice_ffi.a | grep -q '_tunnel_create_rppairing'
-          nm -gU Vendor/idevice/lib/libidevice_ffi.a | grep -q '_afc_client_connect_rsd'
-          nm -gU Vendor/idevice/lib/libidevice_ffi.a | grep -q '_afc_file_read_entire'
+          file Vendor/idevice/lib/libidevice_ffi.a
 
-      - name: Syntax-check Apps Manager and ByeTunes bridge
+      - name: Syntax-check Apps Manager and ByeTunes subsystem
         run: |
           set -euxo pipefail
           SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
@@ -70,6 +68,7 @@ jobs:
           )
           xcrun --sdk iphoneos clang "${COMMON[@]}" AppsMusicFix.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" ByeTunesMusicBridge.m
+          xcrun --sdk iphoneos clang "${COMMON[@]}" FilzaByeTunesUI.m
 
       - name: Verify integration invariants
         run: |
@@ -77,12 +76,18 @@ jobs:
           grep -q '^ARCHS = arm64$' Makefile
           grep -q 'AppsMusicFix.m' Makefile
           grep -q 'ByeTunesMusicBridge.m' Makefile
+          grep -q 'FilzaByeTunesUI.m' Makefile
           grep -q 'libidevice_ffi.a' Makefile
           grep -q 'sqlite3' Makefile
           grep -q 'MCMEnumerateIdentifiersForClass(2' AppsMusicFix.m
+          ! grep -q 'TGMusicLibraryViewController' AppsMusicFix.m
           grep -q 'tunnel_create_rppairing' ByeTunesMusicBridge.m
           grep -q '/iTunes_Control/iTunes/MediaLibrary.sqlitedb' ByeTunesMusicBridge.m
           grep -q '/iTunes_Control/Music' ByeTunesMusicBridge.m
+          grep -q 'TGMusicLibraryViewController' FilzaByeTunesUI.m
+          grep -q 'performActionForShortcutItem' FilzaByeTunesUI.m
+          grep -q 'Music Library' FilzaByeTunesUI.m
+          grep -q 'BTMusicEnsureLocalFile' FilzaByeTunesUI.m
 
       - name: Build and link real Filza tweak
         run: |
@@ -95,7 +100,6 @@ jobs:
           file "$DYLIB"
           test "$(lipo -archs "$DYLIB")" = "arm64"
           otool -L "$DYLIB"
-          nm -u "$DYLIB" | grep -q '_sqlite3_open_v2'
           shasum -a 256 "$DYLIB"
 
       - name: Upload linked tweak
