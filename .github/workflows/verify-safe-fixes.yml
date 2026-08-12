@@ -86,6 +86,8 @@ jobs:
           grep -q 'JavaScriptCore' Makefile
           grep -q 'libidevice_ffi.a' Makefile
           grep -q 'sqlite3' Makefile
+          grep -q 'emit-const-values-path' Makefile
+          test -f scripts/generate-appintents-metadata.sh
           grep -q '#import "idevice.h"' FilzaApplySandboxExt-Bridging-Header.h
           grep -q 'UIHostingController(rootView: ContentView())' ByeTunesEmbeddedHost.swift
           grep -q 'ByeTunesEmbeddedHostFactory' ByeTunesFullAppLauncher.m
@@ -137,7 +139,18 @@ jobs:
           grep -aFq 'DownloadView' "$DYLIB"
           grep -aFq 'RingtonesView' "$DYLIB"
           grep -aFq 'SettingsView' "$DYLIB"
+          grep -aFq 'MusicManagerShortcuts' "$DYLIB"
+          find .theos -type f -name '*.swiftconstvalues' -print -exec test -s {} \;
           shasum -a 256 "$DYLIB"
+
+      - name: Generate and verify ByeTunes AppIntents metadata
+        run: |
+          set -euxo pipefail
+          bash scripts/generate-appintents-metadata.sh .theos/byetunes-appintents
+          test -d .theos/byetunes-appintents/Metadata.appintents
+          test "$(find .theos/byetunes-appintents/Metadata.appintents -type f | wc -l | tr -d ' ')" -gt 0
+          grep -aR -q 'InjectMusicIntent' .theos/byetunes-appintents/Metadata.appintents
+          grep -aR -q 'InjectRingtoneIntent' .theos/byetunes-appintents/Metadata.appintents
 
       - name: Stage and verify complete ByeTunes runtime resources
         run: |
@@ -157,4 +170,5 @@ jobs:
           path: |
             .theos/obj/FilzaApplySandboxExt.dylib
             .theos/byetunes-resources/**
+            .theos/byetunes-appintents/Metadata.appintents/**
           retention-days: 14
