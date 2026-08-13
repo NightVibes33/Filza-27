@@ -75,6 +75,9 @@ jobs:
             -Wno-arc-performSelector-leaks
           )
           xcrun --sdk iphoneos clang "${COMMON[@]}" AppsMusicFix.m
+          xcrun --sdk iphoneos clang "${COMMON[@]}" AppsManagerPresentationFix.m
+          xcrun --sdk iphoneos clang "${COMMON[@]}" AppProxyMetadataFix.m
+          xcrun --sdk iphoneos clang "${COMMON[@]}" VirtualBackendFix.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" ByeTunesMusicBridge.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" ByeTunesFilzaLibraryEmbed.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" ThirdParty/bad_query/bad_query/bad_query.c
@@ -85,6 +88,9 @@ jobs:
           grep -q '^ARCHS = arm64$' Makefile
           grep -q 'TARGET := iphone:clang:latest:16.0' Makefile
           grep -q 'ByeTunesFilzaLibraryEmbed.m' Makefile
+          grep -q 'AppsManagerPresentationFix.m' Makefile
+          grep -q 'AppProxyMetadataFix.m' Makefile
+          grep -q 'VirtualBackendFix.m' Makefile
           ! grep -q 'ByeTunesFullAppLauncher.m' Makefile
           ! grep -q 'FilzaByeTunesUI.m' Makefile
           grep -q 'BYETUNES_SWIFT_FILES' Makefile
@@ -113,6 +119,15 @@ jobs:
           grep -q 'bad_query((char \*)container.fileSystemRepresentation' AppsMusicFix.m
           grep -q 'FilzaDirectoryCanEnumerate' AppsMusicFix.m
           ! grep -q 'TGMusicLibraryViewController' AppsMusicFix.m
+          grep -Fq '[AppsPresentationFix]' AppsManagerPresentationFix.m
+          grep -Fq 'setIconPath:' AppsManagerPresentationFix.m
+          grep -Fq 'calculateDiskUsage' AppsManagerPresentationFix.m
+          grep -Fq '[AppProxyMetadataFix]' AppProxyMetadataFix.m
+          grep -Fq '_applicationIconImageForBundleIdentifier:format:scale:' AppProxyMetadataFix.m
+          grep -Fq 'staticDiskUsage' AppProxyMetadataFix.m
+          grep -Fq '[VirtualBackendFix]' VirtualBackendFix.m
+          grep -Fq 'isDirectory' VirtualBackendFix.m
+          grep -Fq 'MCMFilzaVirtualRoot' VirtualBackendFix.m
           grep -q 'tunnel_create_rppairing' ByeTunesMusicBridge.m
           grep -q '/iTunes_Control/iTunes/MediaLibrary.sqlitedb' ByeTunesMusicBridge.m
           grep -q '/iTunes_Control/Music' ByeTunesMusicBridge.m
@@ -161,6 +176,9 @@ jobs:
           grep -aFq 'MusicManagerShortcuts' "$DYLIB"
           grep -aFq '[AppsManagerFix][bad_query]' "$DYLIB"
           grep -aFq 'sandbox_extension_consume' "$DYLIB"
+          grep -aFq '[AppsPresentationFix]' "$DYLIB"
+          grep -aFq '[AppProxyMetadataFix]' "$DYLIB"
+          grep -aFq '[VirtualBackendFix]' "$DYLIB"
           shasum -a 256 "$DYLIB"
 
       - name: Generate ByeTunes AppIntents metadata when Theos exposes constant values
