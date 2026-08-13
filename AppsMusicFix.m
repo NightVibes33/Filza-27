@@ -1,8 +1,14 @@
 @import Foundation;
 @import UIKit;
 
+#import <errno.h>
+#import <fcntl.h>
+#import <limits.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
+#import <string.h>
+#import <sys/stat.h>
+#import <unistd.h>
 
 #import "MCMBridge.h"
 #import "MCMFilzaIntegration.h"
@@ -96,6 +102,83 @@ static NSString *FilzaApplicationItemIdentifier(id item)
     return nil;
 }
 
+static BOOL FilzaSameContainerPath(NSString *left, NSString *right)
+{
+    if (!left.length || !right.length) return NO;
+    NSString *(^normalize)(NSString *) = ^NSString *(NSString *value) {
+        NSString *path = value.stringByStandardizingPath;
+        if ([path isEqualToString:@"/var"] || [path hasPrefix:@"/var/"])
+            path = [@"/private" stringByAppendingString:path];
+        return path;
+    };
+    return [normalize(left) isEqualToString:normalize(right)];
+}
+
+static NSString *FilzaEnsureVirtualAppDataPath(NSString *identifier, NSString **error)
+{
+    if (!identifier.length) {
+        if (error) *error = @"missing application identifier";
+        return nil;
+    }
+
+    NSString *activationDetail = nil;
+    NSString *container = MCMFilzaDataContainerPath(identifier, &activationDetail);
+    if (!container.length) {
+        if (error) *error = activationDetail ?: @"class-2 container activation failed";
+        return nil;
+    }
+
+    NSString *directory = [MCMFilzaVirtualRoot()
+        stringByAppendingPathComponent:@"[MHA-C2] App Data"];
+    NSError *directoryError = nil;
+    if (![NSFileManager.defaultManager createDirectoryAtPath:directory
+                                  withIntermediateDirectories:YES
+                                                   attributes:nil
+                                                        error:&directoryError]) {
+        if (error) *error = [NSString stringWithFormat:@"virtual app-data directory failed: %@",
+            directoryError.localizedDescription ?: @"unknown"];
+        return nil;
+    }
+
+    NSString *link = [directory stringByAppendingPathComponent:identifier];
+    struct stat status = {0};
+    if (lstat(link.fileSystemRepresentation, &status) == 0) {
+        if (!S_ISLNK(status.st_mode)) {
+            if (error) *error = @"virtual app-data entry exists but is not a symlink";
+            return nil;
+        }
+
+        char targetBuffer[PATH_MAX] = {0};
+        ssize_t count = readlink(link.fileSystemRepresentation,
+                                 targetBuffer, sizeof(targetBuffer) - 1);
+        NSString *existingTarget = count > 0
+            ? [NSString stringWithUTF8String:targetBuffer] : nil;
+        if (!FilzaSameContainerPath(existingTarget, container))
+            unlink(link.fileSystemRepresentation);
+    }
+
+    if (lstat(link.fileSystemRepresentation, &status) != 0) {
+        if (symlink(container.fileSystemRepresentation, link.fileSystemRepresentation) != 0) {
+            if (error) *error = [NSString stringWithFormat:@"virtual app-data symlink failed errno=%d (%s)",
+                errno, strerror(errno)];
+            return nil;
+        }
+    }
+
+    // Verify the exact path Filza will browse, not merely the raw MCM root.
+    int descriptor = open(link.fileSystemRepresentation,
+                          O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (descriptor < 0) {
+        if (error) *error = [NSString stringWithFormat:@"virtual app-data path open failed errno=%d (%s)",
+            errno, strerror(errno)];
+        return nil;
+    }
+    close(descriptor);
+
+    if (error) *error = activationDetail;
+    return link;
+}
+
 static void FilzaAppsDidSelect(id self, SEL _cmd, id browserView, id indexPath)
 {
     SEL fileListSelector = NSSelectorFromString(@"fileList");
@@ -105,15 +188,30 @@ static void FilzaAppsDidSelect(id self, SEL _cmd, id browserView, id indexPath)
         ? ((NSUInteger (*)(id, SEL))objc_msgSend)(indexPath, @selector(row)) : NSNotFound;
     id item = row == NSNotFound ? nil : FilzaObjectAtIndexSafely(fileList, row);
     NSString *identifier = FilzaApplicationItemIdentifier(item);
+
     if (identifier.length) {
         NSString *detail = nil;
-        NSString *container = MCMFilzaDataContainerPath(identifier, &detail);
+        NSString *browsePath = FilzaEnsureVirtualAppDataPath(identifier, &detail);
         SEL setter = NSSelectorFromString(@"setDocumentPath:");
-        if (container.length && [item respondsToSelector:setter])
-            ((void (*)(id, SEL, id))objc_msgSend)(item, setter, container);
-        NSLog(@"[AppsManagerFix] id=%@ container=%@ detail=%@",
-              identifier, container, detail);
+        if (browsePath.length && [item respondsToSelector:setter])
+            ((void (*)(id, SEL, id))objc_msgSend)(item, setter, browsePath);
+
+        // The shipped Filza binary exposes -[TGApplicationsViewController openPath:].
+        // Use it directly once the class-2 lease and virtual path are verified,
+        // rather than allowing the stock selection path to recalculate an empty
+        // jailed documentPath from LaunchServices.
+        SEL openSelector = NSSelectorFromString(@"openPath:");
+        if (browsePath.length && [self respondsToSelector:openSelector]) {
+            NSLog(@"[AppsManagerFix] opening id=%@ via virtualPath=%@ detail=%@",
+                  identifier, browsePath, detail);
+            ((void (*)(id, SEL, id))objc_msgSend)(self, openSelector, browsePath);
+            return;
+        }
+
+        NSLog(@"[AppsManagerFix] id=%@ virtualPath=%@ detail=%@; falling back to stock selection",
+              identifier, browsePath, detail);
     }
+
     if (gPreviousAppsDidSelect)
         ((void (*)(id, SEL, id, id))gPreviousAppsDidSelect)(self, _cmd,
             browserView, indexPath);
@@ -127,8 +225,6 @@ static IMP FilzaInstallInstanceHook(Class cls, SEL selector, IMP replacement)
     IMP original = method_getImplementation(resolved);
     const char *types = method_getTypeEncoding(resolved);
 
-    // If the selector is inherited, add a class-local override rather than
-    // mutating the superclass Method returned by class_getInstanceMethod().
     if (class_addMethod(cls, selector, replacement, types))
         return original;
 
