@@ -9,6 +9,7 @@ TWEAK_NAME = FilzaApplySandboxExt
 IDEVICE_VENDOR ?= $(PWD)/Vendor/idevice
 IDEVICE_STATIC := $(IDEVICE_VENDOR)/lib/libidevice_ffi.a
 BYETUNES_ROOT := ByeTunes/MusicManager
+BAD_QUERY_ROOT := ThirdParty/bad_query
 
 # Runtime/file-operation correctness layers that must actually ship with the
 # real tweak target. ByeTunesFilzaLibraryEmbed.m replaces Filza's existing
@@ -16,6 +17,11 @@ BYETUNES_ROOT := ByeTunes/MusicManager
 # root; the older custom table and modal full-app launcher are intentionally not
 # linked anymore.
 FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
+
+# Pinned upstream bad_query is used only as a per-container fallback when the
+# MobileHouseArrest class-2 lease resolves a foreign app root but cannot issue
+# a usable sandbox extension. Keep the upstream implementation unmodified.
+FilzaApplySandboxExt_FILES += $(BAD_QUERY_ROOT)/bad_query/bad_query.c
 
 # The original jailed Filza kernel path is used only by the exact iOS 18.5
 # target gate in Tweak.m. Newer systems continue to use the MCM path.
@@ -36,7 +42,7 @@ BYETUNES_SWIFT_FILES := $(shell find $(BYETUNES_ROOT) -type f -name '*.swift' ! 
 FilzaApplySandboxExt_SWIFT_FILES = ByeTunesEmbeddedHost.swift $(BYETUNES_SWIFT_FILES)
 
 # --- Flags ---
-FilzaApplySandboxExt_CFLAGS = -I$(PWD)/compat -I$(PWD) -I$(PWD)/XPF/src -I$(PWD)/XPF/external/ChOma/include -I$(IDEVICE_VENDOR)/include \
+FilzaApplySandboxExt_CFLAGS = -I$(PWD)/compat -I$(PWD) -I$(PWD)/XPF/src -I$(PWD)/XPF/external/ChOma/include -I$(IDEVICE_VENDOR)/include -I$(PWD)/$(BAD_QUERY_ROOT)/bad_query \
     -fobjc-arc -include errno.h -include math.h \
     -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable \
     -Wno-incompatible-pointer-types -Wno-incompatible-pointer-types-discards-qualifiers \
@@ -66,5 +72,7 @@ before-FilzaApplySandboxExt-all::
 	@test -d "$(BYETUNES_ROOT)" || (echo "Missing ByeTunes submodule. Run: git submodule update --init --recursive" >&2; exit 1)
 	@test -f "$(BYETUNES_ROOT)/ContentView.swift" || (echo "Incomplete ByeTunes submodule" >&2; exit 1)
 	@test -f "$(BYETUNES_ROOT)/YouTubeKit/Resources/meriyah.umd.js" || (echo "Incomplete ByeTunes resources" >&2; exit 1)
+	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.c" || (echo "Missing pinned bad_query submodule. Run: git submodule update --init --recursive" >&2; exit 1)
+	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.h" || (echo "Incomplete bad_query submodule" >&2; exit 1)
 
 include $(THEOS_MAKE_PATH)/tweak.mk
