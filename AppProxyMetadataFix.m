@@ -91,7 +91,13 @@ static NSData *FilzaMetadataIconDataForVariant(id self, SEL _cmd, NSUInteger var
     NSData *original = gOriginalIconDataForVariant
         ? ((id (*)(id, SEL, NSUInteger))gOriginalIconDataForVariant)(self, _cmd, variant)
         : nil;
-    if ([original isKindOfClass:NSData.class] && original.length > 0)
+
+    // LaunchServices can return a non-empty private/raw icon representation.
+    // Only treat it as complete when UIKit can actually decode it; otherwise
+    // continue to the image-cache fallback below so Filza receives real PNG
+    // data rather than a non-empty blob it cannot render.
+    if ([original isKindOfClass:NSData.class] && original.length > 0 &&
+        [UIImage imageWithData:original] != nil)
         return original;
 
     NSString *identifier = FilzaMetadataProxyIdentifier(self);
@@ -102,8 +108,13 @@ static NSData *FilzaMetadataIconDataForVariant(id self, SEL _cmd, NSUInteger var
 
     CGFloat scale = UIScreen.mainScreen.scale ?: 2.0;
     for (NSInteger format = 2; format >= 0; format--) {
-        UIImage *image = ((id (*)(id, SEL, id, NSInteger, CGFloat))objc_msgSend)(
-            UIImage.class, selector, identifier, format, scale);
+        UIImage *image = nil;
+        @try {
+            image = ((id (*)(id, SEL, id, NSInteger, CGFloat))objc_msgSend)(
+                UIImage.class, selector, identifier, format, scale);
+        } @catch (__unused NSException *exception) {
+            image = nil;
+        }
         if (![image isKindOfClass:UIImage.class]) continue;
         NSData *png = UIImagePNGRepresentation(image);
         if (png.length > 0) {
