@@ -20,6 +20,7 @@ This fork currently targets the iOS 18 / iOS 26 / early iOS 27 behavior exposed 
 | iOS 27 Gestalt key catalog | ✅ Included |
 | ByeTunes resources | ✅ Packaged into the IPA |
 | ByeTunes Music Library integration | ✅ Complete ByeTunes UI mounts directly; on-device validation still required |
+| WebDAV server | ✅ Redirected to Filza's in-process server for jailed/sideloaded use |
 | Arbitrary `/` / full system filesystem access | ❌ Not established |
 
 ## Managers
@@ -51,10 +52,11 @@ AppIconImage.png
 ByeTunes-Info.plist
 ```
 
-The Music Library entry now mounts the complete ByeTunes `ContentView` directly inside
-`TGMusicLibraryViewController`. There is no inert “Load ByeTunes” placeholder. A small
-UIKit shell is attached first, then the complete SwiftUI application is constructed on
-the next main-loop turn so startup boundaries can be recorded without replacing the UI.
+The Music Library action now intercepts `TGMainView.openMusicLib` and presents the
+complete ByeTunes `ContentView` directly. The Home Screen Music Library action uses the
+same presenter. `TGMusicLibraryViewController` embedding remains only as a fallback.
+A small UIKit shell is attached first, then the complete SwiftUI application is
+constructed on the next main-loop turn so startup boundaries can be recorded.
 
 A runtime stage marker is written to:
 
@@ -70,7 +72,8 @@ validation.
 ### Gestalt Editor
 
 The complete Gestalt editor is compiled into the Filza runtime. A **Gestalt Editor**
-button is inserted into `TGMainView` beside the existing Apps and Music actions.
+action is inserted beside the existing Apps Manager and Music Library entries, with a
+`TGMainView` toolbar hook as a second in-app route.
 
 It is also exposed as a static Home Screen quick action:
 
@@ -79,7 +82,9 @@ Gestalt Editor
 Edit MobileGestalt
 ```
 
-Both the in-app button and Home Screen quick action resolve the same embedded editor.
+Both the in-app button and Home Screen quick action immediately show the same embedded
+editor shell. MobileGestalt access is resolved from that visible screen; failures are
+shown there with the precise error and a Retry action instead of appearing to do nothing.
 The editor attempts to resolve:
 
 ```text
@@ -107,6 +112,32 @@ The editor includes the complete device-artwork, software, hardware, eligibility
 iPadOS, internal-feature, spoofing, Apply, and Revert controls. Writes use the verified
 direct-file-descriptor fallback, property-list read-back validation, and automatic
 backup restoration if validation fails.
+
+### WebDAV server
+
+Filza's original **Run as system service** option targets jailbreak-only `launchctl`
+and `/usr/libexec/filza/FilzaWebDAVServer` paths. Those paths cannot work from the
+sideloaded MobileHouseArrest app container. FilzaSlop now links a pinned complete
+`GCDWebDAVServer` implementation and forces WebDAV through that in-process server
+while preserving Filza's port, Bonjour, authentication, WebDAV methods, and
+shared-folder settings. It implements OPTIONS, PROPFIND, GET/HEAD, PUT, MKCOL,
+DELETE, COPY, MOVE, LOCK, and UNLOCK. When Filza authentication is enabled, the
+server validates HTTP Basic credentials against Filza's saved password hash and
+refuses to start if those credentials are incomplete.
+
+Use **Preferences → Advanced options → Enable WebDAV server**. The default port is
+`11111`; the exact listening URL and root are recorded after every start or resume in:
+
+```text
+Documents/FilzaSlop Logs/WebDAVStatus.txt
+Documents/FilzaSlop Logs/Runtime.log
+```
+
+The IPA declares local-network and `_http._tcp` Bonjour usage, so accept the iOS Local
+Network prompt the first time the server starts. Keep FilzaSlop in the foreground while
+transferring files: a sideloaded app cannot install a persistent launch daemon, and iOS
+may suspend its listener in the background. Returning to the app automatically checks
+and restarts the listener when WebDAV remains enabled.
 
 ## iOS 27 Gestalt keys
 
@@ -231,7 +262,7 @@ now performs the complete installable build:
 4. stages ByeTunes runtime resources;
 5. downloads and hash-verifies the pinned unsigned Filza base IPA;
 6. injects the current runtime dylib and resources;
-7. writes exactly three Home Screen shortcuts into `Info.plist` and assigns build version `4.1`;
+7. writes exactly three Home Screen shortcuts plus Local Network/Bonjour declarations into `Info.plist` and assigns build version `4.2`;
 8. verifies the base executable actually loads `FilzaApplySandboxExt.dylib`;
 9. repacks a real unsigned IPA;
 10. uploads the IPA as a GitHub Actions artifact.
@@ -249,7 +280,7 @@ Open **Actions → Verify Filza installable IPA** to download the latest build a
 ## Current limitations
 
 - A green build proves the current source compiled, linked, packaged, and uploaded successfully. It does **not** prove every private API or sandbox-extension path still works on a specific iOS build.
-- ByeTunes and Gestalt Editor still need on-device runtime validation after each new IPA build.
+- ByeTunes, Gestalt Editor, and WebDAV still need on-device runtime validation after each new IPA build.
 - The existing container-access primitives do not establish unrestricted `/`, `/System`, `/Library`, `/Applications`, or arbitrary `/private` traversal.
 - No kernel read/write or full jailbreak primitive is claimed by this README.
 

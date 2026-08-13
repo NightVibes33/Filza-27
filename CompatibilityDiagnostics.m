@@ -78,6 +78,14 @@ static void CDWriteCompatibilityReport(void) {
                 @[@"browserView:didSelectItemAtIndexPath:"]),
             @"TGMusicLibraryViewController": CDClassStatus(@"TGMusicLibraryViewController",
                 @[@"viewDidLoad"]),
+            @"TGMainView": CDClassStatus(@"TGMainView",
+                @[@"openMusicLib", @"createMainToolBar"]),
+            @"ByeTunesEmbeddedHostFactory": CDClassStatus(@"ByeTunesEmbeddedHostFactory",
+                @[@"makeViewController", @"makeLibraryViewController"]),
+            @"MondGestaltHostFactory": CDClassStatus(@"MondGestaltHostFactory",
+                @[@"makeViewControllerWithPath:"]),
+            @"GCDWebDAVServer": CDClassStatus(@"GCDWebDAVServer",
+                @[@"initWithUploadDirectory:", @"startWithOptions:error:"]),
             @"GestaltManagerController": CDClassStatus(@"GestaltManagerController", @[@"viewDidLoad"]),
             @"TGPageViewController": CDClassStatus(@"TGPageViewController",
                 @[@"copyFilesAndDirectoryFromPasteboard"]),
@@ -89,7 +97,10 @@ static void CDWriteCompatibilityReport(void) {
         @"paths": @{
             @"virtualRoot": CDPathStatus(virtualRoot),
             @"documents": CDPathStatus(documents),
-            @"byeTunesStage": CDPathStatus([documents stringByAppendingPathComponent:@"ByeTunesEmbedStage.txt"]),
+            @"byeTunesStage": CDPathStatus([[documents stringByAppendingPathComponent:@"FilzaSlop Logs"]
+                stringByAppendingPathComponent:@"ByeTunesEmbedStage.txt"]),
+            @"webDAVStatus": CDPathStatus([[documents stringByAppendingPathComponent:@"FilzaSlop Logs"]
+                stringByAppendingPathComponent:@"WebDAVStatus.txt"]),
         },
     };
 

@@ -10,18 +10,25 @@ IDEVICE_VENDOR ?= $(PWD)/Vendor/idevice
 IDEVICE_STATIC := $(IDEVICE_VENDOR)/lib/libidevice_ffi.a
 BYETUNES_ROOT := ByeTunes/MusicManager
 BAD_QUERY_ROOT := ThirdParty/bad_query
+GCDWEBSERVER_ROOT := ThirdParty/GCDWebServer
 
 # Runtime/file-operation correctness layers that must actually ship with the
-# real tweak target. ByeTunesFilzaLibraryEmbed.m replaces Filza's existing
-# TGMusicLibraryViewController contents in-place with the real ByeTunes SwiftUI
-# root; the older custom table and modal full-app launcher are intentionally not
-# linked anymore.
-FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataRetryFix.m AppIconResourceProxyFix.m VirtualBackendFix.m SystemPathDiagnostics.m BadQuerySystemProbe.m GestaltManager.m FilzaMondBridge.m FilzaMainToolbarGestalt.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m FilzaDiagnostics.m FilzaQuickActions.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
+# real tweak target. The direct launcher intercepts TGMainView.openMusicLib and
+# presents the full ByeTunes SwiftUI root; the legacy controller embed remains
+# linked only as a compatibility fallback.
+FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataRetryFix.m AppIconResourceProxyFix.m VirtualBackendFix.m SystemPathDiagnostics.m BadQuerySystemProbe.m GestaltManager.m FilzaMondBridge.m FilzaMainToolbarGestalt.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ByeTunesFullAppLauncher.m FilzaDiagnostics.m FilzaQuickActions.m WebDAVRuntimeFix.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
 
 # Pinned bad_query backs the verified foreign-container, system-root, and
 # MobileGestalt access paths. A returned handle is not treated as proof of
 # access; callers verify the requested file/directory operation in-process.
 FilzaApplySandboxExt_FILES += $(BAD_QUERY_ROOT)/bad_query/bad_query.c
+
+# Filza's binary still references GCDWebDAVServer for its foreground server,
+# but the jailed base only ships the separate jailbreak-era launchd helper.
+# Link the complete pinned class-1 / partial class-2 WebDAV implementation so
+# TGPreferences.createHttpServer has a real in-process class to instantiate.
+GCDWEBSERVER_OBJC_FILES := $(shell find $(GCDWEBSERVER_ROOT)/GCDWebServer $(GCDWEBSERVER_ROOT)/GCDWebDAVServer -type f -name '*.m' -print)
+FilzaApplySandboxExt_FILES += $(GCDWEBSERVER_OBJC_FILES)
 
 # The original jailed Filza kernel path is used only by the exact iOS 18.5
 # target gate in Tweak.m. Newer systems continue to use the MCM path.
@@ -43,6 +50,8 @@ FilzaApplySandboxExt_SWIFT_FILES = ByeTunesEmbeddedHost.swift MondGestaltView.sw
 
 # --- Flags ---
 FilzaApplySandboxExt_CFLAGS = -I$(PWD)/compat -I$(PWD) -I$(PWD)/XPF/src -I$(PWD)/XPF/external/ChOma/include -I$(IDEVICE_VENDOR)/include -I$(PWD)/$(BAD_QUERY_ROOT)/bad_query \
+    -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Core -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Requests -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Responses -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebDAVServer \
+    -I$(shell xcrun --sdk iphoneos --show-sdk-path 2>/dev/null)/usr/include/libxml2 \
     -fobjc-arc -include errno.h -include math.h \
     -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable \
     -Wno-incompatible-pointer-types -Wno-incompatible-pointer-types-discards-qualifiers \
@@ -61,9 +70,9 @@ FilzaApplySandboxExt_LDFLAGS += $(IDEVICE_STATIC)
 
 # Framework coverage matches the complete ByeTunes source tree rather than the
 # old reduced music-library bridge.
-FilzaApplySandboxExt_FRAMEWORKS = UIKit Foundation SwiftUI Combine AVFoundation CoreMedia AudioToolbox CryptoKit UniformTypeIdentifiers PhotosUI JavaScriptCore AppIntents
+FilzaApplySandboxExt_FRAMEWORKS = UIKit Foundation SwiftUI Combine AVFoundation CoreMedia AudioToolbox CryptoKit UniformTypeIdentifiers PhotosUI JavaScriptCore AppIntents CFNetwork MobileCoreServices
 FilzaApplySandboxExt_PRIVATE_FRAMEWORKS = IOSurface
-FilzaApplySandboxExt_LIBRARIES = z sandbox sqlite3
+FilzaApplySandboxExt_LIBRARIES = z xml2 sandbox sqlite3
 
 FilzaApplySandboxExt_INSTALL_TARGET_PROCESSES = Filza
 
@@ -85,7 +94,11 @@ before-FilzaApplySandboxExt-all::
 	@test -f "FilzaMondBridge.m" || (echo "Missing FilzaMondBridge.m" >&2; exit 1)
 	@test -f "FilzaMainToolbarGestalt.m" || (echo "Missing FilzaMainToolbarGestalt.m" >&2; exit 1)
 	@test -f "MondGestaltView.swift" || (echo "Missing MondGestaltView.swift" >&2; exit 1)
+	@test -f "ByeTunesFullAppLauncher.m" || (echo "Missing ByeTunesFullAppLauncher.m" >&2; exit 1)
 	@test -f "FilzaDiagnostics.m" || (echo "Missing FilzaDiagnostics.m" >&2; exit 1)
 	@test -f "FilzaQuickActions.m" || (echo "Missing FilzaQuickActions.m" >&2; exit 1)
+	@test -f "WebDAVRuntimeFix.m" || (echo "Missing WebDAVRuntimeFix.m" >&2; exit 1)
+	@test -f "$(GCDWEBSERVER_ROOT)/GCDWebDAVServer/GCDWebDAVServer.m" || (echo "Missing pinned GCDWebDAVServer" >&2; exit 1)
+	@test -f "$(GCDWEBSERVER_ROOT)/LICENSE" || (echo "Missing GCDWebServer license" >&2; exit 1)
 
 include $(THEOS_MAKE_PATH)/tweak.mk

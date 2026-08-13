@@ -3,6 +3,7 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 
+#import "ByeTunesFullAppLauncher.h"
 #import "FilzaDiagnostics.h"
 #import "FilzaMondBridge.h"
 
@@ -104,8 +105,11 @@ static void FQOpenWithRetry(NSString *type, NSUInteger attempts)
     BOOL opened = NO;
     if ([type isEqualToString:FQAppsType])
         opened = FQPresentFilzaController(@"TGApplicationsViewController", @"Apps Manager");
-    else if ([type isEqualToString:FQMusicType])
-        opened = FQPresentFilzaController(@"TGMusicLibraryViewController", @"Music Library");
+    else if ([type isEqualToString:FQMusicType]) {
+        opened = FilzaByeTunesPresentFromController(FQActiveController());
+        if (opened)
+            FilzaDiagnosticsAppend(@"QuickAction", @"opened complete ByeTunes directly");
+    }
     else if ([type isEqualToString:FQGestaltType]) {
         UIViewController *source = FQActiveController();
         if (source) {
