@@ -16,11 +16,12 @@ BAD_QUERY_ROOT := ThirdParty/bad_query
 # TGMusicLibraryViewController contents in-place with the real ByeTunes SwiftUI
 # root; the older custom table and modal full-app launcher are intentionally not
 # linked anymore.
-FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m VirtualBackendFix.m SystemPathDiagnostics.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
+FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataRetryFix.m AppIconResourceProxyFix.m VirtualBackendFix.m SystemPathDiagnostics.m BadQuerySystemProbe.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
 
-# Pinned upstream bad_query is used only as a per-container fallback when the
-# MobileHouseArrest class-2 lease resolves a foreign app root but cannot issue
-# a usable sandbox extension. Keep the upstream implementation unmodified.
+# Pinned upstream bad_query backs the verified foreign-container and system-root
+# probes. Every exposed path is still accepted only after a real opendir/readdir
+# check in this process; a returned extension handle by itself is not treated as
+# access.
 FilzaApplySandboxExt_FILES += $(BAD_QUERY_ROOT)/bad_query/bad_query.c
 
 # The original jailed Filza kernel path is used only by the exact iOS 18.5
@@ -76,7 +77,10 @@ before-FilzaApplySandboxExt-all::
 	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.c" || (echo "Missing pinned bad_query submodule. Run: git submodule update --init --recursive" >&2; exit 1)
 	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.h" || (echo "Incomplete bad_query submodule" >&2; exit 1)
 	@test -f "AppProxyMetadataFix.m" || (echo "Missing AppProxyMetadataFix.m" >&2; exit 1)
+	@test -f "AppMetadataRetryFix.m" || (echo "Missing AppMetadataRetryFix.m" >&2; exit 1)
+	@test -f "AppIconResourceProxyFix.m" || (echo "Missing AppIconResourceProxyFix.m" >&2; exit 1)
 	@test -f "VirtualBackendFix.m" || (echo "Missing VirtualBackendFix.m" >&2; exit 1)
 	@test -f "SystemPathDiagnostics.m" || (echo "Missing SystemPathDiagnostics.m" >&2; exit 1)
+	@test -f "BadQuerySystemProbe.m" || (echo "Missing BadQuerySystemProbe.m" >&2; exit 1)
 
 include $(THEOS_MAKE_PATH)/tweak.mk
