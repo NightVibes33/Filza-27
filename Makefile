@@ -16,7 +16,7 @@ BAD_QUERY_ROOT := ThirdParty/bad_query
 # TGMusicLibraryViewController contents in-place with the real ByeTunes SwiftUI
 # root; the older custom table and modal full-app launcher are intentionally not
 # linked anymore.
-FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataLateFallback.m VirtualBackendFix.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
+FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m VirtualBackendFix.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
 
 # Pinned upstream bad_query is used only as a per-container fallback when the
 # MobileHouseArrest class-2 lease resolves a foreign app root but cannot issue
@@ -74,5 +74,7 @@ before-FilzaApplySandboxExt-all::
 	@test -f "$(BYETUNES_ROOT)/YouTubeKit/Resources/meriyah.umd.js" || (echo "Incomplete ByeTunes resources" >&2; exit 1)
 	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.c" || (echo "Missing pinned bad_query submodule. Run: git submodule update --init --recursive" >&2; exit 1)
 	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.h" || (echo "Incomplete bad_query submodule" >&2; exit 1)
+	@test -f "AppProxyMetadataFix.m" || (echo "Missing AppProxyMetadataFix.m" >&2; exit 1)
+	@test -f "VirtualBackendFix.m" || (echo "Missing VirtualBackendFix.m" >&2; exit 1)
 
 include $(THEOS_MAKE_PATH)/tweak.mk
