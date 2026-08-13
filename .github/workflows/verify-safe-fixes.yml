@@ -17,6 +17,7 @@ jobs:
       THEOS: ${{ github.workspace }}/theos
       DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
       BYETUNES_COMMIT: 1a90f9e0f2b1a1787b208809ad2373f5c52175c8
+      BAD_QUERY_COMMIT: 73ef6da1adabef0982fd00e36cb85f21b8f8194a
     steps:
       - name: Xcode 26.2 setup
         uses: maxim-lobanov/setup-xcode@v1
@@ -28,7 +29,7 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Verify Xcode, SDK, and pinned ByeTunes app
+      - name: Verify Xcode, SDK, and pinned source dependencies
         run: |
           set -euxo pipefail
           test "$(uname -m)" = "x86_64"
@@ -49,6 +50,12 @@ jobs:
           test -f ByeTunes/MusicManager/YouTubeKit/Resources/meriyah.umd.js
           test -f ByeTunes/MusicManager/YouTubeKit/Resources/astring.umd.js
           test -f ByeTunes/MusicManager/YouTubeKit/Resources/yt_ejs_helper.js
+          test -d ThirdParty/bad_query/bad_query
+          test "$(git -C ThirdParty/bad_query rev-parse HEAD)" = "$BAD_QUERY_COMMIT"
+          test -f ThirdParty/bad_query/bad_query/bad_query.c
+          test -f ThirdParty/bad_query/bad_query/bad_query.h
+          grep -Fq 'int64_t bad_query(char* path' ThirdParty/bad_query/bad_query/bad_query.c
+          grep -Fq 'sandbox_extension_consume' ThirdParty/bad_query/bad_query/bad_query.c
 
       - name: Syntax-check Objective-C integration shell
         run: |
@@ -63,14 +70,16 @@ jobs:
             -fsyntax-only
             -include errno.h
             -I.
+            -IThirdParty/bad_query/bad_query
             -Wno-deprecated-declarations
             -Wno-arc-performSelector-leaks
           )
           xcrun --sdk iphoneos clang "${COMMON[@]}" AppsMusicFix.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" ByeTunesMusicBridge.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" ByeTunesFilzaLibraryEmbed.m
+          xcrun --sdk iphoneos clang "${COMMON[@]}" ThirdParty/bad_query/bad_query/bad_query.c
 
-      - name: Verify in-place ByeTunes Music Library port invariants
+      - name: Verify in-place ByeTunes and app-data fallback invariants
         run: |
           set -euxo pipefail
           grep -q '^ARCHS = arm64$' Makefile
@@ -88,6 +97,8 @@ jobs:
           grep -q 'libidevice_ffi.a' Makefile
           grep -q 'sqlite3' Makefile
           grep -q 'emit-const-values-path' Makefile
+          grep -q 'ThirdParty/bad_query/bad_query/bad_query.c' Makefile
+          grep -q 'BAD_QUERY_ROOT' Makefile
           test -f scripts/generate-appintents-metadata.sh
           grep -q '#import "idevice.h"' FilzaApplySandboxExt-Bridging-Header.h
           grep -q 'UIHostingController(rootView: ContentView())' ByeTunesEmbeddedHost.swift
@@ -98,6 +109,9 @@ jobs:
           grep -q 'didMoveToParentViewController' ByeTunesFilzaLibraryEmbed.m
           ! grep -q 'presentViewController' ByeTunesFilzaLibraryEmbed.m
           grep -q 'MCMEnumerateIdentifiersForClass(2' AppsMusicFix.m
+          grep -q 'FilzaActivateBadQueryForContainer' AppsMusicFix.m
+          grep -q 'bad_query((char \*)container.fileSystemRepresentation' AppsMusicFix.m
+          grep -q 'FilzaDirectoryCanEnumerate' AppsMusicFix.m
           ! grep -q 'TGMusicLibraryViewController' AppsMusicFix.m
           grep -q 'tunnel_create_rppairing' ByeTunesMusicBridge.m
           grep -q '/iTunes_Control/iTunes/MediaLibrary.sqlitedb' ByeTunesMusicBridge.m
@@ -145,6 +159,8 @@ jobs:
           grep -aFq 'RingtonesView' "$DYLIB"
           grep -aFq 'SettingsView' "$DYLIB"
           grep -aFq 'MusicManagerShortcuts' "$DYLIB"
+          grep -aFq '[AppsManagerFix][bad_query]' "$DYLIB"
+          grep -aFq 'sandbox_extension_consume' "$DYLIB"
           shasum -a 256 "$DYLIB"
 
       - name: Generate ByeTunes AppIntents metadata when Theos exposes constant values
