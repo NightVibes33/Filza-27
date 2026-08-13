@@ -46,6 +46,8 @@ jobs:
           test -f ThirdParty/bad_query/bad_query/bad_query.c
           test -f GestaltManager.m
           test -f ByeTunesFilzaLibraryEmbed.m
+          test -f FilzaDiagnostics.m
+          test -f FilzaQuickActions.m
 
       - name: Syntax-check runtime integrations
         run: |
@@ -69,6 +71,8 @@ jobs:
           xcrun --sdk iphoneos clang "${COMMON[@]}" AppsManagerPresentationFix.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" ByeTunesMusicBridge.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" ByeTunesFilzaLibraryEmbed.m
+          xcrun --sdk iphoneos clang "${COMMON[@]}" FilzaDiagnostics.m
+          xcrun --sdk iphoneos clang "${COMMON[@]}" FilzaQuickActions.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" ThirdParty/bad_query/bad_query/bad_query.c
 
       - name: Install Procursus build tools
@@ -129,10 +133,12 @@ jobs:
           test "$(lipo -archs "$DYLIB")" = "arm64"
           grep -aFq 'Gestalt Manager' "$DYLIB"
           grep -aFq 'com.nightvibes33.filzaslop.gestalt-manager' "$DYLIB"
+          grep -aFq 'com.nightvibes33.filzaslop.apps-manager' "$DYLIB"
+          grep -aFq 'com.nightvibes33.filzaslop.music-library' "$DYLIB"
+          grep -aFq 'FilzaSlop Logs' "$DYLIB"
+          grep -aFq 'LastSignal.txt' "$DYLIB"
+          grep -aFq 'TGMusicLibraryViewController viewDidAppear intercepted' "$DYLIB"
           grep -aFq 'ByeTunesEmbeddedHostFactory' "$DYLIB"
-          grep -aFq 'inert UIKit launcher visible' "$DYLIB"
-          grep -aFq 'ByeTunesEmbedStage.txt' "$DYLIB"
-          grep -aFq 'TGMusicLibraryViewController' "$DYLIB"
           shasum -a 256 "$DYLIB"
 
       - name: Generate ByeTunes AppIntents metadata
@@ -182,9 +188,26 @@ jobs:
             cp -R .theos/byetunes-appintents/Metadata.appintents "$APP/Metadata.appintents"
           fi
 
-          plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Manager","UIApplicationShortcutItemSubtitle":"Edit MobileGestalt","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"}]' "$APP/Info.plist"
+          plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemSubtitle":"Browse installed apps","UIApplicationShortcutItemIconSymbolName":"square.grid.2x2"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music Library","UIApplicationShortcutItemSubtitle":"Open ByeTunes","UIApplicationShortcutItemIconSymbolName":"music.note.list"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Editor","UIApplicationShortcutItemSubtitle":"Edit MobileGestalt","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"}]' "$APP/Info.plist"
           plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
           plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
+
+          python3 - "$APP/Info.plist" <<'PY'
+          import plistlib, sys
+          with open(sys.argv[1], 'rb') as f:
+              info = plistlib.load(f)
+          actions = info.get('UIApplicationShortcutItems', [])
+          assert len(actions) == 3, actions
+          assert [a['UIApplicationShortcutItemTitle'] for a in actions] == ['Apps Manager', 'Music Library', 'Gestalt Editor'], actions
+          assert [a['UIApplicationShortcutItemType'] for a in actions] == [
+              'com.nightvibes33.filzaslop.apps-manager',
+              'com.nightvibes33.filzaslop.music-library',
+              'com.nightvibes33.filzaslop.gestalt-manager',
+          ], actions
+          assert info.get('UIFileSharingEnabled') is True
+          assert info.get('LSSupportsOpeningDocumentsInPlace') is True
+          print('Verified exactly three quick actions and Files/Documents exposure flags')
+          PY
 
           otool -L "$APP/$EXECUTABLE" | grep -F 'FilzaApplySandboxExt.dylib'
           test -s "$APP/Frameworks/FilzaApplySandboxExt.dylib"
@@ -192,7 +215,6 @@ jobs:
           test -s "$APP/astring.umd.js"
           test -s "$APP/yt_ejs_helper.js"
           test -s "$APP/AppIconImage.png"
-          plutil -extract UIApplicationShortcutItems xml1 -o - "$APP/Info.plist" | grep -F 'Gestalt Manager'
 
           OUTPUT="$GITHUB_WORKSPACE/.theos/FilzaSlop-main-${GITHUB_SHA::7}-unsigned.ipa"
           rm -f "$OUTPUT"

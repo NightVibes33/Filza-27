@@ -16,7 +16,7 @@ BAD_QUERY_ROOT := ThirdParty/bad_query
 # TGMusicLibraryViewController contents in-place with the real ByeTunes SwiftUI
 # root; the older custom table and modal full-app launcher are intentionally not
 # linked anymore.
-FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataRetryFix.m AppIconResourceProxyFix.m VirtualBackendFix.m SystemPathDiagnostics.m BadQuerySystemProbe.m GestaltManager.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
+FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataRetryFix.m AppIconResourceProxyFix.m VirtualBackendFix.m SystemPathDiagnostics.m BadQuerySystemProbe.m GestaltManager.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m FilzaDiagnostics.m FilzaQuickActions.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
 
 # Pinned bad_query backs the verified foreign-container, system-root, and
 # MobileGestalt access paths. A returned handle is not treated as proof of
@@ -82,5 +82,7 @@ before-FilzaApplySandboxExt-all::
 	@test -f "SystemPathDiagnostics.m" || (echo "Missing SystemPathDiagnostics.m" >&2; exit 1)
 	@test -f "BadQuerySystemProbe.m" || (echo "Missing BadQuerySystemProbe.m" >&2; exit 1)
 	@test -f "GestaltManager.m" || (echo "Missing GestaltManager.m" >&2; exit 1)
+	@test -f "FilzaDiagnostics.m" || (echo "Missing FilzaDiagnostics.m" >&2; exit 1)
+	@test -f "FilzaQuickActions.m" || (echo "Missing FilzaQuickActions.m" >&2; exit 1)
 
 include $(THEOS_MAKE_PATH)/tweak.mk
