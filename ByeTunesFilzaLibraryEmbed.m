@@ -157,7 +157,7 @@ static void ByeTunesInstallFilzaMusicLibraryPort(void)
                         (IMP)ByeTunesMusicLibraryViewDidLoad,
                         types)) {
         gByeTunesMusicHookInstalled = YES;
-        NSLog(@"[ByeTunesPort] installed isolated Music Library replacement; legacy implementation bypassed");
+        NSLog(@"[ByeTunesPort] installed class-local Music Library viewDidLoad override; legacy implementation bypassed");
         return;
     }
 
@@ -171,7 +171,7 @@ static void ByeTunesInstallFilzaMusicLibraryPort(void)
 
     method_setImplementation(ownedMethod, (IMP)ByeTunesMusicLibraryViewDidLoad);
     gByeTunesMusicHookInstalled = YES;
-    NSLog(@"[ByeTunesPort] replaced TGMusicLibraryViewController viewDidLoad without invoking legacy implementation");
+    NSLog(@"[ByeTunesPort] class-local Music Library viewDidLoad override installed without invoking legacy implementation");
 }
 
 __attribute__((constructor)) static void ByeTunesFilzaLibraryPortInit(void)
