@@ -116,7 +116,12 @@ static NSData *FilzaMetadataIconDataForVariant(id self, SEL _cmd, NSUInteger var
     if (![UIImage respondsToSelector:selector]) return original;
 
     CGFloat scale = UIScreen.mainScreen.scale ?: 2.0;
-    for (NSInteger format = 2; format >= 0; format--) {
+    // Public jailbreak/bootstrap implementations use MobileIcons format 10
+    // for installed application icons. Try that first, then retain the
+    // existing compact formats as fallbacks.
+    const NSInteger formats[] = {10, 2, 1, 0};
+    for (NSUInteger index = 0; index < sizeof(formats) / sizeof(formats[0]); index++) {
+        NSInteger format = formats[index];
         UIImage *image = nil;
         @try {
             image = ((id (*)(id, SEL, id, NSInteger, CGFloat))objc_msgSend)(
