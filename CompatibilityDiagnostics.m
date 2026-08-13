@@ -7,6 +7,10 @@
 #include <unistd.h>
 
 #import "MCMFilzaIntegration.h"
+#import "GestaltManager.h"
+
+static IMP gCDOriginalTableDidMoveToWindow = NULL;
+static BOOL gCDTableLifecycleHookInstalled = NO;
 
 static NSString *CDSysctlString(const char *name) {
     size_t size = 0;
@@ -72,6 +76,9 @@ static void CDWriteCompatibilityReport(void) {
                 @[@"setCurrentPath:", @"doLoadingPage", @"updateEditableUI"]),
             @"TGApplicationsViewController": CDClassStatus(@"TGApplicationsViewController",
                 @[@"browserView:didSelectItemAtIndexPath:"]),
+            @"TGMusicLibraryViewController": CDClassStatus(@"TGMusicLibraryViewController",
+                @[@"viewDidLoad"]),
+            @"GestaltManagerController": CDClassStatus(@"GestaltManagerController", @[@"viewDidLoad"]),
             @"TGPageViewController": CDClassStatus(@"TGPageViewController",
                 @[@"copyFilesAndDirectoryFromPasteboard"]),
             @"Zipper": CDClassStatus(@"Zipper",
@@ -82,6 +89,7 @@ static void CDWriteCompatibilityReport(void) {
         @"paths": @{
             @"virtualRoot": CDPathStatus(virtualRoot),
             @"documents": CDPathStatus(documents),
+            @"byeTunesStage": CDPathStatus([documents stringByAppendingPathComponent:@"ByeTunesEmbedStage.txt"]),
         },
     };
 
@@ -108,12 +116,44 @@ static void CDWriteCompatibilityReport(void) {
     NSLog(@"[CompatibilityDiagnostics] report written to %@", reportDirectory);
 }
 
+static void CDTableDidMoveToWindow(UITableView *tableView, SEL selector) {
+    if (gCDOriginalTableDidMoveToWindow)
+        ((void (*)(id, SEL))gCDOriginalTableDidMoveToWindow)(tableView, selector);
+    if (!tableView.window) return;
+
+    // The managers screen may not exist during launch. Re-run discovery when
+    // any table actually becomes visible, then again after Filza populates it.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 75 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+        FilzaGestaltManagerInstall();
+    });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 450 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+        FilzaGestaltManagerInstall();
+    });
+}
+
+static void CDInstallTableLifecycleHook(void) {
+    if (gCDTableLifecycleHookInstalled) return;
+    Method method = class_getInstanceMethod(UITableView.class, @selector(didMoveToWindow));
+    if (!method) return;
+    gCDOriginalTableDidMoveToWindow = method_getImplementation(method);
+    method_setImplementation(method, (IMP)CDTableDidMoveToWindow);
+    gCDTableLifecycleHookInstalled = YES;
+    NSLog(@"[CompatibilityDiagnostics] late manager discovery hook installed");
+}
+
 __attribute__((constructor)) static void CDCompatibilityDiagnosticsInit(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        CDInstallTableLifecycleHook();
+        FilzaGestaltManagerInstall();
+    });
+
     [[NSNotificationCenter defaultCenter]
         addObserverForName:UIApplicationDidFinishLaunchingNotification
                     object:nil
                      queue:NSOperationQueue.mainQueue
                 usingBlock:^(__unused NSNotification *note) {
+                    CDInstallTableLifecycleHook();
+                    FilzaGestaltManagerInstall();
                     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
                         CDWriteCompatibilityReport();
                     });

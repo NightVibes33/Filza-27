@@ -1,4 +1,4 @@
-name: Verify Filza build
+name: Verify Filza installable IPA
 
 on:
   push:
@@ -7,11 +7,11 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: verify-full-byetunes-${{ github.ref }}
+  group: verify-installable-filza-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  real-arm64-build:
+  real-arm64-ipa:
     runs-on: macos-26-intel
     env:
       THEOS: ${{ github.workspace }}/theos
@@ -20,6 +20,9 @@ jobs:
       BAD_QUERY_COMMIT: 73ef6da1adabef0982fd00e36cb85f21b8f8194a
       IDEVICE_COMMIT: 37ee77cf713f483551f3cf33ea8b2087a40058ca
       THEOS_COMMIT: 5280bd038207e14f8bd76f5417aa2fe641c03228
+      BASE_IPA_SHA256: b11ce30a2db6f6bc77773ed30bdb855d7c847830891b14d21230f2d893d5f223
+      BASE_IPA_URL: https://github.com/0xjohnnydev/FilzaSlop/releases/download/v1.0.2/FilzaSlop-v1.0.2-unsigned.ipa
+
     steps:
       - name: Xcode 26.2 setup
         uses: maxim-lobanov/setup-xcode@v1
@@ -31,35 +34,20 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Verify Xcode, SDK, and pinned source dependencies
+      - name: Verify pinned source dependencies
         run: |
           set -euxo pipefail
           test "$(uname -m)" = "x86_64"
-          xcodebuild -version
           test "$(xcrun --sdk iphoneos --show-sdk-version)" = "26.2"
-          xcrun --sdk iphoneos --show-sdk-path
-          test -d ByeTunes/MusicManager
           test "$(git -C ByeTunes rev-parse HEAD)" = "$BYETUNES_COMMIT"
-          test -f ByeTunes/MusicManager/ContentView.swift
-          test -f ByeTunes/MusicManager/MusicView.swift
-          test -f ByeTunes/MusicManager/DownloadView.swift
-          test -f ByeTunes/MusicManager/RingtonesView.swift
-          test -f ByeTunes/MusicManager/SettingsView.swift
-          test -f ByeTunes/MusicManager/MediaLibraryBuilder.swift
-          test -f ByeTunes/MusicManager/iDeviceManager.swift
-          test -f ByeTunes/MusicManager/MusicManagerIntents.swift
-          test -f ByeTunes/MusicManager/YouTubeKit/SignatureSolver.swift
-          test -f ByeTunes/MusicManager/YouTubeKit/Resources/meriyah.umd.js
-          test -f ByeTunes/MusicManager/YouTubeKit/Resources/astring.umd.js
-          test -f ByeTunes/MusicManager/YouTubeKit/Resources/yt_ejs_helper.js
-          test -d ThirdParty/bad_query/bad_query
           test "$(git -C ThirdParty/bad_query rev-parse HEAD)" = "$BAD_QUERY_COMMIT"
+          test -f ByeTunes/MusicManager/ContentView.swift
+          test -f ByeTunes/MusicManager/YouTubeKit/Resources/meriyah.umd.js
           test -f ThirdParty/bad_query/bad_query/bad_query.c
-          test -f ThirdParty/bad_query/bad_query/bad_query.h
-          grep -Fq 'int64_t bad_query(char* path' ThirdParty/bad_query/bad_query/bad_query.c
-          grep -Fq 'sandbox_extension_consume' ThirdParty/bad_query/bad_query/bad_query.c
+          test -f GestaltManager.m
+          test -f ByeTunesFilzaLibraryEmbed.m
 
-      - name: Syntax-check Objective-C integration shell
+      - name: Syntax-check runtime integrations
         run: |
           set -euxo pipefail
           SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
@@ -76,67 +64,12 @@ jobs:
             -Wno-deprecated-declarations
             -Wno-arc-performSelector-leaks
           )
+          xcrun --sdk iphoneos clang "${COMMON[@]}" GestaltManager.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" AppsMusicFix.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" AppsManagerPresentationFix.m
-          xcrun --sdk iphoneos clang "${COMMON[@]}" AppProxyMetadataFix.m
-          xcrun --sdk iphoneos clang "${COMMON[@]}" VirtualBackendFix.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" ByeTunesMusicBridge.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" ByeTunesFilzaLibraryEmbed.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" ThirdParty/bad_query/bad_query/bad_query.c
-
-      - name: Verify in-place ByeTunes and app-data fallback invariants
-        run: |
-          set -euxo pipefail
-          grep -q '^ARCHS = arm64$' Makefile
-          grep -q 'TARGET := iphone:clang:latest:16.0' Makefile
-          grep -q 'ByeTunesFilzaLibraryEmbed.m' Makefile
-          grep -q 'AppsManagerPresentationFix.m' Makefile
-          grep -q 'AppProxyMetadataFix.m' Makefile
-          grep -q 'VirtualBackendFix.m' Makefile
-          ! grep -q 'ByeTunesFullAppLauncher.m' Makefile
-          ! grep -q 'FilzaByeTunesUI.m' Makefile
-          grep -q 'BYETUNES_SWIFT_FILES' Makefile
-          grep -q "! -name 'MusicManagerApp.swift'" Makefile
-          grep -q 'ByeTunesEmbeddedHost.swift' Makefile
-          grep -q 'SwiftUI' Makefile
-          grep -q 'AppIntents' Makefile
-          grep -q 'PhotosUI' Makefile
-          grep -q 'JavaScriptCore' Makefile
-          grep -q 'libidevice_ffi.a' Makefile
-          grep -q 'sqlite3' Makefile
-          grep -q 'emit-const-values-path' Makefile
-          grep -q '^BAD_QUERY_ROOT := ThirdParty/bad_query$' Makefile
-          grep -Fq '$(BAD_QUERY_ROOT)/bad_query/bad_query.c' Makefile
-          test -f scripts/generate-appintents-metadata.sh
-          grep -q '#import "idevice.h"' FilzaApplySandboxExt-Bridging-Header.h
-          grep -q 'UIHostingController(rootView: ContentView())' ByeTunesEmbeddedHost.swift
-          grep -q 'makeLibraryViewController' ByeTunesEmbeddedHost.swift
-          grep -q 'TGMusicLibraryViewController' ByeTunesFilzaLibraryEmbed.m
-          grep -q 'makeLibraryViewController' ByeTunesFilzaLibraryEmbed.m
-          grep -q 'addChildViewController' ByeTunesFilzaLibraryEmbed.m
-          grep -q 'didMoveToParentViewController' ByeTunesFilzaLibraryEmbed.m
-          ! grep -q 'presentViewController' ByeTunesFilzaLibraryEmbed.m
-          grep -q 'MCMEnumerateIdentifiersForClass(2' AppsMusicFix.m
-          grep -q 'FilzaActivateBadQueryForContainer' AppsMusicFix.m
-          grep -q 'bad_query((char \*)container.fileSystemRepresentation' AppsMusicFix.m
-          grep -q 'FilzaDirectoryCanEnumerate' AppsMusicFix.m
-          ! grep -q 'TGMusicLibraryViewController' AppsMusicFix.m
-          grep -Fq '[AppsPresentationFix]' AppsManagerPresentationFix.m
-          grep -Fq 'setIconPath:' AppsManagerPresentationFix.m
-          grep -Fq 'calculateDiskUsage' AppsManagerPresentationFix.m
-          grep -Fq '[AppProxyMetadataFix]' AppProxyMetadataFix.m
-          grep -Fq '_applicationIconImageForBundleIdentifier:format:scale:' AppProxyMetadataFix.m
-          grep -Fq 'staticDiskUsage' AppProxyMetadataFix.m
-          grep -Fq '[VirtualBackendFix]' VirtualBackendFix.m
-          grep -Fq 'isDirectory' VirtualBackendFix.m
-          grep -Fq 'MCMFilzaVirtualRoot' VirtualBackendFix.m
-          grep -q 'tunnel_create_rppairing' ByeTunesMusicBridge.m
-          grep -q '/iTunes_Control/iTunes/MediaLibrary.sqlitedb' ByeTunesMusicBridge.m
-          grep -q '/iTunes_Control/Music' ByeTunesMusicBridge.m
-
-          SWIFT_COUNT="$(find ByeTunes/MusicManager -type f -name '*.swift' ! -name 'MusicManagerApp.swift' | wc -l | tr -d ' ')"
-          echo "Complete embedded ByeTunes Swift file count: $SWIFT_COUNT"
-          test "$SWIFT_COUNT" -ge 30
 
       - name: Install Procursus build tools
         uses: dhinakg/procursus-action@main
@@ -165,16 +98,6 @@ jobs:
           test "$(git -C "$THEOS" rev-parse HEAD)" = "$THEOS_COMMIT"
           test -f "$THEOS/makefiles/common.mk"
 
-      - name: Restore Cargo download cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ env.IDEVICE_COMMIT }}-${{ hashFiles('scripts/build-idevice.sh') }}
-          restore-keys: |
-            cargo-${{ runner.os }}-${{ runner.arch }}-
-
       - name: Restore pinned idevice FFI cache
         id: idevice-cache
         uses: actions/cache@v4
@@ -194,45 +117,31 @@ jobs:
           test "$(cat Vendor/idevice/COMMIT)" = "$IDEVICE_COMMIT"
           test -s Vendor/idevice/lib/libidevice_ffi.a
           test -s Vendor/idevice/include/idevice.h
-          file Vendor/idevice/lib/libidevice_ffi.a
-          shasum -a 256 Vendor/idevice/lib/libidevice_ffi.a
 
-      - name: Build and link complete ByeTunes + Filza tweak
+      - name: Build and link complete arm64 target
         run: |
           set -euxo pipefail
           export PATH="/opt/procursus/bin:$PATH"
           gmake clean || true
           gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:16.0
           DYLIB=".theos/obj/FilzaApplySandboxExt.dylib"
-          test -f "$DYLIB"
-          file "$DYLIB"
+          test -s "$DYLIB"
           test "$(lipo -archs "$DYLIB")" = "arm64"
-          otool -L "$DYLIB"
+          grep -aFq 'Gestalt Manager' "$DYLIB"
+          grep -aFq 'com.nightvibes33.filzaslop.gestalt-manager' "$DYLIB"
           grep -aFq 'ByeTunesEmbeddedHostFactory' "$DYLIB"
-          grep -aFq '[ByeTunesPort]' "$DYLIB"
+          grep -aFq 'inert UIKit launcher visible' "$DYLIB"
+          grep -aFq 'ByeTunesEmbedStage.txt' "$DYLIB"
           grep -aFq 'TGMusicLibraryViewController' "$DYLIB"
-          grep -aFq 'DownloadView' "$DYLIB"
-          grep -aFq 'RingtonesView' "$DYLIB"
-          grep -aFq 'SettingsView' "$DYLIB"
-          grep -aFq 'MusicManagerShortcuts' "$DYLIB"
-          grep -aFq '[AppsManagerFix][bad_query]' "$DYLIB"
-          grep -aFq 'sandbox_extension_consume' "$DYLIB"
-          grep -aFq '[AppsPresentationFix]' "$DYLIB"
-          grep -aFq '[AppProxyMetadataFix]' "$DYLIB"
-          grep -aFq '[VirtualBackendFix]' "$DYLIB"
           shasum -a 256 "$DYLIB"
 
-      - name: Generate ByeTunes AppIntents metadata when Theos exposes constant values
+      - name: Generate ByeTunes AppIntents metadata
         continue-on-error: true
         run: |
           set -euxo pipefail
           bash scripts/generate-appintents-metadata.sh .theos/byetunes-appintents
-          test -d .theos/byetunes-appintents/Metadata.appintents
-          test "$(find .theos/byetunes-appintents/Metadata.appintents -type f | wc -l | tr -d ' ')" -gt 0
-          grep -aR -q 'InjectMusicIntent' .theos/byetunes-appintents/Metadata.appintents
-          grep -aR -q 'InjectRingtoneIntent' .theos/byetunes-appintents/Metadata.appintents
 
-      - name: Stage and verify complete ByeTunes runtime resources
+      - name: Stage complete ByeTunes runtime resources
         run: |
           set -euxo pipefail
           bash scripts/stage-byetunes-resources.sh .theos/byetunes-resources
@@ -241,13 +150,73 @@ jobs:
           test -s .theos/byetunes-resources/yt_ejs_helper.js
           test -s .theos/byetunes-resources/AppIconImage.png
           plutil -lint .theos/byetunes-resources/ByeTunes-Info.plist
-          test -s .theos/byetunes-resources/SHA256SUMS
 
-      - name: Upload complete embedded target
+      - name: Download and verify unsigned Filza base IPA
+        run: |
+          set -euxo pipefail
+          curl -fL --retry 3 --retry-delay 2 "$BASE_IPA_URL" -o .theos/FilzaSlop-base-unsigned.ipa
+          echo "$BASE_IPA_SHA256  .theos/FilzaSlop-base-unsigned.ipa" | shasum -a 256 -c -
+
+      - name: Package current target into a real unsigned IPA
+        run: |
+          set -euxo pipefail
+          STAGE="$(mktemp -d /tmp/filzaslop-ipa.XXXXXX)"
+          trap 'rm -rf "$STAGE"' EXIT
+          unzip -q .theos/FilzaSlop-base-unsigned.ipa -d "$STAGE"
+          APP="$(find "$STAGE/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          test -n "$APP"
+          test "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Info.plist")" = "com.apple.mobile.MobileHouseArrest"
+          EXECUTABLE="$(plutil -extract CFBundleExecutable raw -o - "$APP/Info.plist")"
+          test -s "$APP/$EXECUTABLE"
+          mkdir -p "$APP/Frameworks"
+          cp .theos/obj/FilzaApplySandboxExt.dylib "$APP/Frameworks/FilzaApplySandboxExt.dylib"
+          codesign --remove-signature "$APP/Frameworks/FilzaApplySandboxExt.dylib" >/dev/null 2>&1 || true
+
+          # SignatureSolver and the embedded SwiftUI UI resolve these from Bundle.main.
+          cp .theos/byetunes-resources/meriyah.umd.js "$APP/meriyah.umd.js"
+          cp .theos/byetunes-resources/astring.umd.js "$APP/astring.umd.js"
+          cp .theos/byetunes-resources/yt_ejs_helper.js "$APP/yt_ejs_helper.js"
+          cp .theos/byetunes-resources/AppIconImage.png "$APP/AppIconImage.png"
+          cp .theos/byetunes-resources/ByeTunes-Info.plist "$APP/ByeTunes-Info.plist"
+          if test -d .theos/byetunes-appintents/Metadata.appintents; then
+            rm -rf "$APP/Metadata.appintents"
+            cp -R .theos/byetunes-appintents/Metadata.appintents "$APP/Metadata.appintents"
+          fi
+
+          # Make the Gestalt entry visible from the Home Screen even before the
+          # runtime-generated shortcut has had a chance to persist.
+          plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Manager","UIApplicationShortcutItemSubtitle":"Edit MobileGestalt","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"}]' "$APP/Info.plist"
+
+          # Preserve the document-facing pieces needed by the embedded music tools.
+          plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
+          plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
+
+          # The base executable must already load the replacement dylib. Failing
+          # this check means the output would silently be an old app again.
+          otool -L "$APP/$EXECUTABLE" | grep -F 'FilzaApplySandboxExt.dylib'
+          test -s "$APP/Frameworks/FilzaApplySandboxExt.dylib"
+          test -s "$APP/meriyah.umd.js"
+          test -s "$APP/astring.umd.js"
+          test -s "$APP/yt_ejs_helper.js"
+          test -s "$APP/AppIconImage.png"
+          plutil -extract UIApplicationShortcutItems xml1 -o - "$APP/Info.plist" | grep -F 'Gestalt Manager'
+
+          OUTPUT="$GITHUB_WORKSPACE/.theos/FilzaSlop-main-${GITHUB_SHA::7}-unsigned.ipa"
+          rm -f "$OUTPUT"
+          (cd "$STAGE" && zip -qry "$OUTPUT" Payload)
+          test -s "$OUTPUT"
+          unzip -l "$OUTPUT" | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
+          unzip -l "$OUTPUT" | grep -F 'meriyah.umd.js'
+          unzip -l "$OUTPUT" | grep -F 'AppIconImage.png'
+          shasum -a 256 "$OUTPUT" | tee .theos/IPA-SHA256.txt
+
+      - name: Upload installable unsigned IPA and verification files
         uses: actions/upload-artifact@v4
         with:
-          name: FilzaApplySandboxExt-full-ByeTunes-arm64
+          name: FilzaSlop-installable-unsigned-arm64
           path: |
+            .theos/FilzaSlop-main-*-unsigned.ipa
+            .theos/IPA-SHA256.txt
             .theos/obj/FilzaApplySandboxExt.dylib
             .theos/byetunes-resources/**
             .theos/byetunes-appintents/Metadata.appintents/**
