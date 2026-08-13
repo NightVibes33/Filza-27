@@ -11,6 +11,7 @@
 #import <sys/stat.h>
 #import <unistd.h>
 
+#import "AppsMusicFix.h"
 #import "MCMBridge.h"
 #import "MCMFilzaIntegration.h"
 #include "bad_query.h"
@@ -241,7 +242,7 @@ static BOOL FilzaActivateBadQueryForContainer(NSString *identifier,
     }
 }
 
-static NSString *FilzaEnsureVirtualAppDataPath(NSString *identifier, NSString **error)
+NSString *FilzaEnsureVirtualAppDataPath(NSString *identifier, NSString **error)
 {
     if (!identifier.length) {
         if (error) *error = @"missing application identifier";
