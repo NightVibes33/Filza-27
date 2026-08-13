@@ -1,6 +1,7 @@
 @import Foundation;
 @import UIKit;
 
+#import <dirent.h>
 #import <errno.h>
 #import <fcntl.h>
 #import <limits.h>
@@ -12,6 +13,7 @@
 
 #import "MCMBridge.h"
 #import "MCMFilzaIntegration.h"
+#include "bad_query.h"
 
 @interface LSApplicationProxy : NSObject
 + (instancetype)applicationProxyForIdentifier:(NSString *)identifier;
@@ -22,6 +24,8 @@
 static IMP gPreviousAllApplications = NULL;
 static IMP gPreviousAppsDidSelect = NULL;
 static BOOL gAppsManagerHooksInstalled = NO;
+static NSMutableDictionary<NSString *, NSNumber *> *gBadQueryHandles;
+static const uint64_t kFilzaClass2LookupFlags = 0x900000000ULL;
 
 static NSString *FilzaProxyIdentifier(id proxy)
 {
@@ -114,6 +118,129 @@ static BOOL FilzaSameContainerPath(NSString *left, NSString *right)
     return [normalize(left) isEqualToString:normalize(right)];
 }
 
+static void FilzaEnsureBadQueryState(void)
+{
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        gBadQueryHandles = [NSMutableDictionary dictionary];
+    });
+}
+
+static BOOL FilzaDirectoryCanEnumerate(NSString *path, int *savedErrno)
+{
+    errno = 0;
+    DIR *directory = opendir(path.fileSystemRepresentation);
+    if (!directory) {
+        if (savedErrno) *savedErrno = errno;
+        return NO;
+    }
+    // Force at least one readdir call so this verifies directory enumeration,
+    // not merely that an O_DIRECTORY descriptor can be created.
+    errno = 0;
+    (void)readdir(directory);
+    int readErrno = errno;
+    closedir(directory);
+    if (readErrno != 0) {
+        if (savedErrno) *savedErrno = readErrno;
+        return NO;
+    }
+    if (savedErrno) *savedErrno = 0;
+    return YES;
+}
+
+static NSString *FilzaBadQueryFailureDescription(int64_t result)
+{
+    switch (result) {
+        case -255: return @"path is not absolute";
+        case -254: return @"path preflight reported missing";
+        case -1: return @"required ContainerManager/sandbox symbol unavailable";
+        case -2: return @"container_query_create failed";
+        case -3: return @"ContainerManager traversal query returned no result";
+        case -4: return @"kernel/containermanagerd returned no sandbox extension";
+        case -5: return @"path-domain construction failed";
+        default: return [NSString stringWithFormat:@"bad_query returned %lld", result];
+    }
+}
+
+static NSString *FilzaRawClass2ContainerPath(NSString *identifier, NSString **error)
+{
+    NSString *detail = nil;
+    MCMLease *lease = [MCMLease leaseForClass:2
+                                   identifier:identifier
+                                        group:NO
+                                         part:0
+                                        flags:kFilzaClass2LookupFlags
+                                        error:&detail];
+    NSString *root = lease.rootPath.copy;
+    [lease invalidate];
+    if (!root.length) {
+        if (error) *error = detail ?: @"class-2 metadata lookup returned no container root";
+        return nil;
+    }
+    if (error) *error = detail;
+    return root;
+}
+
+static BOOL FilzaActivateBadQueryForContainer(NSString *identifier,
+                                               NSString *container,
+                                               NSString **error)
+{
+    NSInteger major = NSProcessInfo.processInfo.operatingSystemVersion.majorVersion;
+    if (major < 26 || major > 27) {
+        if (error) *error = [NSString stringWithFormat:
+            @"bad_query fallback disabled on iOS %ld", (long)major];
+        return NO;
+    }
+    if (!identifier.length || !container.length || !container.isAbsolutePath) {
+        if (error) *error = @"bad_query fallback missing identifier/container";
+        return NO;
+    }
+
+    FilzaEnsureBadQueryState();
+    @synchronized (gBadQueryHandles) {
+        NSNumber *existing = gBadQueryHandles[identifier];
+        if (existing) {
+            int enumerateErrno = 0;
+            if (FilzaDirectoryCanEnumerate(container, &enumerateErrno)) {
+                if (error) *error = @"existing bad_query sandbox extension remains active";
+                return YES;
+            }
+            bad_query_release(existing.longLongValue);
+            [gBadQueryHandles removeObjectForKey:identifier];
+        }
+
+        // `create=true` intentionally skips bad_query's pre-extension lstat().
+        // We already resolved this exact root through a class-2 MCM metadata
+        // lookup, and lstat itself may be denied before the sandbox extension.
+        int64_t handle = bad_query((char *)container.fileSystemRepresentation,
+                                   true, NULL, false);
+        if (handle < 0) {
+            if (error) *error = FilzaBadQueryFailureDescription(handle);
+            NSLog(@"[AppsManagerFix][bad_query] activation failed id=%@ path=%@ result=%lld",
+                  identifier, container, handle);
+            return NO;
+        }
+
+        int enumerateErrno = 0;
+        if (!FilzaDirectoryCanEnumerate(container, &enumerateErrno)) {
+            bad_query_release(handle);
+            if (error) *error = [NSString stringWithFormat:
+                @"bad_query extension consumed but readdir still failed errno=%d (%s)",
+                enumerateErrno, strerror(enumerateErrno)];
+            NSLog(@"[AppsManagerFix][bad_query] post-activation readdir failed id=%@ path=%@ errno=%d",
+                  identifier, container, enumerateErrno);
+            return NO;
+        }
+
+        gBadQueryHandles[identifier] = @(handle);
+        if (error) *error = [NSString stringWithFormat:
+            @"bad_query sandbox extension active handle=%lld", handle];
+        NSLog(@"[AppsManagerFix][bad_query] activated id=%@ path=%@ handle=%lld",
+              identifier, container, handle);
+        return YES;
+    }
+}
+
 static NSString *FilzaEnsureVirtualAppDataPath(NSString *identifier, NSString **error)
 {
     if (!identifier.length) {
@@ -124,8 +251,23 @@ static NSString *FilzaEnsureVirtualAppDataPath(NSString *identifier, NSString **
     NSString *activationDetail = nil;
     NSString *container = MCMFilzaDataContainerPath(identifier, &activationDetail);
     if (!container.length) {
-        if (error) *error = activationDetail ?: @"class-2 container activation failed";
-        return nil;
+        NSString *lookupDetail = nil;
+        NSString *rawContainer = FilzaRawClass2ContainerPath(identifier, &lookupDetail);
+        NSString *fallbackDetail = nil;
+        if (!rawContainer.length ||
+            !FilzaActivateBadQueryForContainer(identifier, rawContainer, &fallbackDetail)) {
+            if (error) {
+                *error = [NSString stringWithFormat:
+                    @"MHA class-2 activation failed: %@; raw lookup: %@; bad_query fallback: %@",
+                    activationDetail ?: @"unknown",
+                    lookupDetail ?: @"no detail",
+                    fallbackDetail ?: @"not available"];
+            }
+            return nil;
+        }
+        container = rawContainer;
+        activationDetail = [NSString stringWithFormat:
+            @"MHA class-2 activation unavailable; %@", fallbackDetail ?: @"bad_query active"];
     }
 
     NSString *directory = [MCMFilzaVirtualRoot()
@@ -165,15 +307,13 @@ static NSString *FilzaEnsureVirtualAppDataPath(NSString *identifier, NSString **
         }
     }
 
-    // Verify the exact path Filza will browse, not merely the raw MCM root.
-    int descriptor = open(link.fileSystemRepresentation,
-                          O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-    if (descriptor < 0) {
-        if (error) *error = [NSString stringWithFormat:@"virtual app-data path open failed errno=%d (%s)",
-            errno, strerror(errno)];
+    int enumerateErrno = 0;
+    if (!FilzaDirectoryCanEnumerate(link, &enumerateErrno)) {
+        if (error) *error = [NSString stringWithFormat:
+            @"virtual app-data path readdir failed errno=%d (%s); activation=%@",
+            enumerateErrno, strerror(enumerateErrno), activationDetail ?: @"unknown"];
         return nil;
     }
-    close(descriptor);
 
     if (error) *error = activationDetail;
     return link;
@@ -196,10 +336,6 @@ static void FilzaAppsDidSelect(id self, SEL _cmd, id browserView, id indexPath)
         if (browsePath.length && [item respondsToSelector:setter])
             ((void (*)(id, SEL, id))objc_msgSend)(item, setter, browsePath);
 
-        // The shipped Filza binary exposes -[TGApplicationsViewController openPath:].
-        // Use it directly once the class-2 lease and virtual path are verified,
-        // rather than allowing the stock selection path to recalculate an empty
-        // jailed documentPath from LaunchServices.
         SEL openSelector = NSSelectorFromString(@"openPath:");
         if (browsePath.length && [self respondsToSelector:openSelector]) {
             NSLog(@"[AppsManagerFix] opening id=%@ via virtualPath=%@ detail=%@",
