@@ -4,7 +4,6 @@
 #import <fcntl.h>
 #import <limits.h>
 #import <signal.h>
-#import <stdio.h>
 #import <string.h>
 #import <unistd.h>
 
@@ -81,36 +80,49 @@ static void FilzaUncaughtExceptionHandler(NSException *exception)
     if (gPreviousExceptionHandler) gPreviousExceptionHandler(exception);
 }
 
-static const char *FilzaSignalName(int signalNumber)
-{
-    switch (signalNumber) {
-        case SIGABRT: return "SIGABRT";
-        case SIGILL: return "SIGILL";
-        case SIGTRAP: return "SIGTRAP";
-        case SIGBUS: return "SIGBUS";
-        case SIGSEGV: return "SIGSEGV";
-        case SIGFPE: return "SIGFPE";
-        default: return "SIGNAL";
-    }
-}
-
 static void FilzaSignalHandler(int signalNumber)
 {
     if (gFilzaSignalPath[0] == '\0') return;
-    char buffer[160];
-    int count = snprintf(buffer, sizeof(buffer),
-                         "FilzaSlop terminated by %s (%d). Check Runtime.log and ByeTunesEmbedStage.txt for the last completed stage.\n",
-                         FilzaSignalName(signalNumber), signalNumber);
-    if (count <= 0) return;
-    if ((size_t)count > sizeof(buffer)) count = (int)sizeof(buffer);
+
+    const char *message = "FilzaSlop terminated by a fatal signal. Check Runtime.log and ByeTunesEmbedStage.txt for the last completed stage.\n";
+    size_t length = sizeof("FilzaSlop terminated by a fatal signal. Check Runtime.log and ByeTunesEmbedStage.txt for the last completed stage.\n") - 1;
+    switch (signalNumber) {
+        case SIGABRT:
+            message = "FilzaSlop terminated by SIGABRT. Check Runtime.log and ByeTunesEmbedStage.txt for the last completed stage.\n";
+            length = sizeof("FilzaSlop terminated by SIGABRT. Check Runtime.log and ByeTunesEmbedStage.txt for the last completed stage.\n") - 1;
+            break;
+        case SIGILL:
+            message = "FilzaSlop terminated by SIGILL. Check Runtime.log and ByeTunesEmbedStage.txt for the last completed stage.\n";
+            length = sizeof("FilzaSlop terminated by SIGILL. Check Runtime.log and ByeTunesEmbedStage.txt for the last completed stage.\n") - 1;
+            break;
+        case SIGTRAP:
+            message = "FilzaSlop terminated by SIGTRAP. Check Runtime.log and ByeTunesEmbedStage.txt for the last completed stage.\n";
+            length = sizeof("FilzaSlop terminated by SIGTRAP. Check Runtime.log and ByeTunesEmbedStage.txt for the last completed stage.\n") - 1;
+            break;
+        case SIGBUS:
+            message = "FilzaSlop terminated by SIGBUS. Check Runtime.log and ByeTunesEmbedStage.txt for the last completed stage.\n";
+            length = sizeof("FilzaSlop terminated by SIGBUS. Check Runtime.log and ByeTunesEmbedStage.txt for the last completed stage.\n") - 1;
+            break;
+        case SIGSEGV:
+            message = "FilzaSlop terminated by SIGSEGV. Check Runtime.log and ByeTunesEmbedStage.txt for the last completed stage.\n";
+            length = sizeof("FilzaSlop terminated by SIGSEGV. Check Runtime.log and ByeTunesEmbedStage.txt for the last completed stage.\n") - 1;
+            break;
+        case SIGFPE:
+            message = "FilzaSlop terminated by SIGFPE. Check Runtime.log and ByeTunesEmbedStage.txt for the last completed stage.\n";
+            length = sizeof("FilzaSlop terminated by SIGFPE. Check Runtime.log and ByeTunesEmbedStage.txt for the last completed stage.\n") - 1;
+            break;
+        default:
+            break;
+    }
+
+    // Only async-signal-safe syscalls are used here. SA_RESETHAND restores the
+    // default disposition before this handler executes, so returning preserves
+    // the original fatal behavior while leaving a breadcrumb on disk.
     int fd = open(gFilzaSignalPath, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
     if (fd >= 0) {
-        (void)write(fd, buffer, (size_t)count);
-        (void)fsync(fd);
+        (void)write(fd, message, length);
         (void)close(fd);
     }
-    // SA_RESETHAND resets disposition before this handler runs. Returning lets
-    // the originating fatal condition proceed under its normal disposition.
 }
 
 static void FilzaInstallSignalHandler(int signalNumber)
