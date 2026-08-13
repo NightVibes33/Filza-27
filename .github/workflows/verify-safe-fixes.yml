@@ -172,7 +172,6 @@ jobs:
           cp .theos/obj/FilzaApplySandboxExt.dylib "$APP/Frameworks/FilzaApplySandboxExt.dylib"
           codesign --remove-signature "$APP/Frameworks/FilzaApplySandboxExt.dylib" >/dev/null 2>&1 || true
 
-          # SignatureSolver and the embedded SwiftUI UI resolve these from Bundle.main.
           cp .theos/byetunes-resources/meriyah.umd.js "$APP/meriyah.umd.js"
           cp .theos/byetunes-resources/astring.umd.js "$APP/astring.umd.js"
           cp .theos/byetunes-resources/yt_ejs_helper.js "$APP/yt_ejs_helper.js"
@@ -183,16 +182,10 @@ jobs:
             cp -R .theos/byetunes-appintents/Metadata.appintents "$APP/Metadata.appintents"
           fi
 
-          # Make the Gestalt entry visible from the Home Screen even before the
-          # runtime-generated shortcut has had a chance to persist.
           plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Manager","UIApplicationShortcutItemSubtitle":"Edit MobileGestalt","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"}]' "$APP/Info.plist"
-
-          # Preserve the document-facing pieces needed by the embedded music tools.
           plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
           plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
 
-          # The base executable must already load the replacement dylib. Failing
-          # this check means the output would silently be an old app again.
           otool -L "$APP/$EXECUTABLE" | grep -F 'FilzaApplySandboxExt.dylib'
           test -s "$APP/Frameworks/FilzaApplySandboxExt.dylib"
           test -s "$APP/meriyah.umd.js"
@@ -220,4 +213,6 @@ jobs:
             .theos/obj/FilzaApplySandboxExt.dylib
             .theos/byetunes-resources/**
             .theos/byetunes-appintents/Metadata.appintents/**
+          if-no-files-found: error
+          include-hidden-files: true
           retention-days: 14
