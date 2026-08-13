@@ -4,7 +4,7 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 
-#import "MCMFilzaIntegration.h"
+#import "AppsMusicFix.h"
 
 static IMP gOriginalIconDataForVariant = NULL;
 static IMP gOriginalStaticDiskUsage = NULL;
@@ -42,8 +42,12 @@ static unsigned long long FilzaAllocatedContainerBytes(NSString *identifier)
         if (cached) return cached.unsignedLongLongValue;
     }
 
+    // Reuse the exact path resolver used when the user opens an app from
+    // Filza's Apps Manager. This keeps the metadata and browser backends in
+    // lockstep: MHA class-2 first, then the pinned bad_query per-container
+    // fallback, followed by an actual readdir verification before returning.
     NSString *detail = nil;
-    NSString *root = MCMFilzaDataContainerPath(identifier, &detail);
+    NSString *root = FilzaEnsureVirtualAppDataPath(identifier, &detail);
     if (root.length == 0) {
         NSLog(@"[AppProxyMetadataFix] size unavailable id=%@ detail=%@", identifier, detail);
         return 0;
@@ -55,11 +59,13 @@ static unsigned long long FilzaAllocatedContainerBytes(NSString *identifier)
         NSURLFileAllocatedSizeKey,
         NSURLTotalFileAllocatedSizeKey,
     ];
+    __block BOOL partial = NO;
     NSDirectoryEnumerator<NSURL *> *enumerator =
         [NSFileManager.defaultManager enumeratorAtURL:rootURL
                            includingPropertiesForKeys:keys
                                               options:0
                                          errorHandler:^BOOL(NSURL *url, NSError *error) {
+        partial = YES;
         NSLog(@"[AppProxyMetadataFix] size traversal skipped path=%@ error=%@",
               url.path, error.localizedDescription);
         return YES;
@@ -70,7 +76,10 @@ static unsigned long long FilzaAllocatedContainerBytes(NSString *identifier)
         NSError *error = nil;
         NSDictionary<NSURLResourceKey, id> *values =
             [url resourceValuesForKeys:keys error:&error];
-        if (error) continue;
+        if (error) {
+            partial = YES;
+            continue;
+        }
         if (![values[NSURLIsRegularFileKey] boolValue]) continue;
         NSNumber *allocated = values[NSURLTotalFileAllocatedSizeKey];
         if (![allocated isKindOfClass:NSNumber.class])
@@ -81,8 +90,8 @@ static unsigned long long FilzaAllocatedContainerBytes(NSString *identifier)
     @synchronized (gContainerSizeCache) {
         gContainerSizeCache[identifier] = @(total);
     }
-    NSLog(@"[AppProxyMetadataFix] measured id=%@ bytes=%llu root=%@",
-          identifier, total, root);
+    NSLog(@"[AppProxyMetadataFix] measured id=%@ bytes=%llu root=%@ partial=%d detail=%@",
+          identifier, total, root, partial, detail);
     return total;
 }
 
