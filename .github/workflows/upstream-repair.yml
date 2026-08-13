@@ -56,3 +56,5 @@ jobs:
             exit 1
           fi
           git push origin HEAD:repair-filza-upstream-20260812
+
+# retrigger after workflow registration
