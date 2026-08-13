@@ -1,3 +1,6 @@
 [submodule "ByeTunes"]
 	path = ByeTunes
 	url = https://github.com/NightVibes33/ByeTunes.git
+[submodule "bad_query"]
+	path = ThirdParty/bad_query
+	url = https://github.com/forcequitOS/bad_query.git
