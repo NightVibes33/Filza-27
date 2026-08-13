@@ -5,7 +5,7 @@
 
 static const void *kByeTunesFilzaLibraryHostKey = &kByeTunesFilzaLibraryHostKey;
 static const void *kByeTunesFilzaLibraryEmbeddingKey = &kByeTunesFilzaLibraryEmbeddingKey;
-static IMP gByeTunesOriginalMusicViewDidLoad = NULL;
+static IMP gByeTunesSuperMusicViewDidLoad = NULL;
 static BOOL gByeTunesMusicHookInstalled = NO;
 
 static UIViewController *ByeTunesMakeFilzaLibraryController(void)
@@ -17,7 +17,34 @@ static UIViewController *ByeTunesMakeFilzaLibraryController(void)
         return nil;
     }
 
-    return ((UIViewController *(*)(id, SEL))objc_msgSend)(factory, selector);
+    @try {
+        return ((UIViewController *(*)(id, SEL))objc_msgSend)(factory, selector);
+    } @catch (NSException *exception) {
+        NSLog(@"[ByeTunesPort] host factory raised %@: %@",
+              exception.name, exception.reason ?: @"no reason");
+        return nil;
+    }
+}
+
+static void ByeTunesInstallFailureView(UIViewController *legacy, NSString *message)
+{
+    if (!legacy) return;
+
+    legacy.view.backgroundColor = UIColor.systemBackgroundColor;
+    UILabel *label = [[UILabel alloc] initWithFrame:CGRectZero];
+    label.translatesAutoresizingMaskIntoConstraints = NO;
+    label.numberOfLines = 0;
+    label.textAlignment = NSTextAlignmentCenter;
+    label.textColor = UIColor.secondaryLabelColor;
+    label.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+    label.text = message.length ? message : @"ByeTunes could not be loaded.";
+    [legacy.view addSubview:label];
+    [NSLayoutConstraint activateConstraints:@[
+        [label.leadingAnchor constraintGreaterThanOrEqualToAnchor:legacy.view.leadingAnchor constant:24.0],
+        [label.trailingAnchor constraintLessThanOrEqualToAnchor:legacy.view.trailingAnchor constant:-24.0],
+        [label.centerXAnchor constraintEqualToAnchor:legacy.view.centerXAnchor],
+        [label.centerYAnchor constraintEqualToAnchor:legacy.view.centerYAnchor],
+    ]];
 }
 
 static void ByeTunesEmbedInsideFilzaMusicLibrary(UIViewController *legacy)
@@ -39,45 +66,64 @@ static void ByeTunesEmbedInsideFilzaMusicLibrary(UIViewController *legacy)
                                  kByeTunesFilzaLibraryEmbeddingKey,
                                  nil,
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        ByeTunesInstallFailureView(legacy,
+            @"ByeTunes host creation failed. The legacy Filza music controller was intentionally not started.");
         NSLog(@"[ByeTunesPort] could not construct embedded ByeTunes library controller");
         return;
     }
 
-    [legacy addChildViewController:host];
-    host.view.frame = legacy.view.bounds;
-    host.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [legacy.view addSubview:host.view];
-    [host didMoveToParentViewController:legacy];
+    @try {
+        [legacy addChildViewController:host];
+        host.view.frame = legacy.view.bounds;
+        host.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        [legacy.view addSubview:host.view];
+        [host didMoveToParentViewController:legacy];
 
-    legacy.navigationItem.title = @"Music Library";
-    legacy.navigationItem.titleView = nil;
-    legacy.navigationItem.searchController = nil;
-    legacy.navigationItem.rightBarButtonItem = nil;
+        legacy.navigationItem.title = @"ByeTunes";
+        legacy.navigationItem.titleView = nil;
+        legacy.navigationItem.searchController = nil;
+        legacy.navigationItem.rightBarButtonItem = nil;
 
-    objc_setAssociatedObject(legacy,
-                             kByeTunesFilzaLibraryHostKey,
-                             host,
-                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(legacy,
+                                 kByeTunesFilzaLibraryHostKey,
+                                 host,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        NSLog(@"[ByeTunesPort] embedded complete ByeTunes ContentView inside TGMusicLibraryViewController");
+    } @catch (NSException *exception) {
+        NSLog(@"[ByeTunesPort] UIKit embed raised %@: %@",
+              exception.name, exception.reason ?: @"no reason");
+        [host willMoveToParentViewController:nil];
+        [host.view removeFromSuperview];
+        [host removeFromParentViewController];
+        ByeTunesInstallFailureView(legacy,
+            [NSString stringWithFormat:@"ByeTunes embed failed: %@", exception.reason ?: exception.name]);
+    }
+
     objc_setAssociatedObject(legacy,
                              kByeTunesFilzaLibraryEmbeddingKey,
                              nil,
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-
-    NSLog(@"[ByeTunesPort] embedded complete ByeTunes ContentView inside TGMusicLibraryViewController");
 }
 
 static void ByeTunesMusicLibraryViewDidLoad(id self, SEL _cmd)
 {
-    if (gByeTunesOriginalMusicViewDidLoad)
-        ((void (*)(id, SEL))gByeTunesOriginalMusicViewDidLoad)(self, _cmd);
+    // Do NOT invoke TGMusicLibraryViewController's original implementation.
+    // On the jailed iOS 27 build that legacy Filza music path can terminate the
+    // process before our SwiftUI host is ever constructed. We replace the
+    // screen, so only the superclass lifecycle is required.
+    if (gByeTunesSuperMusicViewDidLoad)
+        ((void (*)(id, SEL))gByeTunesSuperMusicViewDidLoad)(self, _cmd);
 
-    // Let Filza finish its own viewDidLoad before constructing the SwiftUI
-    // hierarchy. This avoids re-entrant UIKit loading while the legacy music
-    // controller is still being initialized.
-    __weak UIViewController *weakLegacy = (UIViewController *)self;
+    UIViewController *legacy = (UIViewController *)self;
+    if (!legacy.view) {
+        legacy.view = [[UIView alloc] initWithFrame:UIScreen.mainScreen.bounds];
+    }
+    legacy.view.backgroundColor = UIColor.systemBackgroundColor;
+
+    __weak UIViewController *weakLegacy = legacy;
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *legacy = weakLegacy;
-        if (legacy) ByeTunesEmbedInsideFilzaMusicLibrary(legacy);
+        UIViewController *strongLegacy = weakLegacy;
+        if (strongLegacy) ByeTunesEmbedInsideFilzaMusicLibrary(strongLegacy);
     });
 }
 
@@ -98,21 +144,20 @@ static void ByeTunesInstallFilzaMusicLibraryPort(void)
         return;
     }
 
-    IMP inheritedOrOwned = method_getImplementation(resolvedMethod);
+    Class superClass = class_getSuperclass(musicClass);
+    Method superMethod = superClass ? class_getInstanceMethod(superClass, selector) : NULL;
+    gByeTunesSuperMusicViewDidLoad = superMethod ? method_getImplementation(superMethod) : NULL;
+
     const char *types = method_getTypeEncoding(resolvedMethod);
 
-    // class_getInstanceMethod() also returns inherited methods. Mutating that
-    // Method directly can replace UIViewController/Filza superclass behavior
-    // process-wide. First try to add a class-local override. If the class
-    // already owns viewDidLoad, class_addMethod returns NO and we safely replace
-    // that class-owned implementation instead.
+    // class_getInstanceMethod() can return inherited methods. Add a local
+    // override first so this replacement never mutates a superclass method.
     if (class_addMethod(musicClass,
                         selector,
                         (IMP)ByeTunesMusicLibraryViewDidLoad,
                         types)) {
-        gByeTunesOriginalMusicViewDidLoad = inheritedOrOwned;
         gByeTunesMusicHookInstalled = YES;
-        NSLog(@"[ByeTunesPort] installed class-local Music Library viewDidLoad override");
+        NSLog(@"[ByeTunesPort] installed isolated Music Library replacement; legacy implementation bypassed");
         return;
     }
 
@@ -124,10 +169,9 @@ static void ByeTunesInstallFilzaMusicLibraryPort(void)
         return;
     }
 
-    gByeTunesOriginalMusicViewDidLoad = current;
     method_setImplementation(ownedMethod, (IMP)ByeTunesMusicLibraryViewDidLoad);
     gByeTunesMusicHookInstalled = YES;
-    NSLog(@"[ByeTunesPort] replaced TGMusicLibraryViewController-owned viewDidLoad");
+    NSLog(@"[ByeTunesPort] replaced TGMusicLibraryViewController viewDidLoad without invoking legacy implementation");
 }
 
 __attribute__((constructor)) static void ByeTunesFilzaLibraryPortInit(void)
