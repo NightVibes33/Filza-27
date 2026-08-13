@@ -68,7 +68,7 @@ static BTMusicSession *BTConnect(NSString **error)
     NSString *pairingPath = BTExistingPairingFile();
     if (!pairingPath) {
         if (error) *error = [NSString stringWithFormat:
-            @"ByeTunes pairing file missing. Put rpPairingFile.plist in %@/pairing file and enable LocalDevVPN.",
+            @"Music Library pairing file missing. Put rpPairingFile.plist in %@/pairing file and enable LocalDevVPN.",
             BTDocumentsDirectory()];
         return nil;
     }
@@ -88,7 +88,7 @@ static BTMusicSession *BTConnect(NSString **error)
     address.sin_family = AF_INET;
     address.sin_port = htons(BTRPPairingPort);
     if (inet_pton(AF_INET, BTRPPairingHost.UTF8String, &address.sin_addr) != 1) {
-        if (error) *error = @"invalid ByeTunes RPPairing endpoint";
+        if (error) *error = @"invalid Music Library RPPairing endpoint";
         return nil;
     }
 
@@ -281,7 +281,7 @@ NSArray<NSDictionary *> *BTMusicLoadLibrary(NSString **error)
 static NSString *BTMusicCacheDirectory(void)
 {
     NSString *directory = [BTDocumentsDirectory()
-        stringByAppendingPathComponent:@"Device Storage/[ByeTunes] Music Cache"];
+        stringByAppendingPathComponent:@"Device Storage/Music Library Cache"];
     [NSFileManager.defaultManager createDirectoryAtPath:directory
                              withIntermediateDirectories:YES
                                               attributes:@{NSFilePosixPermissions: @0700}

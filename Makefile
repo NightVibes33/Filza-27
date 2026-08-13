@@ -45,7 +45,7 @@ FilzaApplySandboxExt_FILES += XPF/external/ChOma/src/arm64.c XPF/external/ChOma/
 # because its @main owns a standalone UIApplication lifecycle; Filza already
 # owns that lifecycle. ByeTunesEmbeddedHost.swift exposes ContentView() as a
 # child controller that is mounted directly inside Filza's Music Library.
-BYETUNES_SWIFT_FILES := $(shell find $(BYETUNES_ROOT) -type f -name '*.swift' ! -name 'MusicManagerApp.swift' -print)
+BYETUNES_SWIFT_FILES := $(shell find $(BYETUNES_ROOT) -type f -name '*.swift' ! -name 'MusicManagerApp.swift' ! -name 'SplashView.swift' -print)
 FilzaApplySandboxExt_SWIFT_FILES = ByeTunesEmbeddedHost.swift MondGestaltView.swift $(BYETUNES_SWIFT_FILES)
 
 # --- Flags ---

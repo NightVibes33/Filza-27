@@ -18,8 +18,8 @@ This fork currently targets the iOS 18 / iOS 26 / early iOS 27 behavior exposed 
 | Gestalt Editor | ✅ Complete editor is linked into the main toolbar route |
 | Gestalt Home Screen quick action | ✅ Static action and runtime handler are both linked |
 | iOS 27 Gestalt key catalog | ✅ Included |
-| ByeTunes resources | ✅ Packaged into the IPA |
-| ByeTunes Music Library integration | ✅ Complete ByeTunes UI mounts directly; on-device validation still required |
+| Music Library resources | ✅ Packaged into the IPA |
+| Music Library integration | ✅ Complete UI opens directly without an intermediate loading or splash screen |
 | WebDAV server | ✅ Redirected to Filza's in-process server for jailed/sideloaded use |
 | Arbitrary `/` / full system filesystem access | ❌ Not established |
 
@@ -38,9 +38,9 @@ Current behavior includes:
 - App disk usage is retried after a real foreign data-container path becomes available instead of permanently showing `0 KB` from the initial inaccessible path.
 - App icon lookup includes a MobileIcons resource-proxy fallback and format `10` before older formats.
 
-### Music Library / ByeTunes
+### Music Library
 
-ByeTunes is compiled into the arm64 target and its runtime resources are copied into the final app bundle.
+The complete upstream music-management implementation is compiled into the arm64 target and its runtime resources are copied into the final app bundle.
 
 The packaged IPA includes:
 
@@ -52,11 +52,10 @@ AppIconImage.png
 ByeTunes-Info.plist
 ```
 
-The Music Library action now intercepts `TGMainView.openMusicLib` and presents the
-complete ByeTunes `ContentView` directly. The Home Screen Music Library action uses the
-same presenter. `TGMusicLibraryViewController` embedding remains only as a fallback.
-A small UIKit shell is attached first, then the complete SwiftUI application is
-constructed on the next main-loop turn so startup boundaries can be recorded.
+The Music Library action intercepts `TGMainView.openMusicLib` and constructs the
+complete SwiftUI `ContentView` immediately. The Home Screen Music Library action uses
+the same presenter. There is no intermediate UIKit loading controller, branded splash,
+or artificial delay. `TGMusicLibraryViewController` remains only as a fallback route.
 
 A runtime stage marker is written to:
 
@@ -82,9 +81,9 @@ Gestalt Editor
 Edit MobileGestalt
 ```
 
-Both the in-app button and Home Screen quick action immediately show the same embedded
-editor shell. MobileGestalt access is resolved from that visible screen; failures are
-shown there with the precise error and a Retry action instead of appearing to do nothing.
+Both the in-app button and Home Screen quick action open the same editor directly with
+no intermediate loading controller. MobileGestalt access is prewarmed after launch;
+an access failure is shown as a normal error alert instead of a fake editor screen.
 The editor attempts to resolve:
 
 ```text
@@ -108,10 +107,12 @@ Write handling includes:
 - post-write plist read-back validation;
 - automatic restoration of the backup if validation fails.
 
-The editor includes the complete device-artwork, software, hardware, eligibility,
-iPadOS, internal-feature, spoofing, Apply, and Revert controls. Writes use the verified
-direct-file-descriptor fallback, property-list read-back validation, and automatic
-backup restoration if validation fails.
+The editor follows `rooootdev/mond` GestaltView at upstream commit
+`50b76a500b34d70119e30e04921dcb138c284855`: complete device-artwork, software,
+hardware, eligibility, iPadOS, internal-feature, spoofing, Apply, and Revert controls;
+the same device/version gating; and the same warning and information dialogs. Filza's
+verified write bridge replaces Mond's standalone exploit lifecycle while preserving
+property-list read-back validation and automatic backup restoration.
 
 ### WebDAV server
 
@@ -120,7 +121,11 @@ and `/usr/libexec/filza/FilzaWebDAVServer` paths. Those paths cannot work from t
 sideloaded MobileHouseArrest app container. FilzaSlop now links a pinned complete
 `GCDWebDAVServer` implementation and forces WebDAV through that in-process server
 while preserving Filza's port, Bonjour, authentication, WebDAV methods, and
-shared-folder settings. It implements OPTIONS, PROPFIND, GET/HEAD, PUT, MKCOL,
+shared-folder settings. The runtime hooks Filza's actual `swithAirBrowserCheckbox`
+action (the selector is misspelled in Filza itself) and the underlying
+`air-browser` preference write/removal, so the visible switch now starts and stops
+the in-process listener instead of only changing its stored value. It implements
+OPTIONS, PROPFIND, GET/HEAD, PUT, MKCOL,
 DELETE, COPY, MOVE, LOCK, and UNLOCK. When Filza authentication is enabled, the
 server validates HTTP Basic credentials against Filza's saved password hash and
 refuses to start if those credentials are incomplete.
@@ -262,7 +267,7 @@ now performs the complete installable build:
 4. stages ByeTunes runtime resources;
 5. downloads and hash-verifies the pinned unsigned Filza base IPA;
 6. injects the current runtime dylib and resources;
-7. writes exactly three Home Screen shortcuts plus Local Network/Bonjour declarations into `Info.plist` and assigns build version `4.2`;
+7. writes exactly three Home Screen shortcuts plus Local Network/Bonjour declarations into `Info.plist` and assigns build version `4.3`;
 8. verifies the base executable actually loads `FilzaApplySandboxExt.dylib`;
 9. repacks a real unsigned IPA;
 10. uploads the IPA as a GitHub Actions artifact.
@@ -280,7 +285,7 @@ Open **Actions → Verify Filza installable IPA** to download the latest build a
 ## Current limitations
 
 - A green build proves the current source compiled, linked, packaged, and uploaded successfully. It does **not** prove every private API or sandbox-extension path still works on a specific iOS build.
-- ByeTunes, Gestalt Editor, and WebDAV still need on-device runtime validation after each new IPA build.
+- Music Library, Gestalt Editor, and WebDAV should be revalidated on-device after each new IPA build.
 - The existing container-access primitives do not establish unrestricted `/`, `/System`, `/Library`, `/Applications`, or arbitrary `/private` traversal.
 - No kernel read/write or full jailbreak primitive is claimed by this README.
 

@@ -113,6 +113,52 @@ private struct MondToggle: View {
     }
 }
 
+private struct MondInfoButton: View {
+    let title: String
+    let message: String
+    let warning: Bool
+    @State private var showing = false
+
+    var body: some View {
+        Button {
+            showing = true
+        } label: {
+            Image(systemName: warning ? "exclamationmark.triangle" : "info.circle")
+                .frame(width: 24, height: 22)
+        }
+        .buttonStyle(.plain)
+        .alert(title, isPresented: $showing) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(message)
+        }
+    }
+}
+
+private func mondSupportsDisableDynamicIsland() -> Bool {
+    let supported = [
+        "iPhone15,2", "iPhone15,3", "iPhone15,4", "iPhone15,5",
+        "iPhone16,1", "iPhone16,2", "iPhone17,3", "iPhone17,4",
+        "iPhone17,1", "iPhone17,2", "iPhone18,3", "iPhone18,1",
+        "iPhone18,2", "iPhone17,5"
+    ]
+    return supported.contains(mondMachineName()) && mondSystemVersion() < 19.0
+}
+
+private let mondAppleIntelligenceInstructions = """
+How to use this tweak:
+1. Spoof to the model next to the first one supported by Apple Intelligence.
+2. Spoof back to your model.
+3. Spoof to your final model and you should see the Apple Intelligence icon in Settings.
+4. Connect iPhone to power and leave Settings > Storage open for about one hour.
+
+Do not spoof back afterward.
+"""
+
+private let mondIPadUIWarning = """
+This is a very dangerous tweak. Do not use it with an alphanumeric passcode. Do not turn off “Show Dock In Stage Manager” or the device can bootloop when rotating to landscape. Opening Stage Manager after enabling this can also enter Recovery Mode. Other instability, including app data disappearing, has been reported.
+"""
+
 struct MondGestaltView: View {
     let gestaltPath: String
 
@@ -146,7 +192,7 @@ struct MondGestaltView: View {
     private var selectedSubtypeValue: Int {
         switch selectedSubtype {
         case "og": return originalSubtype
-        case "none": return 0
+        case "no_dynamic_island": return 0
         case "14p": return 2436
         case "14pm": return 2796
         case "15pm": return 2976
@@ -160,19 +206,18 @@ struct MondGestaltView: View {
 
     var body: some View {
         List {
-            if loading {
-                Section {
-                    HStack {
-                        ProgressView()
-                        Text("Loading MobileGestalt…")
-                    }
-                }
-            }
-
             if !valid || empty {
-                Section("Warning") {
-                    if empty { Label("Do not reboot — MobileGestalt.plist is empty.", systemImage: "exclamationmark.triangle.fill") }
-                    if !valid { Label("Do not reboot — MobileGestalt.plist is invalid.", systemImage: "exclamationmark.triangle.fill") }
+                Section {
+                    if empty {
+                        Label("Do not reboot — MobileGestalt.plist is empty.", systemImage: "exclamationmark.triangle.fill")
+                    }
+                    if !valid {
+                        Label("Do not reboot — MobileGestalt.plist is invalid.", systemImage: "exclamationmark.triangle.fill")
+                    }
+                } header: {
+                    Label("Warning", systemImage: "exclamationmark.triangle")
+                } footer: {
+                    Text("Rebooting now may cause a bootloop. Use Revert Tweaks first and confirm the warning disappears.")
                 }
             }
 
@@ -183,79 +228,130 @@ struct MondGestaltView: View {
                 Text("WARNING: These tweaks can break device features or soft-brick the device if misused.")
             }
 
-            Section("Device Artwork") {
+            Section {
                 Picker("Subtype", selection: $selectedSubtype) {
                     Text("Original (\(originalSubtype))").tag("og")
-                    Text("Disable Dynamic Island").tag("none")
+                    if mondSupportsDisableDynamicIsland() {
+                        Text("Disable Dynamic Island").tag("no_dynamic_island")
+                    }
                     Text("iPhone 14 Pro").tag("14p")
                     Text("iPhone 14 Pro Max").tag("14pm")
                     Text("iPhone 15 Pro Max").tag("15pm")
-                    Text("iPhone 16 Pro").tag("16p")
-                    Text("iPhone 16 Pro Max").tag("16pm")
-                    Text("iPhone Air").tag("air")
+                    if mondSystemVersion() >= 18.0 {
+                        Text("iPhone 16 Pro").tag("16p")
+                        Text("iPhone 16 Pro Max").tag("16pm")
+                    }
+                    if mondSystemVersion() >= 26.0 {
+                        Text("iPhone Air").tag("air")
+                    }
                     if mondHasHomeButton() { Text("iPhone X Gestures").tag("x") }
                 }
                 Toggle("Custom Device Name", isOn: $customDeviceName)
                 if customDeviceName { TextField("Device Name", text: $deviceName) }
+            } header: {
+                Label("Device Artwork", systemImage: "paintbrush.pointed")
             }
 
-            Section("Software-Oriented Features") {
+            Section {
                 MondToggle("Dynamic Island", minimum: 19.0, isOn: keyBinding(["YlEtTtHlNesRBMal1CqRaA"]))
                 MondToggle("Always On Display", minimum: 18.0, isOn: keyBinding(["j8/Omm6s1lsmTDFsXjsBfA", "2OOJf1VhaM7NxfRok3HbWQ"]))
                 MondToggle("AOD Vibrancy", minimum: 18.0, isOn: keyBinding(["ykpu7qyhqFweVMKtxNylWA"]))
                 MondToggle("Charge Limit", minimum: 17.0, isOn: keyBinding(["37NVydb//GP/GrhuTN+exg"]))
                 MondToggle("Boot Chime", isOn: keyBinding(["QHxt+hGLaBPbQJbXiUJX3w"]))
                 MondToggle("Liquid Glass LPM", minimum: 19.0, isOn: keyBinding(["SAGvsp6O6kAQ4fEfDJpC4Q"]))
+            } header: {
+                Label("Software-Oriented Features", systemImage: "gearshape")
             }
 
-            Section("Hardware-Oriented Features") {
+            Section {
                 MondToggle("Camera Control", minimum: 18.0, isOn: keyBinding(["CwvKxM2cEogD3p+HYgaW0Q", "oOV1jhJbdV3AddkcCg0AEA"]))
                 MondToggle("Action Button", minimum: 17.0, isOn: keyBinding(["cT44WE1EohiwRzhsZ8xEsw"]))
                 MondToggle("Crash Detection", isOn: keyBinding(["HCzWusHQwZDea6nNhaKndw"]))
                 if mondHasHomeButton() { MondToggle("Enable Tap to Wake", isOn: keyBinding(["yZf3GTRMGTuwSV/lD7Cagw"])) }
                 MondToggle("Pulse Width Modulation", minimum: 19.0, isOn: keyBinding(["6IejgN+1Fmu5/QrZFOIeNw"]))
+            } header: {
+                Label("Hardware-Oriented Features", systemImage: "iphone")
             }
 
-            Section("Eligibility") {
+            Section {
                 MondToggle("Security Research Device UI", minimum: 26.0, isOn: keyBinding(["XYlJKKkj2hztRP1NWWnhlw"]))
-                Toggle("Disable Region Restrictions", isOn: regionBinding())
-                MondToggle("Apple Intelligence", minimum: 18.1, isOn: appleIntelligenceBinding())
-                Picker("Spoofing", selection: $productType) {
-                    Text("Default").tag(mondMachineName())
-                    if UIDevice.current.userInterfaceIdiom == .pad {
-                        Text("iPad Pro 11-inch (M4)").tag("iPad16,3")
-                        Text("iPad Pro 11-inch (M4, Cellular)").tag("iPad16,4")
-                        Text("iPad Pro 11-inch (4th Gen)").tag("iPad14,3")
-                        Text("iPad Pro 11-inch (4th Gen, Cellular)").tag("iPad14,4")
-                    } else {
-                        Text("iPhone 15 Pro").tag("iPhone16,1")
-                        Text("iPhone 15 Pro Max").tag("iPhone16,2")
-                        Text("iPhone 16").tag("iPhone17,3")
-                        Text("iPhone 16 Plus").tag("iPhone17,4")
-                        Text("iPhone 16 Pro").tag("iPhone17,1")
-                        Text("iPhone 16 Pro Max").tag("iPhone17,2")
-                        Text("iPhone 17").tag("iPhone18,3")
-                        Text("iPhone 17 Pro").tag("iPhone18,1")
-                        Text("iPhone 17 Pro Max").tag("iPhone18,2")
-                        Text("iPhone Air").tag("iPhone18,4")
-                    }
+
+                HStack(spacing: 10) {
+                    Toggle("Disable Region Restrictions", isOn: regionBinding())
+                    MondInfoButton(
+                        title: "Region Restrictions",
+                        message: "This tweak may be broken or have no effect on some iOS versions or devices.",
+                        warning: false
+                    )
                 }
+
+                HStack(spacing: 10) {
+                    MondToggle("Apple Intelligence", minimum: 18.1, isOn: appleIntelligenceBinding())
+                    MondInfoButton(
+                        title: "Apple Intelligence",
+                        message: mondAppleIntelligenceInstructions,
+                        warning: false
+                    )
+                }
+
+                HStack(spacing: 10) {
+                    Picker("Spoofing", selection: $productType) {
+                        Text("Default").tag(mondMachineName())
+                        if UIDevice.current.userInterfaceIdiom == .pad {
+                            if mondSystemVersion() >= 17.4 {
+                                Text("iPad Pro 11-inch (M4)").tag("iPad16,3")
+                                Text("iPad Pro 11-inch (M4, Cellular)").tag("iPad16,4")
+                            }
+                            Text("iPad Pro 11-inch (4th Gen)").tag("iPad14,3")
+                            Text("iPad Pro 11-inch (4th Gen, Cellular)").tag("iPad14,4")
+                        } else {
+                            Text("iPhone 15 Pro").tag("iPhone16,1")
+                            Text("iPhone 15 Pro Max").tag("iPhone16,2")
+                            if mondSystemVersion() >= 18.0 {
+                                Text("iPhone 16").tag("iPhone17,3")
+                                Text("iPhone 16 Plus").tag("iPhone17,4")
+                                Text("iPhone 16 Pro").tag("iPhone17,1")
+                                Text("iPhone 16 Pro Max").tag("iPhone17,2")
+                            }
+                            if mondSystemVersion() >= 19.0 {
+                                Text("iPhone 17").tag("iPhone18,3")
+                                Text("iPhone 17 Pro").tag("iPhone18,1")
+                                Text("iPhone 17 Pro Max").tag("iPhone18,2")
+                                Text("iPhone Air").tag("iPhone18,4")
+                            }
+                        }
+                    }
+                    MondInfoButton(
+                        title: "Device Spoofing Info",
+                        message: "Only spoof your device model to download Apple Intelligence. This may break Face ID. If you unspoof and want to keep Apple Intelligence, do not re-enter Apple Intelligence & Siri in Settings.",
+                        warning: false
+                    )
+                }
+            } header: {
+                Label("Eligibility", systemImage: "checklist")
             }
 
-            Section("iPadOS Features") {
+            Section {
                 MondToggle("Allow Installing iPadOS Apps", isOn: arrayBinding("9MZ5AdH43csAUajl/dU+IQ"))
                 MondToggle("Apple Pencil Settings", isOn: keyBinding(["yhHcB0iH0d1XzPO/CFd3ow"]))
                 if UIDevice.current.userInterfaceIdiom == .pad {
                     MondToggle("Stage Manager", isOn: keyBinding(["qeaj75wk3HF4DwQ8qbIi7g"]))
                 }
-                Toggle("iPadOS UI", isOn: trollPadBinding())
-                    .disabled(cacheExtra?["+3Uf0Pm5F8Xy7Onyvko0vA"] as? String != "iPhone")
+                HStack(spacing: 10) {
+                    Toggle("iPadOS UI", isOn: trollPadBinding())
+                    MondInfoButton(title: "iPadOS UI Warning", message: mondIPadUIWarning, warning: true)
+                }
+                .disabled(cacheExtra?["+3Uf0Pm5F8Xy7Onyvko0vA"] as? String != "iPhone")
+            } header: {
+                Label("iPadOS Features", systemImage: "ipad")
             }
 
-            Section("Internal") {
+            Section {
                 MondToggle("Internal Storage", isOn: keyBinding(["LBJfwOEzExRxzlAnSuI7eg"]))
                 Toggle("Internal Features", isOn: internalBinding())
                 MondToggle("Metal HUD in All Apps", isOn: keyBinding(["EqrsVvjcYDdxHBiQmGhAWw"]))
+            } header: {
+                Label("Internal", systemImage: "ant")
             }
 
         }
@@ -291,7 +387,7 @@ struct MondGestaltView: View {
                 let extra = loaded["CacheExtra"] as? NSMutableDictionary ?? NSMutableDictionary()
                 let artwork = extra["oPeik/9e8lQWMszEjbPzng"] as? NSMutableDictionary ?? NSMutableDictionary()
                 let currentSubtype = artwork["ArtworkDeviceSubType"] as? Int ?? subtype
-                let subtypeMap = [0: "none", 2436: "14p", 2796: "14pm", 2976: "15pm", 2622: "16p", 2868: "16pm", 2736: "air"]
+                let subtypeMap = [0: "no_dynamic_island", 2436: "14p", 2796: "14pm", 2976: "15pm", 2622: "16p", 2868: "16pm", 2736: "air"]
                 let currentName = artwork["ArtworkDeviceProductDescription"] as? String ?? originalName
                 let currentProduct = extra["h9jDsbgj7xIVeIQ8S3/X3Q"] as? String ?? mondMachineName()
 
@@ -397,6 +493,7 @@ struct MondGestaltView: View {
         }, set: { enabled in
             guard let extra = cacheExtra else { return }
             if enabled {
+                message = "Do not use this to bypass restrictions required by regional law, including mandatory camera shutter sounds."
                 extra["h63QSdBCiT/z0WU6rdQv6Q"] = "US"
                 extra["zHeENZu+wbg7PUprwNwBWg"] = "LL/A"
             } else {
@@ -409,7 +506,12 @@ struct MondGestaltView: View {
     private func appleIntelligenceBinding() -> Binding<Bool> {
         let key = "A62OafQ85EJAiiqKn4agtg"
         return Binding(get: { (cacheExtra?[key] as? NSNumber)?.intValue == 1 }, set: { enabled in
-            if enabled { cacheExtra?[key] = 1 } else { cacheExtra?.removeObject(forKey: key) }
+            if enabled {
+                cacheExtra?[key] = 1
+                message = mondAppleIntelligenceInstructions
+            } else {
+                cacheExtra?.removeObject(forKey: key)
+            }
         })
     }
 
@@ -442,7 +544,7 @@ struct MondGestaltView: View {
 
     private func internalBinding() -> Binding<Bool> {
         let keys = ["EqrsVvjcYDdxHBiQmGhAWw", "Oji6HRoPi7rH7HPdWVakuw", "LBJfwOEzExRxzlAnSuI7eg"]
-        return Binding(get: { keys.allSatisfy { readCacheInt($0) == 1 } }, set: { enabled in
+        return Binding(get: { readCacheInt(keys[0]) == 1 }, set: { enabled in
             for key in keys { writeCacheInt(key, value: enabled ? 1 : 0) }
         })
     }
@@ -454,9 +556,10 @@ struct MondGestaltView: View {
         ]
         return Binding(get: {
             guard let extra = cacheExtra else { return false }
-            return readCacheInt("mtrAoWJ3gsq+I90ZnQ0vQw") == 3 && values.allSatisfy { (extra[$0] as? NSNumber)?.intValue == 1 }
+            return values.allSatisfy { (extra[$0] as? NSNumber)?.intValue == 1 }
         }, set: { enabled in
             guard let extra = cacheExtra else { return }
+            if enabled { message = mondIPadUIWarning }
             writeCacheInt("mtrAoWJ3gsq+I90ZnQ0vQw", value: enabled ? 3 : 1)
             for key in values {
                 if enabled { extra[key] = 1 } else { extra.removeObject(forKey: key) }
