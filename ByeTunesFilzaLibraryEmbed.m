@@ -4,6 +4,7 @@
 #import <objc/runtime.h>
 
 static const void *kByeTunesFilzaLibraryHostKey = &kByeTunesFilzaLibraryHostKey;
+static const void *kByeTunesFilzaLibraryEmbeddingKey = &kByeTunesFilzaLibraryEmbeddingKey;
 static IMP gByeTunesOriginalMusicViewDidLoad = NULL;
 static BOOL gByeTunesMusicHookInstalled = NO;
 
@@ -23,8 +24,21 @@ static void ByeTunesEmbedInsideFilzaMusicLibrary(UIViewController *legacy)
 {
     if (!legacy || objc_getAssociatedObject(legacy, kByeTunesFilzaLibraryHostKey)) return;
 
+    if ([objc_getAssociatedObject(legacy, kByeTunesFilzaLibraryEmbeddingKey) boolValue]) {
+        NSLog(@"[ByeTunesPort] blocked recursive Music Library embedding");
+        return;
+    }
+    objc_setAssociatedObject(legacy,
+                             kByeTunesFilzaLibraryEmbeddingKey,
+                             @YES,
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
     UIViewController *host = ByeTunesMakeFilzaLibraryController();
     if (!host) {
+        objc_setAssociatedObject(legacy,
+                                 kByeTunesFilzaLibraryEmbeddingKey,
+                                 nil,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         NSLog(@"[ByeTunesPort] could not construct embedded ByeTunes library controller");
         return;
     }
@@ -44,6 +58,10 @@ static void ByeTunesEmbedInsideFilzaMusicLibrary(UIViewController *legacy)
                              kByeTunesFilzaLibraryHostKey,
                              host,
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(legacy,
+                             kByeTunesFilzaLibraryEmbeddingKey,
+                             nil,
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
     NSLog(@"[ByeTunesPort] embedded complete ByeTunes ContentView inside TGMusicLibraryViewController");
 }
@@ -53,7 +71,14 @@ static void ByeTunesMusicLibraryViewDidLoad(id self, SEL _cmd)
     if (gByeTunesOriginalMusicViewDidLoad)
         ((void (*)(id, SEL))gByeTunesOriginalMusicViewDidLoad)(self, _cmd);
 
-    ByeTunesEmbedInsideFilzaMusicLibrary((UIViewController *)self);
+    // Let Filza finish its own viewDidLoad before constructing the SwiftUI
+    // hierarchy. This avoids re-entrant UIKit loading while the legacy music
+    // controller is still being initialized.
+    __weak UIViewController *weakLegacy = (UIViewController *)self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIViewController *legacy = weakLegacy;
+        if (legacy) ByeTunesEmbedInsideFilzaMusicLibrary(legacy);
+    });
 }
 
 static void ByeTunesInstallFilzaMusicLibraryPort(void)
