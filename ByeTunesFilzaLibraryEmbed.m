@@ -6,7 +6,9 @@
 static const void *kByeTunesFilzaLibraryHostKey = &kByeTunesFilzaLibraryHostKey;
 static const void *kByeTunesFilzaLibraryEmbeddingKey = &kByeTunesFilzaLibraryEmbeddingKey;
 static IMP gByeTunesSuperMusicViewDidLoad = NULL;
+static IMP gByeTunesOriginalPushViewController = NULL;
 static BOOL gByeTunesMusicHookInstalled = NO;
+static BOOL gByeTunesNavigationHookInstalled = NO;
 
 static UIViewController *ByeTunesMakeFilzaLibraryController(void)
 {
@@ -45,6 +47,66 @@ static void ByeTunesInstallFailureView(UIViewController *legacy, NSString *messa
         [label.centerXAnchor constraintEqualToAnchor:legacy.view.centerXAnchor],
         [label.centerYAnchor constraintEqualToAnchor:legacy.view.centerYAnchor],
     ]];
+}
+
+static UIViewController *ByeTunesMakeFailureController(NSString *message)
+{
+    UIViewController *controller = [UIViewController new];
+    controller.title = @"ByeTunes";
+    (void)controller.view;
+    ByeTunesInstallFailureView(controller, message);
+    return controller;
+}
+
+static BOOL ByeTunesIsLegacyMusicController(UIViewController *controller)
+{
+    if (!controller) return NO;
+    Class musicClass = NSClassFromString(@"TGMusicLibraryViewController");
+    if (musicClass && [controller isKindOfClass:musicClass]) return YES;
+    return [NSStringFromClass(controller.class) isEqualToString:@"TGMusicLibraryViewController"];
+}
+
+static void ByeTunesNavigationPushViewController(id self, SEL _cmd,
+                                                  UIViewController *candidate,
+                                                  BOOL animated)
+{
+    UIViewController *destination = candidate;
+    if (ByeTunesIsLegacyMusicController(candidate)) {
+        NSLog(@"[ByeTunesPort] intercepted TGMusicLibraryViewController before view loading");
+        destination = ByeTunesMakeFilzaLibraryController();
+        if (!destination) {
+            destination = ByeTunesMakeFailureController(
+                @"ByeTunes host creation failed. The legacy Filza music controller was not opened.");
+        }
+        destination.title = @"ByeTunes";
+        NSLog(@"[ByeTunesPort] routing Filza Music Library directly to %@",
+              NSStringFromClass(destination.class));
+    }
+
+    if (gByeTunesOriginalPushViewController)
+        ((void (*)(id, SEL, UIViewController *, BOOL))gByeTunesOriginalPushViewController)(
+            self, _cmd, destination, animated);
+}
+
+static void ByeTunesInstallNavigationRoute(void)
+{
+    if (gByeTunesNavigationHookInstalled) return;
+
+    Class navigationClass = UINavigationController.class;
+    SEL selector = @selector(pushViewController:animated:);
+    Method method = class_getInstanceMethod(navigationClass, selector);
+    if (!method) return;
+
+    IMP current = method_getImplementation(method);
+    if (current == (IMP)ByeTunesNavigationPushViewController) {
+        gByeTunesNavigationHookInstalled = YES;
+        return;
+    }
+
+    gByeTunesOriginalPushViewController = current;
+    method_setImplementation(method, (IMP)ByeTunesNavigationPushViewController);
+    gByeTunesNavigationHookInstalled = YES;
+    NSLog(@"[ByeTunesPort] installed direct Music Library navigation route");
 }
 
 static void ByeTunesEmbedInsideFilzaMusicLibrary(UIViewController *legacy)
@@ -107,10 +169,9 @@ static void ByeTunesEmbedInsideFilzaMusicLibrary(UIViewController *legacy)
 
 static void ByeTunesMusicLibraryViewDidLoad(id self, SEL _cmd)
 {
+    // Fallback only. The normal path is intercepted in UINavigationController
+    // before TGMusicLibraryViewController's view loads at all.
     // Do NOT invoke TGMusicLibraryViewController's original implementation.
-    // On the jailed iOS 27 build that legacy Filza music path can terminate the
-    // process before our SwiftUI host is ever constructed. We replace the
-    // screen, so only the superclass lifecycle is required.
     if (gByeTunesSuperMusicViewDidLoad)
         ((void (*)(id, SEL))gByeTunesSuperMusicViewDidLoad)(self, _cmd);
 
@@ -129,6 +190,7 @@ static void ByeTunesMusicLibraryViewDidLoad(id self, SEL _cmd)
 
 static void ByeTunesInstallFilzaMusicLibraryPort(void)
 {
+    ByeTunesInstallNavigationRoute();
     if (gByeTunesMusicHookInstalled) return;
 
     Class musicClass = NSClassFromString(@"TGMusicLibraryViewController");
