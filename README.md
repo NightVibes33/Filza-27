@@ -15,11 +15,11 @@ This fork currently targets the iOS 18 / iOS 26 / early iOS 27 behavior exposed 
 | Foreign app data-container fallback | ✅ Integrated |
 | App size metadata retry | ✅ Integrated |
 | App icon fallback | ✅ Integrated |
-| Gestalt Manager | ✅ Built and packaged |
-| Gestalt Home Screen quick action | ✅ Packaged in `Info.plist` |
+| Gestalt Editor | ✅ Complete editor is linked into the main toolbar route |
+| Gestalt Home Screen quick action | ✅ Static action and runtime handler are both linked |
 | iOS 27 Gestalt key catalog | ✅ Included |
 | ByeTunes resources | ✅ Packaged into the IPA |
-| ByeTunes runtime stability | ⚠️ Still requires on-device validation |
+| ByeTunes Music Library integration | ✅ Complete ByeTunes UI mounts directly; on-device validation still required |
 | Arbitrary `/` / full system filesystem access | ❌ Not established |
 
 ## Managers
@@ -51,28 +51,36 @@ AppIconImage.png
 ByeTunes-Info.plist
 ```
 
-The embed now starts through an inert UIKit boundary instead of immediately constructing the full SwiftUI runtime when the Music Library screen is opened.
+The Music Library entry now mounts the complete ByeTunes `ContentView` directly inside
+`TGMusicLibraryViewController`. There is no inert “Load ByeTunes” placeholder. A small
+UIKit shell is attached first, then the complete SwiftUI application is constructed on
+the next main-loop turn so startup boundaries can be recorded without replacing the UI.
 
 A runtime stage marker is written to:
 
 ```text
-Documents/ByeTunesEmbedStage.txt
+Documents/FilzaSlop Logs/ByeTunesEmbedStage.txt
 ```
 
-If the embedded UI still crashes on device, that file is used to identify how far startup reached. CI success only proves compilation/linking and packaging; it does not prove the embedded runtime survives on-device execution.
+The stage log records the factory call, `ContentView` construction, hosting-controller
+construction, view materialization, and final attachment. CI proves the complete source
+is compiled and linked into the IPA; the installed build still requires device runtime
+validation.
 
-### Gestalt Manager
+### Gestalt Editor
 
-Gestalt Manager is built directly into the Filza runtime and is intended to appear alongside the other manager entries.
+The complete Gestalt editor is compiled into the Filza runtime. A **Gestalt Editor**
+button is inserted into `TGMainView` beside the existing Apps and Music actions.
 
 It is also exposed as a static Home Screen quick action:
 
 ```text
-Gestalt Manager
+Gestalt Editor
 Edit MobileGestalt
 ```
 
-The manager attempts to resolve:
+Both the in-app button and Home Screen quick action resolve the same embedded editor.
+The editor attempts to resolve:
 
 ```text
 /private/var/containers/Shared/SystemGroup/systemgroup.com.apple.mobilegestaltcache/Library/Caches/com.apple.MobileGestalt.plist
@@ -95,7 +103,10 @@ Write handling includes:
 - post-write plist read-back validation;
 - automatic restoration of the backup if validation fails.
 
-The manager supports feature toggles, raw key inspection/editing, `CacheData`-backed values where an offset can be resolved, key search, and restore/reload controls.
+The editor includes the complete device-artwork, software, hardware, eligibility,
+iPadOS, internal-feature, spoofing, Apply, and Revert controls. Writes use the verified
+direct-file-descriptor fallback, property-list read-back validation, and automatic
+backup restoration if validation fails.
 
 ## iOS 27 Gestalt keys
 
@@ -220,7 +231,7 @@ now performs the complete installable build:
 4. stages ByeTunes runtime resources;
 5. downloads and hash-verifies the pinned unsigned Filza base IPA;
 6. injects the current runtime dylib and resources;
-7. writes the Gestalt Manager Home Screen shortcut into `Info.plist`;
+7. writes exactly three Home Screen shortcuts into `Info.plist` and assigns build version `4.1`;
 8. verifies the base executable actually loads `FilzaApplySandboxExt.dylib`;
 9. repacks a real unsigned IPA;
 10. uploads the IPA as a GitHub Actions artifact.
@@ -238,7 +249,7 @@ Open **Actions → Verify Filza installable IPA** to download the latest build a
 ## Current limitations
 
 - A green build proves the current source compiled, linked, packaged, and uploaded successfully. It does **not** prove every private API or sandbox-extension path still works on a specific iOS build.
-- ByeTunes still needs on-device runtime validation after the packaging fixes.
+- ByeTunes and Gestalt Editor still need on-device runtime validation after each new IPA build.
 - The existing container-access primitives do not establish unrestricted `/`, `/System`, `/Library`, `/Applications`, or arbitrary `/private` traversal.
 - No kernel read/write or full jailbreak primitive is claimed by this README.
 
@@ -256,3 +267,4 @@ Open **Actions → Verify Filza installable IPA** to download the latest build a
 - XPF and ChOma contributors
 - `SerStars/nugget-wallpapers`
 - mightycooldude12
+- [`rooootdev/mond`](https://github.com/rooootdev/mond) for the Gestalt editor behavior integrated into this fork
