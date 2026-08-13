@@ -5,6 +5,7 @@
 
 static const void *kByeTunesFilzaLibraryHostKey = &kByeTunesFilzaLibraryHostKey;
 static IMP gByeTunesOriginalMusicViewDidLoad = NULL;
+static BOOL gByeTunesMusicHookInstalled = NO;
 
 static UIViewController *ByeTunesMakeFilzaLibraryController(void)
 {
@@ -34,9 +35,6 @@ static void ByeTunesEmbedInsideFilzaMusicLibrary(UIViewController *legacy)
     [legacy.view addSubview:host.view];
     [host didMoveToParentViewController:legacy];
 
-    // The Filza navigation controller remains the owner of navigation. ByeTunes
-    // itself is now the contents of the existing Music Library destination,
-    // rather than a second modal application launched on top of it.
     legacy.navigationItem.title = @"Music Library";
     legacy.navigationItem.titleView = nil;
     legacy.navigationItem.searchController = nil;
@@ -60,6 +58,8 @@ static void ByeTunesMusicLibraryViewDidLoad(id self, SEL _cmd)
 
 static void ByeTunesInstallFilzaMusicLibraryPort(void)
 {
+    if (gByeTunesMusicHookInstalled) return;
+
     Class musicClass = NSClassFromString(@"TGMusicLibraryViewController");
     if (!musicClass) {
         NSLog(@"[ByeTunesPort] TGMusicLibraryViewController not loaded yet");
@@ -67,18 +67,42 @@ static void ByeTunesInstallFilzaMusicLibraryPort(void)
     }
 
     SEL selector = @selector(viewDidLoad);
-    Method method = class_getInstanceMethod(musicClass, selector);
-    if (!method) {
+    Method resolvedMethod = class_getInstanceMethod(musicClass, selector);
+    if (!resolvedMethod) {
         NSLog(@"[ByeTunesPort] TGMusicLibraryViewController has no viewDidLoad method");
         return;
     }
 
-    IMP current = method_getImplementation(method);
-    if (current == (IMP)ByeTunesMusicLibraryViewDidLoad) return;
+    IMP inheritedOrOwned = method_getImplementation(resolvedMethod);
+    const char *types = method_getTypeEncoding(resolvedMethod);
+
+    // class_getInstanceMethod() also returns inherited methods. Mutating that
+    // Method directly can replace UIViewController/Filza superclass behavior
+    // process-wide. First try to add a class-local override. If the class
+    // already owns viewDidLoad, class_addMethod returns NO and we safely replace
+    // that class-owned implementation instead.
+    if (class_addMethod(musicClass,
+                        selector,
+                        (IMP)ByeTunesMusicLibraryViewDidLoad,
+                        types)) {
+        gByeTunesOriginalMusicViewDidLoad = inheritedOrOwned;
+        gByeTunesMusicHookInstalled = YES;
+        NSLog(@"[ByeTunesPort] installed class-local Music Library viewDidLoad override");
+        return;
+    }
+
+    Method ownedMethod = class_getInstanceMethod(musicClass, selector);
+    if (!ownedMethod) return;
+    IMP current = method_getImplementation(ownedMethod);
+    if (current == (IMP)ByeTunesMusicLibraryViewDidLoad) {
+        gByeTunesMusicHookInstalled = YES;
+        return;
+    }
 
     gByeTunesOriginalMusicViewDidLoad = current;
-    method_setImplementation(method, (IMP)ByeTunesMusicLibraryViewDidLoad);
-    NSLog(@"[ByeTunesPort] Filza Music Library now routes in-place to ByeTunes");
+    method_setImplementation(ownedMethod, (IMP)ByeTunesMusicLibraryViewDidLoad);
+    gByeTunesMusicHookInstalled = YES;
+    NSLog(@"[ByeTunesPort] replaced TGMusicLibraryViewController-owned viewDidLoad");
 }
 
 __attribute__((constructor)) static void ByeTunesFilzaLibraryPortInit(void)
@@ -94,7 +118,6 @@ __attribute__((constructor)) static void ByeTunesFilzaLibraryPortInit(void)
                 ByeTunesInstallFilzaMusicLibraryPort();
             }];
 
-        // A delayed retry covers Filza builds that lazily load the library class.
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC),
                        dispatch_get_main_queue(), ^{
             ByeTunesInstallFilzaMusicLibraryPort();
