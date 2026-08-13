@@ -16,7 +16,7 @@ BAD_QUERY_ROOT := ThirdParty/bad_query
 # TGMusicLibraryViewController contents in-place with the real ByeTunes SwiftUI
 # root; the older custom table and modal full-app launcher are intentionally not
 # linked anymore.
-FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataRetryFix.m AppIconResourceProxyFix.m VirtualBackendFix.m SystemPathDiagnostics.m BadQuerySystemProbe.m GestaltManager.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m FilzaDiagnostics.m FilzaQuickActions.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
+FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataRetryFix.m AppIconResourceProxyFix.m VirtualBackendFix.m SystemPathDiagnostics.m BadQuerySystemProbe.m GestaltManager.m FilzaMondBridge.m FilzaMainToolbarGestalt.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m FilzaDiagnostics.m FilzaQuickActions.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
 
 # Pinned bad_query backs the verified foreign-container, system-root, and
 # MobileGestalt access paths. A returned handle is not treated as proof of
@@ -39,7 +39,7 @@ FilzaApplySandboxExt_FILES += XPF/external/ChOma/src/arm64.c XPF/external/ChOma/
 # owns that lifecycle. ByeTunesEmbeddedHost.swift exposes ContentView() as a
 # child controller that is mounted directly inside Filza's Music Library.
 BYETUNES_SWIFT_FILES := $(shell find $(BYETUNES_ROOT) -type f -name '*.swift' ! -name 'MusicManagerApp.swift' -print)
-FilzaApplySandboxExt_SWIFT_FILES = ByeTunesEmbeddedHost.swift $(BYETUNES_SWIFT_FILES)
+FilzaApplySandboxExt_SWIFT_FILES = ByeTunesEmbeddedHost.swift MondGestaltView.swift $(BYETUNES_SWIFT_FILES)
 
 # --- Flags ---
 FilzaApplySandboxExt_CFLAGS = -I$(PWD)/compat -I$(PWD) -I$(PWD)/XPF/src -I$(PWD)/XPF/external/ChOma/include -I$(IDEVICE_VENDOR)/include -I$(PWD)/$(BAD_QUERY_ROOT)/bad_query \
@@ -82,6 +82,9 @@ before-FilzaApplySandboxExt-all::
 	@test -f "SystemPathDiagnostics.m" || (echo "Missing SystemPathDiagnostics.m" >&2; exit 1)
 	@test -f "BadQuerySystemProbe.m" || (echo "Missing BadQuerySystemProbe.m" >&2; exit 1)
 	@test -f "GestaltManager.m" || (echo "Missing GestaltManager.m" >&2; exit 1)
+	@test -f "FilzaMondBridge.m" || (echo "Missing FilzaMondBridge.m" >&2; exit 1)
+	@test -f "FilzaMainToolbarGestalt.m" || (echo "Missing FilzaMainToolbarGestalt.m" >&2; exit 1)
+	@test -f "MondGestaltView.swift" || (echo "Missing MondGestaltView.swift" >&2; exit 1)
 	@test -f "FilzaDiagnostics.m" || (echo "Missing FilzaDiagnostics.m" >&2; exit 1)
 	@test -f "FilzaQuickActions.m" || (echo "Missing FilzaQuickActions.m" >&2; exit 1)
 
