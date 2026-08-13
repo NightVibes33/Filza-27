@@ -4,193 +4,197 @@
 #import <objc/runtime.h>
 
 static const void *kByeTunesFilzaLibraryHostKey = &kByeTunesFilzaLibraryHostKey;
-static const void *kByeTunesFilzaLibraryEmbeddingKey = &kByeTunesFilzaLibraryEmbeddingKey;
 static IMP gByeTunesSuperMusicViewDidLoad = NULL;
-static IMP gByeTunesOriginalPushViewController = NULL;
 static BOOL gByeTunesMusicHookInstalled = NO;
-static BOOL gByeTunesNavigationHookInstalled = NO;
 
-static UIViewController *ByeTunesMakeFilzaLibraryController(void)
+static NSString *ByeTunesCrashStagePath(void)
 {
+    NSString *documents = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,
+                                                               NSUserDomainMask,
+                                                               YES).firstObject;
+    if (!documents.length) documents = NSTemporaryDirectory();
+    return [documents stringByAppendingPathComponent:@"ByeTunesEmbedStage.txt"];
+}
+
+static void ByeTunesWriteStage(NSString *stage)
+{
+    NSString *line = [NSString stringWithFormat:@"%@ | %@\n",
+                      NSDate.date.description,
+                      stage ?: @"unknown"];
+    [line writeToFile:ByeTunesCrashStagePath()
+           atomically:YES
+             encoding:NSUTF8StringEncoding
+                error:nil];
+    NSLog(@"[ByeTunesPort][stage] %@", stage);
+}
+
+static UIViewController *ByeTunesMakeSwiftController(void)
+{
+    ByeTunesWriteStage(@"before Swift host factory");
     Class factory = NSClassFromString(@"ByeTunesEmbeddedHostFactory");
     SEL selector = NSSelectorFromString(@"makeLibraryViewController");
     if (!factory || ![factory respondsToSelector:selector]) {
-        NSLog(@"[ByeTunesPort] embedded Swift host factory unavailable");
+        ByeTunesWriteStage(@"Swift host factory unavailable");
         return nil;
     }
 
     @try {
-        return ((UIViewController *(*)(id, SEL))objc_msgSend)(factory, selector);
+        UIViewController *controller =
+            ((UIViewController *(*)(id, SEL))objc_msgSend)(factory, selector);
+        ByeTunesWriteStage(controller ? @"Swift factory returned controller"
+                                        : @"Swift factory returned nil");
+        return controller;
     } @catch (NSException *exception) {
-        NSLog(@"[ByeTunesPort] host factory raised %@: %@",
-              exception.name, exception.reason ?: @"no reason");
+        ByeTunesWriteStage([NSString stringWithFormat:@"Objective-C exception in Swift factory: %@",
+                            exception.reason ?: exception.name]);
         return nil;
     }
 }
 
-static void ByeTunesInstallFailureView(UIViewController *legacy, NSString *message)
-{
-    if (!legacy) return;
+@interface ByeTunesSafeLaunchController : UIViewController
+@property(nonatomic, strong) UILabel *statusLabel;
+@property(nonatomic, strong) UIButton *loadButton;
+@property(nonatomic, assign) BOOL loading;
+@end
 
-    legacy.view.backgroundColor = UIColor.systemBackgroundColor;
-    UILabel *label = [[UILabel alloc] initWithFrame:CGRectZero];
-    label.translatesAutoresizingMaskIntoConstraints = NO;
-    label.numberOfLines = 0;
-    label.textAlignment = NSTextAlignmentCenter;
-    label.textColor = UIColor.secondaryLabelColor;
-    label.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
-    label.text = message.length ? message : @"ByeTunes could not be loaded.";
-    [legacy.view addSubview:label];
+@implementation ByeTunesSafeLaunchController
+
+- (void)viewDidLoad
+{
+    [super viewDidLoad];
+    ByeTunesWriteStage(@"inert UIKit launcher visible");
+
+    self.view.backgroundColor = UIColor.systemBackgroundColor;
+    self.title = @"ByeTunes";
+
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectZero];
+    title.translatesAutoresizingMaskIntoConstraints = NO;
+    title.text = @"ByeTunes";
+    title.font = [UIFont preferredFontForTextStyle:UIFontTextStyleLargeTitle];
+    title.textAlignment = NSTextAlignmentCenter;
+
+    UILabel *status = [[UILabel alloc] initWithFrame:CGRectZero];
+    status.translatesAutoresizingMaskIntoConstraints = NO;
+    status.text = @"Startup isolation active. Tap Load ByeTunes to enter the Swift UI.";
+    status.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+    status.textColor = UIColor.secondaryLabelColor;
+    status.numberOfLines = 0;
+    status.textAlignment = NSTextAlignmentCenter;
+    self.statusLabel = status;
+
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
+    button.translatesAutoresizingMaskIntoConstraints = NO;
+    [button setTitle:@"Load ByeTunes" forState:UIControlStateNormal];
+    button.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    [button addTarget:self action:@selector(loadByeTunes:) forControlEvents:UIControlEventTouchUpInside];
+    self.loadButton = button;
+
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[title, status, button]];
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    stack.axis = UILayoutConstraintAxisVertical;
+    stack.alignment = UIStackViewAlignmentFill;
+    stack.spacing = 18.0;
+    [self.view addSubview:stack];
+
     [NSLayoutConstraint activateConstraints:@[
-        [label.leadingAnchor constraintGreaterThanOrEqualToAnchor:legacy.view.leadingAnchor constant:24.0],
-        [label.trailingAnchor constraintLessThanOrEqualToAnchor:legacy.view.trailingAnchor constant:-24.0],
-        [label.centerXAnchor constraintEqualToAnchor:legacy.view.centerXAnchor],
-        [label.centerYAnchor constraintEqualToAnchor:legacy.view.centerYAnchor],
+        [stack.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:24.0],
+        [stack.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-24.0],
+        [stack.centerYAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.centerYAnchor],
+        [button.heightAnchor constraintGreaterThanOrEqualToConstant:48.0],
     ]];
 }
 
-static UIViewController *ByeTunesMakeFailureController(NSString *message)
+- (void)loadByeTunes:(__unused id)sender
 {
-    UIViewController *controller = [UIViewController new];
-    controller.title = @"ByeTunes";
-    (void)controller.view;
-    ByeTunesInstallFailureView(controller, message);
-    return controller;
-}
+    if (self.loading || objc_getAssociatedObject(self, kByeTunesFilzaLibraryHostKey)) return;
+    self.loading = YES;
+    self.loadButton.enabled = NO;
+    self.statusLabel.text = @"Loading ByeTunes…";
+    ByeTunesWriteStage(@"user requested Swift UI");
 
-static BOOL ByeTunesIsLegacyMusicController(UIViewController *controller)
-{
-    if (!controller) return NO;
-    Class musicClass = NSClassFromString(@"TGMusicLibraryViewController");
-    if (musicClass && [controller isKindOfClass:musicClass]) return YES;
-    return [NSStringFromClass(controller.class) isEqualToString:@"TGMusicLibraryViewController"];
-}
-
-static void ByeTunesNavigationPushViewController(id self, SEL _cmd,
-                                                  UIViewController *candidate,
-                                                  BOOL animated)
-{
-    UIViewController *destination = candidate;
-    if (ByeTunesIsLegacyMusicController(candidate)) {
-        NSLog(@"[ByeTunesPort] intercepted TGMusicLibraryViewController before view loading");
-        destination = ByeTunesMakeFilzaLibraryController();
-        if (!destination) {
-            destination = ByeTunesMakeFailureController(
-                @"ByeTunes host creation failed. The legacy Filza music controller was not opened.");
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIViewController *host = ByeTunesMakeSwiftController();
+        if (!host) {
+            self.statusLabel.text = @"ByeTunes Swift host could not be created. See ByeTunesEmbedStage.txt.";
+            self.loadButton.enabled = YES;
+            self.loading = NO;
+            return;
         }
-        destination.title = @"ByeTunes";
-        NSLog(@"[ByeTunesPort] routing Filza Music Library directly to %@",
-              NSStringFromClass(destination.class));
-    }
 
-    if (gByeTunesOriginalPushViewController)
-        ((void (*)(id, SEL, UIViewController *, BOOL))gByeTunesOriginalPushViewController)(
-            self, _cmd, destination, animated);
+        @try {
+            [self addChildViewController:host];
+            ByeTunesWriteStage(@"before Swift host view materialization");
+            UIView *hostView = host.view;
+            ByeTunesWriteStage(@"Swift host view materialized");
+            hostView.frame = self.view.bounds;
+            hostView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+            [self.view addSubview:hostView];
+            [host didMoveToParentViewController:self];
+            objc_setAssociatedObject(self,
+                                     kByeTunesFilzaLibraryHostKey,
+                                     host,
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            ByeTunesWriteStage(@"Swift host attached successfully");
+            self.loading = NO;
+        } @catch (NSException *exception) {
+            ByeTunesWriteStage([NSString stringWithFormat:@"UIKit attach exception: %@",
+                                exception.reason ?: exception.name]);
+            [host willMoveToParentViewController:nil];
+            [host.view removeFromSuperview];
+            [host removeFromParentViewController];
+            self.statusLabel.text = @"ByeTunes failed while attaching its UI. See ByeTunesEmbedStage.txt.";
+            self.loadButton.enabled = YES;
+            self.loading = NO;
+        }
+    });
 }
 
-static void ByeTunesInstallNavigationRoute(void)
-{
-    if (gByeTunesNavigationHookInstalled) return;
+@end
 
-    Class navigationClass = UINavigationController.class;
-    SEL selector = @selector(pushViewController:animated:);
-    Method method = class_getInstanceMethod(navigationClass, selector);
-    if (!method) return;
-
-    IMP current = method_getImplementation(method);
-    if (current == (IMP)ByeTunesNavigationPushViewController) {
-        gByeTunesNavigationHookInstalled = YES;
-        return;
-    }
-
-    gByeTunesOriginalPushViewController = current;
-    method_setImplementation(method, (IMP)ByeTunesNavigationPushViewController);
-    gByeTunesNavigationHookInstalled = YES;
-    NSLog(@"[ByeTunesPort] installed direct Music Library navigation route");
-}
-
-static void ByeTunesEmbedInsideFilzaMusicLibrary(UIViewController *legacy)
+static void ByeTunesInstallSafeLauncher(UIViewController *legacy)
 {
     if (!legacy || objc_getAssociatedObject(legacy, kByeTunesFilzaLibraryHostKey)) return;
 
-    if ([objc_getAssociatedObject(legacy, kByeTunesFilzaLibraryEmbeddingKey) boolValue]) {
-        NSLog(@"[ByeTunesPort] blocked recursive Music Library embedding");
-        return;
-    }
+    ByeTunesSafeLaunchController *launcher = [ByeTunesSafeLaunchController new];
+    [legacy addChildViewController:launcher];
+    launcher.view.frame = legacy.view.bounds;
+    launcher.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [legacy.view addSubview:launcher.view];
+    [launcher didMoveToParentViewController:legacy];
+    legacy.navigationItem.title = @"ByeTunes";
+    legacy.navigationItem.titleView = nil;
+    legacy.navigationItem.searchController = nil;
+    legacy.navigationItem.rightBarButtonItem = nil;
     objc_setAssociatedObject(legacy,
-                             kByeTunesFilzaLibraryEmbeddingKey,
-                             @YES,
+                             kByeTunesFilzaLibraryHostKey,
+                             launcher,
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-
-    UIViewController *host = ByeTunesMakeFilzaLibraryController();
-    if (!host) {
-        objc_setAssociatedObject(legacy,
-                                 kByeTunesFilzaLibraryEmbeddingKey,
-                                 nil,
-                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        ByeTunesInstallFailureView(legacy,
-            @"ByeTunes host creation failed. The legacy Filza music controller was intentionally not started.");
-        NSLog(@"[ByeTunesPort] could not construct embedded ByeTunes library controller");
-        return;
-    }
-
-    @try {
-        [legacy addChildViewController:host];
-        host.view.frame = legacy.view.bounds;
-        host.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        [legacy.view addSubview:host.view];
-        [host didMoveToParentViewController:legacy];
-
-        legacy.navigationItem.title = @"ByeTunes";
-        legacy.navigationItem.titleView = nil;
-        legacy.navigationItem.searchController = nil;
-        legacy.navigationItem.rightBarButtonItem = nil;
-
-        objc_setAssociatedObject(legacy,
-                                 kByeTunesFilzaLibraryHostKey,
-                                 host,
-                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        NSLog(@"[ByeTunesPort] embedded complete ByeTunes ContentView inside TGMusicLibraryViewController");
-    } @catch (NSException *exception) {
-        NSLog(@"[ByeTunesPort] UIKit embed raised %@: %@",
-              exception.name, exception.reason ?: @"no reason");
-        [host willMoveToParentViewController:nil];
-        [host.view removeFromSuperview];
-        [host removeFromParentViewController];
-        ByeTunesInstallFailureView(legacy,
-            [NSString stringWithFormat:@"ByeTunes embed failed: %@", exception.reason ?: exception.name]);
-    }
-
-    objc_setAssociatedObject(legacy,
-                             kByeTunesFilzaLibraryEmbeddingKey,
-                             nil,
-                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    ByeTunesWriteStage(@"safe launcher attached to Filza Music Library");
 }
 
 static void ByeTunesMusicLibraryViewDidLoad(id self, SEL _cmd)
 {
-    // Fallback only. The normal path is intercepted in UINavigationController
-    // before TGMusicLibraryViewController's view loads at all.
-    // Do NOT invoke TGMusicLibraryViewController's original implementation.
+    ByeTunesWriteStage(@"TGMusicLibraryViewController viewDidLoad intercepted");
+
+    // Do not invoke Filza's TGMusicLibraryViewController implementation. Only
+    // run the superclass implementation, then install a plain UIKit launcher.
+    // Crucially, ContentView() and DeviceManager.shared are not constructed
+    // merely by opening Filza's Music Library anymore.
     if (gByeTunesSuperMusicViewDidLoad)
         ((void (*)(id, SEL))gByeTunesSuperMusicViewDidLoad)(self, _cmd);
 
     UIViewController *legacy = (UIViewController *)self;
-    if (!legacy.view) {
+    if (!legacy.view)
         legacy.view = [[UIView alloc] initWithFrame:UIScreen.mainScreen.bounds];
-    }
     legacy.view.backgroundColor = UIColor.systemBackgroundColor;
 
-    __weak UIViewController *weakLegacy = legacy;
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *strongLegacy = weakLegacy;
-        if (strongLegacy) ByeTunesEmbedInsideFilzaMusicLibrary(strongLegacy);
+        ByeTunesInstallSafeLauncher(legacy);
     });
 }
 
 static void ByeTunesInstallFilzaMusicLibraryPort(void)
 {
-    ByeTunesInstallNavigationRoute();
     if (gByeTunesMusicHookInstalled) return;
 
     Class musicClass = NSClassFromString(@"TGMusicLibraryViewController");
@@ -209,31 +213,28 @@ static void ByeTunesInstallFilzaMusicLibraryPort(void)
     Class superClass = class_getSuperclass(musicClass);
     Method superMethod = superClass ? class_getInstanceMethod(superClass, selector) : NULL;
     gByeTunesSuperMusicViewDidLoad = superMethod ? method_getImplementation(superMethod) : NULL;
-
     const char *types = method_getTypeEncoding(resolvedMethod);
 
-    // class_getInstanceMethod() can return inherited methods. Add a local
-    // override first so this replacement never mutates a superclass method.
+    // Install only on TGMusicLibraryViewController. The previous global
+    // UINavigationController pushViewController swizzle is intentionally gone:
+    // it affected every navigation transition in Filza and created a second
+    // independent crash surface before ByeTunes even existed.
     if (class_addMethod(musicClass,
                         selector,
                         (IMP)ByeTunesMusicLibraryViewDidLoad,
                         types)) {
         gByeTunesMusicHookInstalled = YES;
-        NSLog(@"[ByeTunesPort] installed class-local Music Library viewDidLoad override; legacy implementation bypassed");
+        NSLog(@"[ByeTunesPort] installed safe class-local Music Library override");
         return;
     }
 
     Method ownedMethod = class_getInstanceMethod(musicClass, selector);
     if (!ownedMethod) return;
     IMP current = method_getImplementation(ownedMethod);
-    if (current == (IMP)ByeTunesMusicLibraryViewDidLoad) {
-        gByeTunesMusicHookInstalled = YES;
-        return;
-    }
-
-    method_setImplementation(ownedMethod, (IMP)ByeTunesMusicLibraryViewDidLoad);
+    if (current != (IMP)ByeTunesMusicLibraryViewDidLoad)
+        method_setImplementation(ownedMethod, (IMP)ByeTunesMusicLibraryViewDidLoad);
     gByeTunesMusicHookInstalled = YES;
-    NSLog(@"[ByeTunesPort] class-local Music Library viewDidLoad override installed without invoking legacy implementation");
+    NSLog(@"[ByeTunesPort] installed safe class-local Music Library override");
 }
 
 __attribute__((constructor)) static void ByeTunesFilzaLibraryPortInit(void)
