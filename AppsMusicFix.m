@@ -30,9 +30,12 @@ static const uint64_t kFilzaClass2LookupFlags = 0x900000000ULL;
 
 static NSString *FilzaProxyIdentifier(id proxy)
 {
-    SEL selector = NSSelectorFromString(@"applicationIdentifier");
-    if ([proxy respondsToSelector:selector])
-        return ((id (*)(id, SEL))objc_msgSend)(proxy, selector);
+    for (NSString *name in @[@"applicationIdentifier", @"bundleIdentifier"]) {
+        SEL selector = NSSelectorFromString(name);
+        if (![proxy respondsToSelector:selector]) continue;
+        id value = ((id (*)(id, SEL))objc_msgSend)(proxy, selector);
+        if ([value isKindOfClass:NSString.class] && [value length]) return value;
+    }
     return nil;
 }
 
@@ -94,7 +97,7 @@ static id FilzaObjectAtIndexSafely(id collection, NSUInteger index)
 
 static NSString *FilzaApplicationItemIdentifier(id item)
 {
-    for (NSString *name in @[@"bundleId", @"applicationIdentifier"]) {
+    for (NSString *name in @[@"bundleId", @"applicationIdentifier", @"bundleIdentifier"]) {
         SEL selector = NSSelectorFromString(name);
         if ([item respondsToSelector:selector]) {
             NSString *value = ((id (*)(id, SEL))objc_msgSend)(item, selector);
