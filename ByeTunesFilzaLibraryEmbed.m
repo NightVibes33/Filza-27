@@ -3,28 +3,16 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 
+#import "FilzaDiagnostics.h"
+
 static const void *kByeTunesFilzaLibraryHostKey = &kByeTunesFilzaLibraryHostKey;
 static IMP gByeTunesSuperMusicViewDidLoad = NULL;
+static IMP gByeTunesSuperMusicViewDidAppear = NULL;
 static BOOL gByeTunesMusicHookInstalled = NO;
-
-static NSString *ByeTunesCrashStagePath(void)
-{
-    NSString *documents = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,
-                                                               NSUserDomainMask,
-                                                               YES).firstObject;
-    if (!documents.length) documents = NSTemporaryDirectory();
-    return [documents stringByAppendingPathComponent:@"ByeTunesEmbedStage.txt"];
-}
 
 static void ByeTunesWriteStage(NSString *stage)
 {
-    NSString *line = [NSString stringWithFormat:@"%@ | %@\n",
-                      NSDate.date.description,
-                      stage ?: @"unknown"];
-    [line writeToFile:ByeTunesCrashStagePath()
-           atomically:YES
-             encoding:NSUTF8StringEncoding
-                error:nil];
+    FilzaDiagnosticsWriteByeTunesStage(stage ?: @"unknown");
     NSLog(@"[ByeTunesPort][stage] %@", stage);
 }
 
@@ -115,7 +103,7 @@ static UIViewController *ByeTunesMakeSwiftController(void)
     dispatch_async(dispatch_get_main_queue(), ^{
         UIViewController *host = ByeTunesMakeSwiftController();
         if (!host) {
-            self.statusLabel.text = @"ByeTunes Swift host could not be created. See ByeTunesEmbedStage.txt.";
+            self.statusLabel.text = @"ByeTunes Swift host could not be created. See Files > FilzaSlop > FilzaSlop Logs.";
             self.loadButton.enabled = YES;
             self.loading = NO;
             return;
@@ -142,7 +130,7 @@ static UIViewController *ByeTunesMakeSwiftController(void)
             [host willMoveToParentViewController:nil];
             [host.view removeFromSuperview];
             [host removeFromParentViewController];
-            self.statusLabel.text = @"ByeTunes failed while attaching its UI. See ByeTunesEmbedStage.txt.";
+            self.statusLabel.text = @"ByeTunes failed while attaching its UI. See Files > FilzaSlop > FilzaSlop Logs.";
             self.loadButton.enabled = YES;
             self.loading = NO;
         }
@@ -176,10 +164,9 @@ static void ByeTunesMusicLibraryViewDidLoad(id self, SEL _cmd)
 {
     ByeTunesWriteStage(@"TGMusicLibraryViewController viewDidLoad intercepted");
 
-    // Do not invoke Filza's TGMusicLibraryViewController implementation. Only
-    // run the superclass implementation, then install a plain UIKit launcher.
-    // Crucially, ContentView() and DeviceManager.shared are not constructed
-    // merely by opening Filza's Music Library anymore.
+    // The original TGMusicLibraryViewController viewDidLoad is intentionally
+    // skipped because it owns Filza's old Music Library implementation. Run the
+    // superclass lifecycle only, then install the isolated ByeTunes launcher.
     if (gByeTunesSuperMusicViewDidLoad)
         ((void (*)(id, SEL))gByeTunesSuperMusicViewDidLoad)(self, _cmd);
 
@@ -193,6 +180,41 @@ static void ByeTunesMusicLibraryViewDidLoad(id self, SEL _cmd)
     });
 }
 
+static void ByeTunesMusicLibraryViewDidAppear(id self, SEL _cmd, BOOL animated)
+{
+    // This companion override is required whenever the subclass viewDidLoad is
+    // bypassed. The original Filza viewDidAppear assumes its browser/model state
+    // was created by TGMusicLibraryViewController's own viewDidLoad and can
+    // dereference that uninitialized state otherwise.
+    ByeTunesWriteStage(@"TGMusicLibraryViewController viewDidAppear intercepted");
+    if (gByeTunesSuperMusicViewDidAppear)
+        ((void (*)(id, SEL, BOOL))gByeTunesSuperMusicViewDidAppear)(self, _cmd, animated);
+    ByeTunesInstallSafeLauncher((UIViewController *)self);
+}
+
+static BOOL ByeTunesOverrideLifecycleMethod(Class musicClass,
+                                             SEL selector,
+                                             IMP replacement,
+                                             IMP *superImplementation)
+{
+    Method resolvedMethod = class_getInstanceMethod(musicClass, selector);
+    if (!resolvedMethod) return NO;
+
+    Class superClass = class_getSuperclass(musicClass);
+    Method superMethod = superClass ? class_getInstanceMethod(superClass, selector) : NULL;
+    if (superImplementation)
+        *superImplementation = superMethod ? method_getImplementation(superMethod) : NULL;
+
+    const char *types = method_getTypeEncoding(resolvedMethod);
+    if (class_addMethod(musicClass, selector, replacement, types)) return YES;
+
+    Method ownedMethod = class_getInstanceMethod(musicClass, selector);
+    if (!ownedMethod) return NO;
+    if (method_getImplementation(ownedMethod) != replacement)
+        method_setImplementation(ownedMethod, replacement);
+    return YES;
+}
+
 static void ByeTunesInstallFilzaMusicLibraryPort(void)
 {
     if (gByeTunesMusicHookInstalled) return;
@@ -203,38 +225,24 @@ static void ByeTunesInstallFilzaMusicLibraryPort(void)
         return;
     }
 
-    SEL selector = @selector(viewDidLoad);
-    Method resolvedMethod = class_getInstanceMethod(musicClass, selector);
-    if (!resolvedMethod) {
-        NSLog(@"[ByeTunesPort] TGMusicLibraryViewController has no viewDidLoad method");
+    BOOL loadHook = ByeTunesOverrideLifecycleMethod(musicClass,
+        @selector(viewDidLoad),
+        (IMP)ByeTunesMusicLibraryViewDidLoad,
+        &gByeTunesSuperMusicViewDidLoad);
+    BOOL appearHook = ByeTunesOverrideLifecycleMethod(musicClass,
+        @selector(viewDidAppear:),
+        (IMP)ByeTunesMusicLibraryViewDidAppear,
+        &gByeTunesSuperMusicViewDidAppear);
+
+    if (!loadHook || !appearHook) {
+        NSLog(@"[ByeTunesPort] failed to install complete Music Library lifecycle isolation load=%d appear=%d",
+              loadHook, appearHook);
         return;
     }
 
-    Class superClass = class_getSuperclass(musicClass);
-    Method superMethod = superClass ? class_getInstanceMethod(superClass, selector) : NULL;
-    gByeTunesSuperMusicViewDidLoad = superMethod ? method_getImplementation(superMethod) : NULL;
-    const char *types = method_getTypeEncoding(resolvedMethod);
-
-    // Install only on TGMusicLibraryViewController. The previous global
-    // UINavigationController pushViewController swizzle is intentionally gone:
-    // it affected every navigation transition in Filza and created a second
-    // independent crash surface before ByeTunes even existed.
-    if (class_addMethod(musicClass,
-                        selector,
-                        (IMP)ByeTunesMusicLibraryViewDidLoad,
-                        types)) {
-        gByeTunesMusicHookInstalled = YES;
-        NSLog(@"[ByeTunesPort] installed safe class-local Music Library override");
-        return;
-    }
-
-    Method ownedMethod = class_getInstanceMethod(musicClass, selector);
-    if (!ownedMethod) return;
-    IMP current = method_getImplementation(ownedMethod);
-    if (current != (IMP)ByeTunesMusicLibraryViewDidLoad)
-        method_setImplementation(ownedMethod, (IMP)ByeTunesMusicLibraryViewDidLoad);
     gByeTunesMusicHookInstalled = YES;
-    NSLog(@"[ByeTunesPort] installed safe class-local Music Library override");
+    ByeTunesWriteStage(@"safe Music Library lifecycle hooks installed");
+    NSLog(@"[ByeTunesPort] installed safe class-local Music Library lifecycle overrides");
 }
 
 __attribute__((constructor)) static void ByeTunesFilzaLibraryPortInit(void)
