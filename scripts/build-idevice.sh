@@ -21,6 +21,29 @@ export CARGO_TARGET_AARCH64_APPLE_IOS_LINKER="$(xcrun --sdk iphoneos --find clan
 
 cd "$SOURCE_ROOT"
 
+# ByeTunes normally owns its process, so idevice's logger can safely install a
+# global tracing subscriber. Embedded inside Filza it does not own the process;
+# another subscriber may already exist. tracing_subscriber::init() panics in
+# that case and aborts immediately when ContentView constructs DeviceManager.
+# Keep the exact pinned idevice source but make global logger registration
+# non-fatal for this embedded build. All transport APIs remain unchanged.
+LOGGING_RS="$SOURCE_ROOT/ffi/src/logging.rs"
+test -f "$LOGGING_RS"
+python3 - "$LOGGING_RS" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+text = path.read_text()
+old = "        subscriber.init();"
+new = "        let _ = subscriber.try_init();"
+count = text.count(old)
+if count != 1:
+    raise SystemExit(f"expected exactly one idevice logger init call, found {count}")
+path.write_text(text.replace(old, new, 1))
+PY
+grep -Fq 'let _ = subscriber.try_init();' "$LOGGING_RS"
+! grep -Fq 'subscriber.init();' "$LOGGING_RS"
+
 # The complete ByeTunes DeviceManager uses substantially more than AFC: it
 # opens heartbeat, lockdown/notification-proxy and RSD/CoreDevice paths too.
 # Build idevice-ffi with its normal default feature set, matching ByeTunes'
