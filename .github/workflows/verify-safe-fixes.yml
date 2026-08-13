@@ -188,7 +188,9 @@ jobs:
             cp -R .theos/byetunes-appintents/Metadata.appintents "$APP/Metadata.appintents"
           fi
 
-          plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemSubtitle":"Browse installed apps","UIApplicationShortcutItemIconSymbolName":"square.grid.2x2"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music Library","UIApplicationShortcutItemSubtitle":"Open ByeTunes","UIApplicationShortcutItemIconSymbolName":"music.note.list"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Editor","UIApplicationShortcutItemSubtitle":"Edit MobileGestalt","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"}]' "$APP/Info.plist"
+          # Apps and Music are static. GestaltManager owns its one dynamic
+          # shortcut, so packaging a second static Gestalt item would duplicate it.
+          plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemSubtitle":"Browse installed apps","UIApplicationShortcutItemIconSymbolName":"square.grid.2x2"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music Library","UIApplicationShortcutItemSubtitle":"Open ByeTunes","UIApplicationShortcutItemIconSymbolName":"music.note.list"}]' "$APP/Info.plist"
           plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
           plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
 
@@ -197,16 +199,15 @@ jobs:
           with open(sys.argv[1], 'rb') as f:
               info = plistlib.load(f)
           actions = info.get('UIApplicationShortcutItems', [])
-          assert len(actions) == 3, actions
-          assert [a['UIApplicationShortcutItemTitle'] for a in actions] == ['Apps Manager', 'Music Library', 'Gestalt Editor'], actions
+          assert len(actions) == 2, actions
+          assert [a['UIApplicationShortcutItemTitle'] for a in actions] == ['Apps Manager', 'Music Library'], actions
           assert [a['UIApplicationShortcutItemType'] for a in actions] == [
               'com.nightvibes33.filzaslop.apps-manager',
               'com.nightvibes33.filzaslop.music-library',
-              'com.nightvibes33.filzaslop.gestalt-manager',
           ], actions
           assert info.get('UIFileSharingEnabled') is True
           assert info.get('LSSupportsOpeningDocumentsInPlace') is True
-          print('Verified exactly three quick actions and Files/Documents exposure flags')
+          print('Verified two static Apps/Music actions; Gestalt remains runtime-owned by GestaltManager')
           PY
 
           otool -L "$APP/$EXECUTABLE" | grep -F 'FilzaApplySandboxExt.dylib'
