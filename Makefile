@@ -68,6 +68,7 @@ FilzaApplySandboxExt_LIBRARIES = z sandbox sqlite3
 FilzaApplySandboxExt_INSTALL_TARGET_PROCESSES = Filza
 
 before-FilzaApplySandboxExt-all::
+	@bash scripts/patch-byetunes-embedded.sh
 	@test -s "$(IDEVICE_STATIC)" || (echo "Missing $(IDEVICE_STATIC). Run: bash scripts/build-idevice.sh" >&2; exit 1)
 	@test -d "$(BYETUNES_ROOT)" || (echo "Missing ByeTunes submodule. Run: git submodule update --init --recursive" >&2; exit 1)
 	@test -f "$(BYETUNES_ROOT)/ContentView.swift" || (echo "Incomplete ByeTunes submodule" >&2; exit 1)
