@@ -56,6 +56,10 @@ The Music Library action intercepts `TGMainView.openMusicLib` and constructs the
 complete SwiftUI `ContentView` immediately. The Home Screen Music Library action uses
 the same presenter. There is no intermediate UIKit loading controller, branded splash,
 or artificial delay. `TGMusicLibraryViewController` remains only as a fallback route.
+Imported pairing files are copied into FilzaSlop's persistent Documents container. On
+later launches the embedded manager validates that saved copy, skips the import screen,
+and reconnects automatically; the document picker is shown only when no valid saved
+pairing file exists.
 
 A runtime stage marker is written to:
 
@@ -267,7 +271,7 @@ now performs the complete installable build:
 4. stages ByeTunes runtime resources;
 5. downloads and hash-verifies the pinned unsigned Filza base IPA;
 6. injects the current runtime dylib and resources;
-7. writes exactly three Home Screen shortcuts plus Local Network/Bonjour declarations into `Info.plist` and assigns build version `4.3`;
+7. writes exactly three Home Screen shortcuts plus Local Network/Bonjour declarations into `Info.plist` and assigns build version `4.4`;
 8. verifies the base executable actually loads `FilzaApplySandboxExt.dylib`;
 9. repacks a real unsigned IPA;
 10. uploads the IPA as a GitHub Actions artifact.

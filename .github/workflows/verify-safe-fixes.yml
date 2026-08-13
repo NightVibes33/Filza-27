@@ -174,6 +174,10 @@ jobs:
           grep -aFq 'complete ByeTunes host attached directly to Music Library' "$DYLIB"
           grep -aFq 'before direct Music Library ContentView construction' "$DYLIB"
           grep -aFq 'direct Music Library SwiftUI host ready' "$DYLIB"
+          grep -aFq 'persistent pairing state restored=' "$DYLIB"
+          grep -aFq 'imported pairing file persisted at' "$DYLIB"
+          grep -aFq 'restored persisted pairing file; reconnecting automatically' "$DYLIB"
+          grep -aFq 'no persisted pairing file; showing import flow' "$DYLIB"
           ! grep -aFq 'Starting ByeTunes' "$DYLIB"
           ! grep -aFq 'before ByeTunes can connect' "$DYLIB"
           ! grep -aFq 'Add ByeTunes Shortcut' "$DYLIB"
@@ -236,7 +240,7 @@ jobs:
           fi
 
           plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemSubtitle":"Browse installed apps","UIApplicationShortcutItemIconSymbolName":"square.grid.2x2"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music Library","UIApplicationShortcutItemSubtitle":"Open Music Library","UIApplicationShortcutItemIconSymbolName":"music.note.list"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Editor","UIApplicationShortcutItemSubtitle":"Edit MobileGestalt","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"}]' "$APP/Info.plist"
-          plutil -replace CFBundleShortVersionString -string "4.3" "$APP/Info.plist"
+          plutil -replace CFBundleShortVersionString -string "4.4" "$APP/Info.plist"
           plutil -replace CFBundleVersion -string "${GITHUB_RUN_NUMBER}" "$APP/Info.plist"
           plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
           plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
@@ -259,7 +263,7 @@ jobs:
           assert info.get('LSSupportsOpeningDocumentsInPlace') is True
           assert info.get('NSLocalNetworkUsageDescription')
           assert info.get('NSBonjourServices') == ['_http._tcp']
-          assert info.get('CFBundleShortVersionString') == '4.3'
+          assert info.get('CFBundleShortVersionString') == '4.4'
           assert str(info.get('CFBundleVersion', '')).isdigit()
           print('Verified exactly three quick actions and Files/Documents exposure flags')
           PY
