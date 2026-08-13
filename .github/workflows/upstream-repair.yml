@@ -1,0 +1,58 @@
+name: Apply missing upstream FilzaSlop fixes
+
+on:
+  push:
+    branches:
+      - repair-filza-upstream-20260812
+    paths:
+      - .github/workflows/upstream-repair.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repair branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: repair-filza-upstream-20260812
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/0xjohnnydev/FilzaSlop.git
+          git fetch upstream main
+
+      - name: Apply upstream iOS 26 app-discovery fix
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! git cherry-pick 583fc091fe337924a771bb82d32d519343516d05; then
+            echo "::error::App-discovery cherry-pick conflicted"
+            git status --short
+            echo "--- unresolved files ---"
+            git diff --name-only --diff-filter=U
+            echo "--- conflict hunks ---"
+            git diff --cc
+            exit 1
+          fi
+          git push origin HEAD:repair-filza-upstream-20260812
+
+      - name: Apply upstream container-delete fix
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! git cherry-pick b7abe0da54062f049041979249f539fa6c0b47d0; then
+            echo "::error::Container-delete cherry-pick conflicted"
+            git status --short
+            echo "--- unresolved files ---"
+            git diff --name-only --diff-filter=U
+            echo "--- conflict hunks ---"
+            git diff --cc
+            exit 1
+          fi
+          git push origin HEAD:repair-filza-upstream-20260812
