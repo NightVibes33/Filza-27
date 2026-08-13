@@ -355,7 +355,15 @@ struct MondGestaltView: View {
     }
 
     private func write(_ dictionary: NSMutableDictionary) throws {
-        if let error = FilzaGestaltWritePlist(gestaltPath, dictionary) {
+        guard let bridgedDictionary = dictionary as? [AnyHashable: Any] else {
+            throw NSError(
+                domain: "FilzaSlop.Gestalt",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "The MobileGestalt property list contains an unsupported key type."]
+            )
+        }
+
+        if let error = FilzaGestaltWritePlist(gestaltPath, bridgedDictionary) {
             throw error
         }
     }
