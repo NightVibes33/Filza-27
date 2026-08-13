@@ -424,6 +424,51 @@ static BOOL GMWriteValidatedPlist(NSString *path, NSMutableDictionary *plist, NS
     return NO;
 }
 
+NSString *FilzaGestaltResolvePath(NSString **detail)
+{
+    NSString *path = GMEnsureAccess(detail);
+    if (path.length) (void)GMEnsureBackup(path, nil);
+    return path;
+}
+
+NSError *FilzaGestaltWritePlist(NSString *path, NSDictionary *plist)
+{
+    if (!path.length || ![plist isKindOfClass:NSDictionary.class]) {
+        return [NSError errorWithDomain:@"GestaltManager" code:3 userInfo:@{
+            NSLocalizedDescriptionKey: @"MobileGestalt path or property list is invalid"
+        }];
+    }
+    NSError *error = nil;
+    NSMutableDictionary *mutable = [plist mutableCopy];
+    return GMWriteValidatedPlist(path, mutable, &error) ? nil : (error ?: [NSError
+        errorWithDomain:@"GestaltManager" code:4 userInfo:@{
+            NSLocalizedDescriptionKey: @"MobileGestalt write failed"
+        }]);
+}
+
+NSError *FilzaGestaltRestoreBackup(NSString *path)
+{
+    NSError *error = nil;
+    NSData *backup = [NSData dataWithContentsOfFile:GMBackupPath()
+                                            options:0
+                                              error:&error];
+    if (!backup.length) return error ?: [NSError errorWithDomain:@"GestaltManager"
+        code:5 userInfo:@{NSLocalizedDescriptionKey: @"No saved MobileGestalt backup exists"}];
+
+    id parsed = [NSPropertyListSerialization propertyListWithData:backup
+        options:0 format:nil error:&error];
+    if (![parsed isKindOfClass:NSDictionary.class]) return error ?: [NSError
+        errorWithDomain:@"GestaltManager" code:6 userInfo:@{
+            NSLocalizedDescriptionKey: @"Saved MobileGestalt backup is invalid"
+        }];
+    if (!GMDirectWrite(path, backup, &error)) return error;
+    if (!GMLoadMutablePlist(path, &error)) return error ?: [NSError
+        errorWithDomain:@"GestaltManager" code:7 userInfo:@{
+            NSLocalizedDescriptionKey: @"Restored MobileGestalt failed validation"
+        }];
+    return nil;
+}
+
 #pragma mark - Feature catalog
 
 static NSArray<NSDictionary *> *GMSoftwareFeatures(void)
@@ -1255,26 +1300,15 @@ static void GMInstallShortcutDelegateHook(void)
 
 void FilzaGestaltManagerInstall(void)
 {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        GMInstallShortcutItem();
-        GMInstallShortcutDelegateHook();
-        GMScheduleMenuScan(20);
-    });
+    // Presentation is owned by the linked Mond surface and the unified
+    // three-action router. Keep this controller as the verified access and
+    // persistence provider without installing a second menu or shortcut.
+    NSLog(@"[GestaltManager] verified access provider ready");
 }
 
 __attribute__((constructor)) static void GestaltManagerInit(void)
 {
     dispatch_async(dispatch_get_main_queue(), ^{
-        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidFinishLaunchingNotification
-            object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
-                FilzaGestaltManagerInstall();
-            }];
-        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification
-            object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
-                GMInstallShortcutItem();
-                GMInstallShortcutDelegateHook();
-                if (!gGMMenuHooksInstalled) GMScheduleMenuScan(10);
-            }];
         FilzaGestaltManagerInstall();
     });
 }
