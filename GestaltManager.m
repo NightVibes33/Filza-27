@@ -14,6 +14,8 @@
 #import <unistd.h>
 #import <xpc/xpc.h>
 
+#import "FilzaDiagnostics.h"
+#import "FilzaMondBridge.h"
 #import "GestaltManager.h"
 #include "bad_query.h"
 
@@ -25,9 +27,11 @@ static NSString *const GMShortcutType = @"com.nightvibes33.filzaslop.gestalt-man
 static NSString *gGMResolvedPath;
 static int64_t gGMBadQueryHandle = -1;
 static BOOL gGMMenuHooksInstalled = NO;
+static BOOL gGMMenuScanScheduled = NO;
 static BOOL gGMShortcutHookInstalled = NO;
 static Class gGMMenuDataSourceClass = Nil;
 static Class gGMMenuDelegateClass = Nil;
+static __weak UITableView *gGMMenuTable = nil;
 static NSInteger gGMMenuSection = NSNotFound;
 static NSInteger gGMMenuRow = NSNotFound;
 
@@ -422,6 +426,51 @@ static BOOL GMWriteValidatedPlist(NSString *path, NSMutableDictionary *plist, NS
     if (error) *error = verifyError ?: [NSError errorWithDomain:@"GestaltManager" code:2
         userInfo:@{NSLocalizedDescriptionKey: @"Written plist failed validation and backup was restored"}];
     return NO;
+}
+
+NSString *FilzaGestaltResolvePath(NSString **detail)
+{
+    NSString *path = GMEnsureAccess(detail);
+    if (path.length) (void)GMEnsureBackup(path, nil);
+    return path;
+}
+
+NSError *FilzaGestaltWritePlist(NSString *path, NSDictionary *plist)
+{
+    if (!path.length || ![plist isKindOfClass:NSDictionary.class]) {
+        return [NSError errorWithDomain:@"GestaltManager" code:3 userInfo:@{
+            NSLocalizedDescriptionKey: @"MobileGestalt path or property list is invalid"
+        }];
+    }
+    NSError *error = nil;
+    NSMutableDictionary *mutable = [plist mutableCopy];
+    return GMWriteValidatedPlist(path, mutable, &error) ? nil : (error ?: [NSError
+        errorWithDomain:@"GestaltManager" code:4 userInfo:@{
+            NSLocalizedDescriptionKey: @"MobileGestalt write failed"
+        }]);
+}
+
+NSError *FilzaGestaltRestoreBackup(NSString *path)
+{
+    NSError *error = nil;
+    NSData *backup = [NSData dataWithContentsOfFile:GMBackupPath()
+                                            options:0
+                                              error:&error];
+    if (!backup.length) return error ?: [NSError errorWithDomain:@"GestaltManager"
+        code:5 userInfo:@{NSLocalizedDescriptionKey: @"No saved MobileGestalt backup exists"}];
+
+    id parsed = [NSPropertyListSerialization propertyListWithData:backup
+        options:0 format:nil error:&error];
+    if (![parsed isKindOfClass:NSDictionary.class]) return error ?: [NSError
+        errorWithDomain:@"GestaltManager" code:6 userInfo:@{
+            NSLocalizedDescriptionKey: @"Saved MobileGestalt backup is invalid"
+        }];
+    if (!GMDirectWrite(path, backup, &error)) return error;
+    if (!GMLoadMutablePlist(path, &error)) return error ?: [NSError
+        errorWithDomain:@"GestaltManager" code:7 userInfo:@{
+            NSLocalizedDescriptionKey: @"Restored MobileGestalt failed validation"
+        }];
+    return nil;
 }
 
 #pragma mark - Feature catalog
@@ -1085,36 +1134,40 @@ static NSInteger GMMenuRows(id self, SEL _cmd, UITableView *tableView, NSInteger
 {
     NSInteger original = gGMOrigRows
         ? ((NSInteger (*)(id, SEL, id, NSInteger))gGMOrigRows)(self, _cmd, tableView, section) : 0;
-    return section == gGMMenuSection ? original + 1 : original;
+    return tableView == gGMMenuTable && section == gGMMenuSection ? original + 1 : original;
 }
 
 static UITableViewCell *GMMenuCell(id self, SEL _cmd, UITableView *tableView, NSIndexPath *indexPath)
 {
-    if (indexPath.section == gGMMenuSection && indexPath.row == gGMMenuRow) {
+    if (tableView == gGMMenuTable &&
+        indexPath.section == gGMMenuSection && indexPath.row == gGMMenuRow) {
         UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
-        cell.textLabel.text = @"Gestalt Manager";
+        cell.textLabel.text = @"Gestalt Editor";
         cell.imageView.image = [UIImage systemImageNamed:@"slider.horizontal.3"];
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         return cell;
     }
-    NSIndexPath *mapped = GMOriginalIndexPath(indexPath);
+    NSIndexPath *mapped = tableView == gGMMenuTable ? GMOriginalIndexPath(indexPath) : indexPath;
     return gGMOrigCell ? ((id (*)(id, SEL, id, id))gGMOrigCell)(self, _cmd, tableView, mapped) : [UITableViewCell new];
 }
 
 static void GMMenuSelected(id self, SEL _cmd, UITableView *tableView, NSIndexPath *indexPath)
 {
-    if (indexPath.section == gGMMenuSection && indexPath.row == gGMMenuRow) {
+    if (tableView == gGMMenuTable &&
+        indexPath.section == gGMMenuSection && indexPath.row == gGMMenuRow) {
         [tableView deselectRowAtIndexPath:indexPath animated:YES];
-        FilzaGestaltManagerPresentFromController(GMControllerForView(tableView));
+        FilzaDiagnosticsAppend(@"Gestalt", @"in-app manager row tapped");
+        FilzaMondPresentFromController(GMControllerForView(tableView));
         return;
     }
-    NSIndexPath *mapped = GMOriginalIndexPath(indexPath);
+    NSIndexPath *mapped = tableView == gGMMenuTable ? GMOriginalIndexPath(indexPath) : indexPath;
     if (gGMOrigSelect) ((void (*)(id, SEL, id, id))gGMOrigSelect)(self, _cmd, tableView, mapped);
 }
 
 static BOOL GMInstallMenuHooksForTable(UITableView *tableView)
 {
-    if (gGMMenuHooksInstalled || !tableView.dataSource) return gGMMenuHooksInstalled;
+    if (gGMMenuHooksInstalled || !tableView.dataSource || !tableView.delegate)
+        return gGMMenuHooksInstalled;
     id dataSource = tableView.dataSource;
     id delegate = tableView.delegate;
     NSInteger appsSection = NSNotFound, appsRow = NSNotFound;
@@ -1143,6 +1196,7 @@ static BOOL GMInstallMenuHooksForTable(UITableView *tableView)
     gGMMenuSection = musicSection;
     gGMMenuRow = musicRow + 1;
     if (appsSection == musicSection) gGMMenuRow = MAX(appsRow, musicRow) + 1;
+    gGMMenuTable = tableView;
 
     Class dsClass = object_getClass(dataSource);
     Class delegateClass = delegate ? object_getClass(delegate) : Nil;
@@ -1166,6 +1220,8 @@ static BOOL GMInstallMenuHooksForTable(UITableView *tableView)
             gGMOrigSelect = method_getImplementation(selectMethod);
             class_addMethod(delegateClass, selectSel, (IMP)GMMenuSelected, method_getTypeEncoding(selectMethod)) ||
                 (method_setImplementation(class_getInstanceMethod(delegateClass, selectSel), (IMP)GMMenuSelected), YES);
+        } else {
+            class_addMethod(delegateClass, selectSel, (IMP)GMMenuSelected, "v@:@@");
         }
     }
 
@@ -1174,6 +1230,9 @@ static BOOL GMInstallMenuHooksForTable(UITableView *tableView)
     gGMMenuHooksInstalled = YES;
     NSLog(@"[GestaltManager] inserted manager menu section=%ld row=%ld dataSource=%@ delegate=%@",
           (long)gGMMenuSection, (long)gGMMenuRow, NSStringFromClass(dsClass), NSStringFromClass(delegateClass));
+    FilzaDiagnosticsAppend(@"Gestalt", [NSString stringWithFormat:
+        @"inserted in-app Gestalt Editor row beside Apps/Music section=%ld row=%ld",
+        (long)gGMMenuSection, (long)gGMMenuRow]);
     [tableView reloadData];
     return YES;
 }
@@ -1190,13 +1249,19 @@ static void GMScanViewsForMenu(UIView *view)
 
 static void GMScheduleMenuScan(NSUInteger attempts)
 {
-    if (attempts == 0 || gGMMenuHooksInstalled) return;
+    if (attempts == 0 || gGMMenuHooksInstalled) {
+        gGMMenuScanScheduled = NO;
+        return;
+    }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 350 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
         for (UIWindow *window in UIApplication.sharedApplication.windows) {
             GMScanViewsForMenu(window);
             if (gGMMenuHooksInstalled) break;
         }
-        if (!gGMMenuHooksInstalled) GMScheduleMenuScan(attempts - 1);
+        if (!gGMMenuHooksInstalled)
+            GMScheduleMenuScan(attempts - 1);
+        else
+            gGMMenuScanScheduled = NO;
     });
 }
 
@@ -1255,26 +1320,19 @@ static void GMInstallShortcutDelegateHook(void)
 
 void FilzaGestaltManagerInstall(void)
 {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        GMInstallShortcutItem();
-        GMInstallShortcutDelegateHook();
-        GMScheduleMenuScan(20);
-    });
+    // Scan repeatedly because Filza creates and populates its manager table
+    // after launch. The inserted row opens the exact same complete Mond surface
+    // as the static Home Screen quick action.
+    if (!gGMMenuHooksInstalled && !gGMMenuScanScheduled) {
+        gGMMenuScanScheduled = YES;
+        GMScheduleMenuScan(8);
+        FilzaDiagnosticsAppend(@"Gestalt", @"in-app manager-row discovery scheduled");
+    }
 }
 
 __attribute__((constructor)) static void GestaltManagerInit(void)
 {
     dispatch_async(dispatch_get_main_queue(), ^{
-        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidFinishLaunchingNotification
-            object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
-                FilzaGestaltManagerInstall();
-            }];
-        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification
-            object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
-                GMInstallShortcutItem();
-                GMInstallShortcutDelegateHook();
-                if (!gGMMenuHooksInstalled) GMScheduleMenuScan(10);
-            }];
         FilzaGestaltManagerInstall();
     });
 }

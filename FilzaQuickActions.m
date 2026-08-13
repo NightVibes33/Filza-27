@@ -3,13 +3,25 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 
+#import "ByeTunesFullAppLauncher.h"
 #import "FilzaDiagnostics.h"
+#import "FilzaMondBridge.h"
 
 static NSString *const FQAppsType = @"com.nightvibes33.filzaslop.apps-manager";
 static NSString *const FQMusicType = @"com.nightvibes33.filzaslop.music-library";
+static NSString *const FQGestaltType = @"com.nightvibes33.filzaslop.gestalt-manager";
 
 static IMP gFQPreviousShortcutHandler = NULL;
+static IMP gFQPreviousSetShortcutItems = NULL;
 static BOOL gFQShortcutHookInstalled = NO;
+static BOOL gFQShortcutSetterHookInstalled = NO;
+
+static BOOL FQIsStaticShortcutType(NSString *type)
+{
+    return [type isEqualToString:FQAppsType] ||
+           [type isEqualToString:FQMusicType] ||
+           [type isEqualToString:FQGestaltType];
+}
 
 static UIViewController *FQActiveController(void)
 {
@@ -93,8 +105,19 @@ static void FQOpenWithRetry(NSString *type, NSUInteger attempts)
     BOOL opened = NO;
     if ([type isEqualToString:FQAppsType])
         opened = FQPresentFilzaController(@"TGApplicationsViewController", @"Apps Manager");
-    else if ([type isEqualToString:FQMusicType])
-        opened = FQPresentFilzaController(@"TGMusicLibraryViewController", @"Music Library");
+    else if ([type isEqualToString:FQMusicType]) {
+        opened = FilzaByeTunesPresentFromController(FQActiveController());
+        if (opened)
+            FilzaDiagnosticsAppend(@"QuickAction", @"opened complete ByeTunes directly");
+    }
+    else if ([type isEqualToString:FQGestaltType]) {
+        UIViewController *source = FQActiveController();
+        if (source) {
+            FilzaMondPresentFromController(source);
+            FilzaDiagnosticsAppend(@"QuickAction", @"opened complete Gestalt Editor");
+            opened = YES;
+        }
+    }
 
     if (!opened) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC),
@@ -107,7 +130,7 @@ static void FQShortcutHandler(id self, SEL _cmd, UIApplication *application,
                               void (^completion)(BOOL))
 {
     NSString *type = item.type ?: @"";
-    if ([type isEqualToString:FQAppsType] || [type isEqualToString:FQMusicType]) {
+    if (FQIsStaticShortcutType(type)) {
         FilzaDiagnosticsAppend(@"QuickAction",
             [NSString stringWithFormat:@"received %@", type]);
         dispatch_async(dispatch_get_main_queue(), ^{ FQOpenWithRetry(type, 16); });
@@ -123,19 +146,19 @@ static void FQShortcutHandler(id self, SEL _cmd, UIApplication *application,
 
 static void FQInstallShortcutHandler(void)
 {
-    if (gFQShortcutHookInstalled) return;
     id delegate = UIApplication.sharedApplication.delegate;
     if (!delegate) return;
 
     Class cls = object_getClass(delegate);
     SEL selector = @selector(application:performActionForShortcutItem:completionHandler:);
     Method resolved = class_getInstanceMethod(cls, selector);
+    IMP current = resolved ? method_getImplementation(resolved) : NULL;
+    if (current == (IMP)FQShortcutHandler) {
+        gFQShortcutHookInstalled = YES;
+        return;
+    }
+
     if (resolved) {
-        IMP current = method_getImplementation(resolved);
-        if (current == (IMP)FQShortcutHandler) {
-            gFQShortcutHookInstalled = YES;
-            return;
-        }
         gFQPreviousShortcutHandler = current;
         const char *types = method_getTypeEncoding(resolved);
         if (!class_addMethod(cls, selector, (IMP)FQShortcutHandler, types))
@@ -146,25 +169,53 @@ static void FQInstallShortcutHandler(void)
 
     gFQShortcutHookInstalled = YES;
     FilzaDiagnosticsAppend(@"QuickAction",
-        [NSString stringWithFormat:@"Apps/Music delegate hook installed on %@", NSStringFromClass(cls)]);
+        [NSString stringWithFormat:@"three-action delegate hook installed on %@", NSStringFromClass(cls)]);
+}
+
+static void FQSetShortcutItems(id self, SEL _cmd, NSArray<UIApplicationShortcutItem *> *items)
+{
+    NSMutableArray *filtered = [NSMutableArray array];
+    for (UIApplicationShortcutItem *item in items ?: @[]) {
+        if (FQIsStaticShortcutType(item.type ?: @"")) {
+            FilzaDiagnosticsAppend(@"QuickAction",
+                [NSString stringWithFormat:@"blocked dynamic duplicate %@", item.type ?: @"unknown"]);
+            continue;
+        }
+        [filtered addObject:item];
+    }
+    if (gFQPreviousSetShortcutItems)
+        ((void (*)(id, SEL, id))gFQPreviousSetShortcutItems)(self, _cmd, filtered);
+}
+
+static void FQInstallShortcutSetterFilter(void)
+{
+    if (gFQShortcutSetterHookInstalled) return;
+    Class cls = UIApplication.class;
+    SEL selector = @selector(setShortcutItems:);
+    Method method = class_getInstanceMethod(cls, selector);
+    if (!method) return;
+    gFQPreviousSetShortcutItems = method_getImplementation(method);
+    if (gFQPreviousSetShortcutItems != (IMP)FQSetShortcutItems)
+        method_setImplementation(method, (IMP)FQSetShortcutItems);
+    gFQShortcutSetterHookInstalled = YES;
+    FilzaDiagnosticsAppend(@"QuickAction", @"dynamic shortcut duplicate filter installed");
 }
 
 static void FQRemoveDynamicShortcutDuplicates(void)
 {
-    // UIApplication.shortcutItems is the dynamic-only list. The Gestalt
-    // manager previously added a second dynamic copy; clearing this list leaves
-    // the packaged static actions intact.
     UIApplication.sharedApplication.shortcutItems = @[];
-    FilzaDiagnosticsAppend(@"QuickAction", @"cleared legacy dynamic shortcut items");
+    FilzaDiagnosticsAppend(@"QuickAction", @"cleared dynamic shortcut list");
 }
 
 static void FQRefreshRuntimeRouting(void)
 {
+    FQInstallShortcutSetterFilter();
     FQInstallShortcutHandler();
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 350 * NSEC_PER_MSEC),
+    FQRemoveDynamicShortcutDuplicates();
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 700 * NSEC_PER_MSEC),
                    dispatch_get_main_queue(), ^{
-        FQRemoveDynamicShortcutDuplicates();
         FQInstallShortcutHandler();
+        FQRemoveDynamicShortcutDuplicates();
     });
 }
 

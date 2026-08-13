@@ -45,9 +45,18 @@ jobs:
           test -f ByeTunes/MusicManager/YouTubeKit/Resources/meriyah.umd.js
           test -f ThirdParty/bad_query/bad_query/bad_query.c
           test -f GestaltManager.m
+          test -f FilzaMondBridge.m
+          test -f FilzaMainToolbarGestalt.m
+          test -f MondGestaltView.swift
           test -f ByeTunesFilzaLibraryEmbed.m
+          test -f ByeTunesFullAppLauncher.m
+          test -f ByeTunesFullAppLauncher.h
           test -f FilzaDiagnostics.m
           test -f FilzaQuickActions.m
+          test -f WebDAVRuntimeFix.m
+          test -f ThirdParty/GCDWebServer/GCDWebDAVServer/GCDWebDAVServer.m
+          test -f ThirdParty/GCDWebServer/GCDWebServer/Core/GCDWebServer.m
+          test -f ThirdParty/GCDWebServer/LICENSE
 
       - name: Syntax-check runtime integrations
         run: |
@@ -63,16 +72,28 @@ jobs:
             -include errno.h
             -I.
             -IThirdParty/bad_query/bad_query
+            -IThirdParty/GCDWebServer/GCDWebServer/Core
+            -IThirdParty/GCDWebServer/GCDWebServer/Requests
+            -IThirdParty/GCDWebServer/GCDWebServer/Responses
+            -IThirdParty/GCDWebServer/GCDWebDAVServer
+            -I"$SDK/usr/include/libxml2"
             -Wno-deprecated-declarations
             -Wno-arc-performSelector-leaks
           )
           xcrun --sdk iphoneos clang "${COMMON[@]}" GestaltManager.m
+          xcrun --sdk iphoneos clang "${COMMON[@]}" FilzaMondBridge.m
+          xcrun --sdk iphoneos clang "${COMMON[@]}" FilzaMainToolbarGestalt.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" AppsMusicFix.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" AppsManagerPresentationFix.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" ByeTunesMusicBridge.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" ByeTunesFilzaLibraryEmbed.m
+          xcrun --sdk iphoneos clang "${COMMON[@]}" ByeTunesFullAppLauncher.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" FilzaDiagnostics.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" FilzaQuickActions.m
+          xcrun --sdk iphoneos clang "${COMMON[@]}" WebDAVRuntimeFix.m
+          while IFS= read -r source; do
+            xcrun --sdk iphoneos clang "${COMMON[@]}" "$source"
+          done < <(find ThirdParty/GCDWebServer/GCDWebServer ThirdParty/GCDWebServer/GCDWebDAVServer -type f -name '*.m' -print | sort)
           xcrun --sdk iphoneos clang "${COMMON[@]}" ThirdParty/bad_query/bad_query/bad_query.c
 
       - name: Install Procursus build tools
@@ -131,7 +152,11 @@ jobs:
           DYLIB=".theos/obj/FilzaApplySandboxExt.dylib"
           test -s "$DYLIB"
           test "$(lipo -archs "$DYLIB")" = "arm64"
-          grep -aFq 'Gestalt Manager' "$DYLIB"
+          grep -aFq 'Gestalt Editor' "$DYLIB"
+          grep -aFq 'MondGestaltHostFactory' "$DYLIB"
+          grep -aFq 'Gestalt Editor toolbar hooks installed' "$DYLIB"
+          grep -aFq 'presented visible Gestalt loading screen immediately' "$DYLIB"
+          grep -aFq 'inserted in-app Gestalt Editor row beside Apps/Music' "$DYLIB"
           grep -aFq 'com.nightvibes33.filzaslop.gestalt-manager' "$DYLIB"
           grep -aFq 'com.nightvibes33.filzaslop.apps-manager' "$DYLIB"
           grep -aFq 'com.nightvibes33.filzaslop.music-library' "$DYLIB"
@@ -139,6 +164,16 @@ jobs:
           grep -aFq 'LastSignal.txt' "$DYLIB"
           grep -aFq 'TGMusicLibraryViewController viewDidAppear intercepted' "$DYLIB"
           grep -aFq 'ByeTunesEmbeddedHostFactory' "$DYLIB"
+          grep -aFq 'TGMainView direct full ByeTunes route installed' "$DYLIB"
+          grep -aFq 'opened complete ByeTunes directly' "$DYLIB"
+          grep -aFq 'complete ByeTunes host attached directly to Music Library' "$DYLIB"
+          grep -aFq 'before ContentView construction' "$DYLIB"
+          grep -aFq 'jailed in-process WebDAV lifecycle hook installed' "$DYLIB"
+          grep -aFq 'server did not report listening; rebuilding the in-process server once' "$DYLIB"
+          grep -aFq 'GCDWebDAVServer' "$DYLIB"
+          grep -aFq 'PROPFIND' "$DYLIB"
+          grep -aFq 'UNLOCK' "$DYLIB"
+          ! grep -aFq 'inert UIKit launcher visible' "$DYLIB"
           shasum -a 256 "$DYLIB"
 
       - name: Generate ByeTunes AppIntents metadata
@@ -189,8 +224,12 @@ jobs:
           fi
 
           plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemSubtitle":"Browse installed apps","UIApplicationShortcutItemIconSymbolName":"square.grid.2x2"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music Library","UIApplicationShortcutItemSubtitle":"Open ByeTunes","UIApplicationShortcutItemIconSymbolName":"music.note.list"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Editor","UIApplicationShortcutItemSubtitle":"Edit MobileGestalt","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"}]' "$APP/Info.plist"
+          plutil -replace CFBundleShortVersionString -string "4.2" "$APP/Info.plist"
+          plutil -replace CFBundleVersion -string "${GITHUB_RUN_NUMBER}" "$APP/Info.plist"
           plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
           plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
+          plutil -replace NSLocalNetworkUsageDescription -string "FilzaSlop uses your local network when you enable its WebDAV server." "$APP/Info.plist"
+          plutil -replace NSBonjourServices -json '["_http._tcp"]' "$APP/Info.plist"
 
           python3 - "$APP/Info.plist" <<'PY'
           import plistlib, sys
@@ -206,6 +245,10 @@ jobs:
           ], actions
           assert info.get('UIFileSharingEnabled') is True
           assert info.get('LSSupportsOpeningDocumentsInPlace') is True
+          assert info.get('NSLocalNetworkUsageDescription')
+          assert info.get('NSBonjourServices') == ['_http._tcp']
+          assert info.get('CFBundleShortVersionString') == '4.2'
+          assert str(info.get('CFBundleVersion', '')).isdigit()
           print('Verified exactly three quick actions and Files/Documents exposure flags')
           PY
 
@@ -215,6 +258,8 @@ jobs:
           test -s "$APP/astring.umd.js"
           test -s "$APP/yt_ejs_helper.js"
           test -s "$APP/AppIconImage.png"
+          test -x "$APP/helpers/FilzaWebDAVServer"
+          test -s "$APP/com.tigisoftware.filza.webdavserver.plist"
 
           OUTPUT="$GITHUB_WORKSPACE/.theos/FilzaSlop-main-${GITHUB_SHA::7}-unsigned.ipa"
           rm -f "$OUTPUT"

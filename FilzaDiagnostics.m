@@ -144,6 +144,7 @@ static void FilzaPrepareVisibleDiagnostics(void)
                             "This folder is intentionally stored inside the app Documents directory so it is visible through the iOS Files app when file sharing is enabled.\n\n"
                             "Runtime.log: launch/runtime breadcrumbs\n"
                             "ByeTunesEmbedStage.txt: persistent ByeTunes startup stages\n"
+                            "WebDAVStatus.txt: latest listener, URL, port, authentication, and root status\n"
                             "LastException.txt: last uncaught Objective-C exception\n"
                             "LastSignal.txt: last fatal POSIX signal observed by the process\n";
         [readme writeToFile:readmePath atomically:YES encoding:NSUTF8StringEncoding error:nil];

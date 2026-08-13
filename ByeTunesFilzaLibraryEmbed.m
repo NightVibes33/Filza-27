@@ -18,155 +18,107 @@ static void ByeTunesWriteStage(NSString *stage)
 
 static UIViewController *ByeTunesMakeSwiftController(void)
 {
-    ByeTunesWriteStage(@"before Swift host factory");
+    ByeTunesWriteStage(@"before complete ByeTunes host factory");
     Class factory = NSClassFromString(@"ByeTunesEmbeddedHostFactory");
     SEL selector = NSSelectorFromString(@"makeLibraryViewController");
     if (!factory || ![factory respondsToSelector:selector]) {
-        ByeTunesWriteStage(@"Swift host factory unavailable");
+        ByeTunesWriteStage(@"complete ByeTunes host factory unavailable");
         return nil;
     }
 
     @try {
         UIViewController *controller =
             ((UIViewController *(*)(id, SEL))objc_msgSend)(factory, selector);
-        ByeTunesWriteStage(controller ? @"Swift factory returned controller"
-                                        : @"Swift factory returned nil");
+        ByeTunesWriteStage(controller ? @"complete ByeTunes factory returned controller"
+                                      : @"complete ByeTunes factory returned nil");
         return controller;
     } @catch (NSException *exception) {
-        ByeTunesWriteStage([NSString stringWithFormat:@"Objective-C exception in Swift factory: %@",
-                            exception.reason ?: exception.name]);
+        ByeTunesWriteStage([NSString stringWithFormat:
+            @"Objective-C exception in complete ByeTunes factory: %@",
+            exception.reason ?: exception.name]);
         return nil;
     }
 }
 
-@interface ByeTunesSafeLaunchController : UIViewController
-@property(nonatomic, strong) UILabel *statusLabel;
-@property(nonatomic, strong) UIButton *loadButton;
-@property(nonatomic, assign) BOOL loading;
-@end
-
-@implementation ByeTunesSafeLaunchController
-
-- (void)viewDidLoad
+static void ByeTunesShowFailure(UIViewController *legacy, NSString *message)
 {
-    [super viewDidLoad];
-    ByeTunesWriteStage(@"inert UIKit launcher visible");
-
-    self.view.backgroundColor = UIColor.systemBackgroundColor;
-    self.title = @"ByeTunes";
-
-    UILabel *title = [[UILabel alloc] initWithFrame:CGRectZero];
-    title.translatesAutoresizingMaskIntoConstraints = NO;
-    title.text = @"ByeTunes";
-    title.font = [UIFont preferredFontForTextStyle:UIFontTextStyleLargeTitle];
-    title.textAlignment = NSTextAlignmentCenter;
-
-    UILabel *status = [[UILabel alloc] initWithFrame:CGRectZero];
-    status.translatesAutoresizingMaskIntoConstraints = NO;
-    status.text = @"Startup isolation active. Tap Load ByeTunes to enter the Swift UI.";
-    status.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
-    status.textColor = UIColor.secondaryLabelColor;
-    status.numberOfLines = 0;
-    status.textAlignment = NSTextAlignmentCenter;
-    self.statusLabel = status;
-
-    UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
-    button.translatesAutoresizingMaskIntoConstraints = NO;
-    [button setTitle:@"Load ByeTunes" forState:UIControlStateNormal];
-    button.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
-    [button addTarget:self action:@selector(loadByeTunes:) forControlEvents:UIControlEventTouchUpInside];
-    self.loadButton = button;
-
-    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[title, status, button]];
-    stack.translatesAutoresizingMaskIntoConstraints = NO;
-    stack.axis = UILayoutConstraintAxisVertical;
-    stack.alignment = UIStackViewAlignmentFill;
-    stack.spacing = 18.0;
-    [self.view addSubview:stack];
-
+    UILabel *label = [[UILabel alloc] initWithFrame:CGRectZero];
+    label.translatesAutoresizingMaskIntoConstraints = NO;
+    label.text = message;
+    label.numberOfLines = 0;
+    label.textAlignment = NSTextAlignmentCenter;
+    label.textColor = UIColor.secondaryLabelColor;
+    [legacy.view addSubview:label];
     [NSLayoutConstraint activateConstraints:@[
-        [stack.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:24.0],
-        [stack.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-24.0],
-        [stack.centerYAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.centerYAnchor],
-        [button.heightAnchor constraintGreaterThanOrEqualToConstant:48.0],
+        [label.leadingAnchor constraintEqualToAnchor:legacy.view.safeAreaLayoutGuide.leadingAnchor constant:24.0],
+        [label.trailingAnchor constraintEqualToAnchor:legacy.view.safeAreaLayoutGuide.trailingAnchor constant:-24.0],
+        [label.centerYAnchor constraintEqualToAnchor:legacy.view.safeAreaLayoutGuide.centerYAnchor],
     ]];
 }
 
-- (void)loadByeTunes:(__unused id)sender
+static void ByeTunesStartEmbeddedContent(UIViewController *host)
 {
-    if (self.loading || objc_getAssociatedObject(self, kByeTunesFilzaLibraryHostKey)) return;
-    self.loading = YES;
-    self.loadButton.enabled = NO;
-    self.statusLabel.text = @"Loading ByeTunes…";
-    ByeTunesWriteStage(@"user requested Swift UI");
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *host = ByeTunesMakeSwiftController();
-        if (!host) {
-            self.statusLabel.text = @"ByeTunes Swift host could not be created. See Files > FilzaSlop > FilzaSlop Logs.";
-            self.loadButton.enabled = YES;
-            self.loading = NO;
-            return;
-        }
-
-        @try {
-            [self addChildViewController:host];
-            ByeTunesWriteStage(@"before Swift host view materialization");
-            UIView *hostView = host.view;
-            ByeTunesWriteStage(@"Swift host view materialized");
-            hostView.frame = self.view.bounds;
-            hostView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-            [self.view addSubview:hostView];
-            [host didMoveToParentViewController:self];
-            objc_setAssociatedObject(self,
-                                     kByeTunesFilzaLibraryHostKey,
-                                     host,
-                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            ByeTunesWriteStage(@"Swift host attached successfully");
-            self.loading = NO;
-        } @catch (NSException *exception) {
-            ByeTunesWriteStage([NSString stringWithFormat:@"UIKit attach exception: %@",
-                                exception.reason ?: exception.name]);
-            [host willMoveToParentViewController:nil];
-            [host.view removeFromSuperview];
-            [host removeFromParentViewController];
-            self.statusLabel.text = @"ByeTunes failed while attaching its UI. See Files > FilzaSlop > FilzaSlop Logs.";
-            self.loadButton.enabled = YES;
-            self.loading = NO;
-        }
-    });
+    SEL start = NSSelectorFromString(@"startEmbeddedContentIfNeeded");
+    if ([host respondsToSelector:start]) {
+        ((void (*)(id, SEL))objc_msgSend)(host, start);
+        ByeTunesWriteStage(@"requested complete ByeTunes ContentView startup");
+    }
 }
 
-@end
-
-static void ByeTunesInstallSafeLauncher(UIViewController *legacy)
+static void ByeTunesAttachCompleteHost(UIViewController *legacy)
 {
     if (!legacy || objc_getAssociatedObject(legacy, kByeTunesFilzaLibraryHostKey)) return;
 
-    ByeTunesSafeLaunchController *launcher = [ByeTunesSafeLaunchController new];
-    [legacy addChildViewController:launcher];
-    launcher.view.frame = legacy.view.bounds;
-    launcher.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [legacy.view addSubview:launcher.view];
-    [launcher didMoveToParentViewController:legacy];
-    legacy.navigationItem.title = @"ByeTunes";
-    legacy.navigationItem.titleView = nil;
-    legacy.navigationItem.searchController = nil;
-    legacy.navigationItem.rightBarButtonItem = nil;
-    objc_setAssociatedObject(legacy,
-                             kByeTunesFilzaLibraryHostKey,
-                             launcher,
-                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    ByeTunesWriteStage(@"safe launcher attached to Filza Music Library");
+    UIViewController *host = ByeTunesMakeSwiftController();
+    if (!host) {
+        ByeTunesShowFailure(legacy,
+            @"ByeTunes could not be created. See Files > FilzaSlop > FilzaSlop Logs.");
+        return;
+    }
+
+    @try {
+        [legacy addChildViewController:host];
+        ByeTunesWriteStage(@"before complete ByeTunes host view materialization");
+        UIView *hostView = host.view;
+        ByeTunesWriteStage(@"complete ByeTunes host view materialized");
+        hostView.frame = legacy.view.bounds;
+        hostView.autoresizingMask =
+            UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        [legacy.view addSubview:hostView];
+        [host didMoveToParentViewController:legacy];
+        objc_setAssociatedObject(legacy,
+                                 kByeTunesFilzaLibraryHostKey,
+                                 host,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+        legacy.navigationItem.title = @"Music Library";
+        legacy.navigationItem.titleView = nil;
+        legacy.navigationItem.searchController = nil;
+        legacy.navigationItem.rightBarButtonItem = nil;
+        ByeTunesWriteStage(@"complete ByeTunes host attached directly to Music Library");
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            ByeTunesStartEmbeddedContent(host);
+        });
+    } @catch (NSException *exception) {
+        ByeTunesWriteStage([NSString stringWithFormat:
+            @"UIKit exception attaching complete ByeTunes host: %@",
+            exception.reason ?: exception.name]);
+        [host willMoveToParentViewController:nil];
+        [host.view removeFromSuperview];
+        [host removeFromParentViewController];
+        ByeTunesShowFailure(legacy,
+            @"ByeTunes failed while attaching. See Files > FilzaSlop > FilzaSlop Logs.");
+    }
 }
 
 static void ByeTunesMusicLibraryViewDidLoad(id self, SEL _cmd)
 {
     ByeTunesWriteStage(@"TGMusicLibraryViewController viewDidLoad intercepted");
 
-    // The original TGMusicLibraryViewController viewDidLoad is intentionally
-    // skipped because it owns Filza's old Music Library implementation. Run the
-    // superclass lifecycle only, then install the isolated ByeTunes launcher.
+    // Filza's legacy Music Library assumes state that is unavailable in this
+    // jailed build. Run the superclass lifecycle and replace its contents with
+    // the complete embedded ByeTunes application.
     if (gByeTunesSuperMusicViewDidLoad)
         ((void (*)(id, SEL))gByeTunesSuperMusicViewDidLoad)(self, _cmd);
 
@@ -176,20 +128,21 @@ static void ByeTunesMusicLibraryViewDidLoad(id self, SEL _cmd)
     legacy.view.backgroundColor = UIColor.systemBackgroundColor;
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        ByeTunesInstallSafeLauncher(legacy);
+        ByeTunesAttachCompleteHost(legacy);
     });
 }
 
 static void ByeTunesMusicLibraryViewDidAppear(id self, SEL _cmd, BOOL animated)
 {
-    // This companion override is required whenever the subclass viewDidLoad is
-    // bypassed. The original Filza viewDidAppear assumes its browser/model state
-    // was created by TGMusicLibraryViewController's own viewDidLoad and can
-    // dereference that uninitialized state otherwise.
     ByeTunesWriteStage(@"TGMusicLibraryViewController viewDidAppear intercepted");
     if (gByeTunesSuperMusicViewDidAppear)
         ((void (*)(id, SEL, BOOL))gByeTunesSuperMusicViewDidAppear)(self, _cmd, animated);
-    ByeTunesInstallSafeLauncher((UIViewController *)self);
+
+    UIViewController *legacy = (UIViewController *)self;
+    ByeTunesAttachCompleteHost(legacy);
+    UIViewController *host =
+        objc_getAssociatedObject(legacy, kByeTunesFilzaLibraryHostKey);
+    ByeTunesStartEmbeddedContent(host);
 }
 
 static BOOL ByeTunesOverrideLifecycleMethod(Class musicClass,
@@ -225,24 +178,21 @@ static void ByeTunesInstallFilzaMusicLibraryPort(void)
         return;
     }
 
-    BOOL loadHook = ByeTunesOverrideLifecycleMethod(musicClass,
-        @selector(viewDidLoad),
-        (IMP)ByeTunesMusicLibraryViewDidLoad,
-        &gByeTunesSuperMusicViewDidLoad);
-    BOOL appearHook = ByeTunesOverrideLifecycleMethod(musicClass,
-        @selector(viewDidAppear:),
-        (IMP)ByeTunesMusicLibraryViewDidAppear,
-        &gByeTunesSuperMusicViewDidAppear);
+    BOOL loadHook = ByeTunesOverrideLifecycleMethod(
+        musicClass, @selector(viewDidLoad),
+        (IMP)ByeTunesMusicLibraryViewDidLoad, &gByeTunesSuperMusicViewDidLoad);
+    BOOL appearHook = ByeTunesOverrideLifecycleMethod(
+        musicClass, @selector(viewDidAppear:),
+        (IMP)ByeTunesMusicLibraryViewDidAppear, &gByeTunesSuperMusicViewDidAppear);
 
     if (!loadHook || !appearHook) {
-        NSLog(@"[ByeTunesPort] failed to install complete Music Library lifecycle isolation load=%d appear=%d",
+        NSLog(@"[ByeTunesPort] failed to install complete Music Library lifecycle route load=%d appear=%d",
               loadHook, appearHook);
         return;
     }
 
     gByeTunesMusicHookInstalled = YES;
-    ByeTunesWriteStage(@"safe Music Library lifecycle hooks installed");
-    NSLog(@"[ByeTunesPort] installed safe class-local Music Library lifecycle overrides");
+    ByeTunesWriteStage(@"complete ByeTunes Music Library lifecycle hooks installed");
 }
 
 __attribute__((constructor)) static void ByeTunesFilzaLibraryPortInit(void)
@@ -258,7 +208,7 @@ __attribute__((constructor)) static void ByeTunesFilzaLibraryPortInit(void)
                 ByeTunesInstallFilzaMusicLibraryPort();
             }];
 
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC),
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC),
                        dispatch_get_main_queue(), ^{
             ByeTunesInstallFilzaMusicLibraryPort();
         });

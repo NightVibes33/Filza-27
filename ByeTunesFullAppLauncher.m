@@ -3,11 +3,11 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 
-static const void *kByeTunesFullPresentedKey = &kByeTunesFullPresentedKey;
-static IMP gByeTunesOriginalMusicViewDidAppear = NULL;
-static IMP gByeTunesOriginalShortcutHandler = NULL;
+#import "ByeTunesFullAppLauncher.h"
+#import "FilzaDiagnostics.h"
 
-typedef void (*ByeTunesShortcutIMP)(id, SEL, UIApplication *, UIApplicationShortcutItem *, void (^)(BOOL));
+static IMP gByeTunesOriginalOpenMusicLibrary = NULL;
+static BOOL gByeTunesDirectRouteInstalled = NO;
 
 static UIViewController *ByeTunesTopController(void)
 {
@@ -40,19 +40,34 @@ static UIViewController *ByeTunesTopController(void)
 
 static UIViewController *ByeTunesMakeFullController(void)
 {
+    FilzaDiagnosticsWriteByeTunesStage(@"direct route entered full ByeTunes factory");
     Class factory = NSClassFromString(@"ByeTunesEmbeddedHostFactory");
     SEL selector = NSSelectorFromString(@"makeViewController");
     if (!factory || ![factory respondsToSelector:selector]) {
-        NSLog(@"[ByeTunesFull] Swift host factory unavailable");
+        FilzaDiagnosticsWriteByeTunesStage(@"direct route Swift host factory unavailable");
         return nil;
     }
-    return ((UIViewController *(*)(id, SEL))objc_msgSend)(factory, selector);
+    @try {
+        UIViewController *controller =
+            ((UIViewController *(*)(id, SEL))objc_msgSend)(factory, selector);
+        FilzaDiagnosticsWriteByeTunesStage(controller
+            ? @"direct route factory returned complete ByeTunes controller"
+            : @"direct route factory returned nil");
+        return controller;
+    } @catch (NSException *exception) {
+        FilzaDiagnosticsWriteByeTunesStage([NSString stringWithFormat:
+            @"direct route factory exception: %@", exception.reason ?: exception.name]);
+        return nil;
+    }
 }
 
-static BOOL ByeTunesPresentFullApp(UIViewController *presenter)
+BOOL FilzaByeTunesPresentFromController(UIViewController *presenter)
 {
     UIViewController *host = presenter ?: ByeTunesTopController();
-    if (!host) return NO;
+    if (!host) {
+        FilzaDiagnosticsWriteByeTunesStage(@"direct route has no active presenter yet");
+        return NO;
+    }
 
     UIViewController *full = ByeTunesMakeFullController();
     if (!full) return NO;
@@ -60,64 +75,58 @@ static BOOL ByeTunesPresentFullApp(UIViewController *presenter)
     dispatch_async(dispatch_get_main_queue(), ^{
         UIViewController *target = host;
         while (target.presentedViewController) target = target.presentedViewController;
-        [target presentViewController:full animated:YES completion:nil];
-        NSLog(@"[ByeTunesFull] presented complete ByeTunes ContentView inside Filza");
+        FilzaDiagnosticsWriteByeTunesStage([NSString stringWithFormat:
+            @"direct route presenting from %@", NSStringFromClass(target.class)]);
+        @try {
+            [target presentViewController:full animated:YES completion:^{
+                FilzaDiagnosticsWriteByeTunesStage(
+                    @"direct route presented complete ByeTunes screen");
+            }];
+        } @catch (NSException *exception) {
+            FilzaDiagnosticsWriteByeTunesStage([NSString stringWithFormat:
+                @"direct route presentation exception: %@",
+                exception.reason ?: exception.name]);
+        }
     });
     return YES;
 }
 
-static void ByeTunesMusicViewDidAppear(id self, SEL _cmd, BOOL animated)
+static void ByeTunesOpenMusicLibrary(id self, SEL _cmd)
 {
-    if (gByeTunesOriginalMusicViewDidAppear)
-        ((void (*)(id, SEL, BOOL))gByeTunesOriginalMusicViewDidAppear)(self, _cmd, animated);
+    FilzaDiagnosticsWriteByeTunesStage(@"TGMainView openMusicLib intercepted by direct route");
+    UIViewController *presenter = [self isKindOfClass:UIViewController.class]
+        ? (UIViewController *)self : ByeTunesTopController();
+    if (FilzaByeTunesPresentFromController(presenter))
+        return;
 
-    if (objc_getAssociatedObject(self, kByeTunesFullPresentedKey)) return;
-    objc_setAssociatedObject(self, kByeTunesFullPresentedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    ByeTunesPresentFullApp((UIViewController *)self);
+    // Preserve Filza's legacy route only if the full embedded host could not be
+    // constructed. This keeps the button useful in a partially linked build.
+    FilzaDiagnosticsWriteByeTunesStage(@"direct route unavailable; invoking legacy openMusicLib fallback");
+    if (gByeTunesOriginalOpenMusicLibrary)
+        ((void (*)(id, SEL))gByeTunesOriginalOpenMusicLibrary)(self, _cmd);
 }
 
-static BOOL ByeTunesShortcutIsMusic(UIApplicationShortcutItem *item)
+void FilzaByeTunesInstallDirectRoutes(void)
 {
-    if (![item isKindOfClass:UIApplicationShortcutItem.class]) return NO;
-    if ([item.localizedTitle caseInsensitiveCompare:@"Music Library"] == NSOrderedSame) return YES;
-    if ([item.localizedTitle rangeOfString:@"ByeTunes" options:NSCaseInsensitiveSearch].location != NSNotFound) return YES;
-    return [item.type rangeOfString:@"music" options:NSCaseInsensitiveSearch].location != NSNotFound;
-}
-
-static void ByeTunesFullShortcutHandler(id self, SEL _cmd, UIApplication *application,
-                                        UIApplicationShortcutItem *item, void (^completion)(BOOL))
-{
-    if (ByeTunesShortcutIsMusic(item) && ByeTunesPresentFullApp(nil)) {
-        if (completion) completion(YES);
+    if (gByeTunesDirectRouteInstalled) return;
+    Class mainClass = NSClassFromString(@"TGMainView");
+    SEL selector = NSSelectorFromString(@"openMusicLib");
+    Method resolved = mainClass ? class_getInstanceMethod(mainClass, selector) : NULL;
+    if (!resolved) {
+        FilzaDiagnosticsWriteByeTunesStage(@"TGMainView openMusicLib not available yet");
         return;
     }
 
-    if (gByeTunesOriginalShortcutHandler)
-        ((ByeTunesShortcutIMP)gByeTunesOriginalShortcutHandler)(self, _cmd, application, item, completion);
-    else if (completion)
-        completion(NO);
-}
-
-static void ByeTunesInstallFullAppHooks(void)
-{
-    Class musicClass = NSClassFromString(@"TGMusicLibraryViewController");
-    SEL appear = @selector(viewDidAppear:);
-    Method appearMethod = musicClass ? class_getInstanceMethod(musicClass, appear) : NULL;
-    if (appearMethod && method_getImplementation(appearMethod) != (IMP)ByeTunesMusicViewDidAppear) {
-        gByeTunesOriginalMusicViewDidAppear = method_getImplementation(appearMethod);
-        method_setImplementation(appearMethod, (IMP)ByeTunesMusicViewDidAppear);
+    IMP current = method_getImplementation(resolved);
+    if (current != (IMP)ByeTunesOpenMusicLibrary) {
+        gByeTunesOriginalOpenMusicLibrary = current;
+        const char *types = method_getTypeEncoding(resolved);
+        if (!class_addMethod(mainClass, selector, (IMP)ByeTunesOpenMusicLibrary, types))
+            method_setImplementation(class_getInstanceMethod(mainClass, selector),
+                                     (IMP)ByeTunesOpenMusicLibrary);
     }
-
-    id delegate = UIApplication.sharedApplication.delegate;
-    Class delegateClass = delegate ? [delegate class] : Nil;
-    SEL shortcut = @selector(application:performActionForShortcutItem:completionHandler:);
-    Method shortcutMethod = delegateClass ? class_getInstanceMethod(delegateClass, shortcut) : NULL;
-    if (shortcutMethod && method_getImplementation(shortcutMethod) != (IMP)ByeTunesFullShortcutHandler) {
-        gByeTunesOriginalShortcutHandler = method_getImplementation(shortcutMethod);
-        method_setImplementation(shortcutMethod, (IMP)ByeTunesFullShortcutHandler);
-    }
-
-    NSLog(@"[ByeTunesFull] complete app hooks installed");
+    gByeTunesDirectRouteInstalled = YES;
+    FilzaDiagnosticsWriteByeTunesStage(@"TGMainView direct full ByeTunes route installed");
 }
 
 __attribute__((constructor)) static void ByeTunesFullAppInit(void)
@@ -127,17 +136,13 @@ __attribute__((constructor)) static void ByeTunesFullAppInit(void)
             addObserverForName:UIApplicationDidFinishLaunchingNotification
             object:nil queue:NSOperationQueue.mainQueue
             usingBlock:^(__unused NSNotification *note) {
-                // FilzaByeTunesUI installs its compatibility hook at launch.
-                // Install the complete-app route immediately afterwards so it
-                // owns the Music Library shortcut while preserving the old
-                // implementation as a fallback for unrelated shortcuts.
+                FilzaByeTunesInstallDirectRoutes();
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 750 * NSEC_PER_MSEC),
-                               dispatch_get_main_queue(), ^{ ByeTunesInstallFullAppHooks(); });
+                               dispatch_get_main_queue(), ^{ FilzaByeTunesInstallDirectRoutes(); });
             }];
 
-        if (UIApplication.sharedApplication.delegate) {
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 750 * NSEC_PER_MSEC),
-                           dispatch_get_main_queue(), ^{ ByeTunesInstallFullAppHooks(); });
-        }
+        FilzaByeTunesInstallDirectRoutes();
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC),
+                       dispatch_get_main_queue(), ^{ FilzaByeTunesInstallDirectRoutes(); });
     });
 }
