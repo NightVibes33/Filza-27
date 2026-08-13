@@ -2,6 +2,7 @@
 @import UIKit;
 
 #import <objc/runtime.h>
+#import <stdint.h>
 #import <string.h>
 #import <CommonCrypto/CommonDigest.h>
 
@@ -27,13 +28,20 @@ static NSString * const FilzaWebDAVSecurityKey = @"air-browser-security";
 
 static void (*FilzaOriginalStartAirBrowser)(id, SEL) = NULL;
 static void (*FilzaOriginalStopAirBrowser)(id, SEL) = NULL;
+static void (*FilzaOriginalSetPreference)(id, SEL, id, id, uintptr_t) = NULL;
+static void (*FilzaOriginalRemovePreference)(id, SEL, id, uintptr_t) = NULL;
+static void (*FilzaOriginalSwitchAirBrowserCheckbox)(id, SEL) = NULL;
 static SEL FilzaStartAirBrowserSelector;
 static SEL FilzaStopAirBrowserSelector;
 static BOOL FilzaWebDAVStartInFlight = NO;
+static BOOL FilzaWebDAVPreferenceHooksInstalled = NO;
 static GCDWebDAVServer *FilzaPinnedWebDAVServer = nil;
 static NSString *FilzaWebDAVAuthenticationUsername = nil;
 static NSString *FilzaWebDAVAuthenticationPasswordMD5 = nil;
 static BOOL FilzaWebDAVAuthenticationRequired = NO;
+
+static void FilzaWebDAVStartAirBrowser(id preferences, SEL selector);
+static void FilzaWebDAVStopAirBrowser(id preferences, SEL selector);
 
 @interface FilzaWebDAVConnection : GCDWebServerConnection
 @end
@@ -380,25 +388,24 @@ static void FilzaWebDAVReport(id preferences, NSString *reason, BOOL permitRetry
 
 static void FilzaWebDAVStopAirBrowser(id preferences, SEL selector)
 {
-    @try {
-        if (FilzaOriginalStopAirBrowser) FilzaOriginalStopAirBrowser(preferences, selector);
-    } @catch (NSException *exception) {
-        FilzaDiagnosticsAppend(@"WebDAV",
-                               [NSString stringWithFormat:@"stop exception: %@ | %@",
-                                exception.name, exception.reason ?: @"no reason"]);
-    }
     [FilzaPinnedWebDAVServer stop];
     FilzaPinnedWebDAVServer = nil;
+    FilzaWebDAVAssignServer(preferences, nil);
+    SEL enableIdleTimer = NSSelectorFromString(@"enableIdleTimer");
+    if ([preferences respondsToSelector:enableIdleTimer]) {
+        IMP implementation = [preferences methodForSelector:enableIdleTimer];
+        if (implementation) ((void (*)(id, SEL))implementation)(preferences, enableIdleTimer);
+    }
     FilzaWebDAVAuthenticationUsername = nil;
     FilzaWebDAVAuthenticationPasswordMD5 = nil;
     FilzaWebDAVAuthenticationRequired = NO;
     FilzaWebDAVWriteStatus(@"WebDAV server stopped");
     FilzaDiagnosticsAppend(@"WebDAV", @"in-process WebDAV server stopped");
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AirBrowserChanged" object:preferences];
 }
 
 static void FilzaWebDAVStartAirBrowser(id preferences, __unused SEL selector)
 {
-    if (!FilzaOriginalStartAirBrowser) return;
     if (FilzaWebDAVStartInFlight) {
         return;
     }
@@ -427,6 +434,95 @@ static void FilzaWebDAVStartAirBrowser(id preferences, __unused SEL selector)
                    dispatch_get_main_queue(), ^{
         FilzaWebDAVReport(preferences, @"after start", YES);
     });
+}
+
+static void FilzaWebDAVPreferenceChanged(id preferences, SEL selector,
+                                         id value, id key, uintptr_t notification)
+{
+    if (FilzaOriginalSetPreference)
+        FilzaOriginalSetPreference(preferences, selector, value, key, notification);
+    if (![key isKindOfClass:NSString.class] ||
+        ![(NSString *)key isEqualToString:FilzaWebDAVEnabledKey]) return;
+
+    BOOL enabled = [value respondsToSelector:@selector(boolValue)] && [value boolValue];
+    FilzaDiagnosticsAppend(@"WebDAV", [NSString stringWithFormat:
+        @"WebDAV toggle preference observed enabled=%@", enabled ? @"YES" : @"NO"]);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (enabled)
+            FilzaWebDAVStartAirBrowser(preferences, FilzaStartAirBrowserSelector);
+        else
+            FilzaWebDAVStopAirBrowser(preferences, FilzaStopAirBrowserSelector);
+    });
+}
+
+static void FilzaWebDAVPreferenceRemoved(id preferences, SEL selector,
+                                         id key, uintptr_t notification)
+{
+    if (FilzaOriginalRemovePreference)
+        FilzaOriginalRemovePreference(preferences, selector, key, notification);
+    if (![key isKindOfClass:NSString.class] ||
+        ![(NSString *)key isEqualToString:FilzaWebDAVEnabledKey]) return;
+
+    FilzaDiagnosticsAppend(@"WebDAV", @"WebDAV toggle preference removed; stopping listener");
+    dispatch_async(dispatch_get_main_queue(), ^{
+        FilzaWebDAVStopAirBrowser(preferences, FilzaStopAirBrowserSelector);
+    });
+}
+
+static void FilzaWebDAVSwitchAirBrowserCheckbox(id controller, SEL selector)
+{
+    if (FilzaOriginalSwitchAirBrowserCheckbox)
+        FilzaOriginalSwitchAirBrowserCheckbox(controller, selector);
+
+    // Filza updates its preference during this action. Read it on the next run
+    // loop so this also covers builds that bypass setObject:forPreferenceKey:.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        id preferences = FilzaWebDAVSharedPreferences();
+        BOOL enabled = FilzaWebDAVBoolPreference(preferences, FilzaWebDAVEnabledKey);
+        FilzaDiagnosticsAppend(@"WebDAV", [NSString stringWithFormat:
+            @"WebDAV checkbox action completed enabled=%@", enabled ? @"YES" : @"NO"]);
+        if (enabled)
+            FilzaWebDAVStartAirBrowser(preferences, FilzaStartAirBrowserSelector);
+        else
+            FilzaWebDAVStopAirBrowser(preferences, FilzaStopAirBrowserSelector);
+    });
+}
+
+static void FilzaWebDAVInstallPreferenceHooks(Class preferencesClass)
+{
+    if (FilzaWebDAVPreferenceHooksInstalled || !preferencesClass) return;
+
+    SEL setSelector = NSSelectorFromString(@"setObject:forPreferenceKey:notification:");
+    Method setMethod = class_getInstanceMethod(preferencesClass, setSelector);
+    if (setMethod) {
+        FilzaOriginalSetPreference = (void (*)(id, SEL, id, id, uintptr_t))
+            method_getImplementation(setMethod);
+        method_setImplementation(setMethod, (IMP)FilzaWebDAVPreferenceChanged);
+    }
+
+    SEL removeSelector = NSSelectorFromString(@"removeObjectForPreferenceKey:notification:");
+    Method removeMethod = class_getInstanceMethod(preferencesClass, removeSelector);
+    if (removeMethod) {
+        FilzaOriginalRemovePreference = (void (*)(id, SEL, id, uintptr_t))
+            method_getImplementation(removeMethod);
+        method_setImplementation(removeMethod, (IMP)FilzaWebDAVPreferenceRemoved);
+    }
+
+    Class controllerClass = NSClassFromString(@"TGPreferencesTableViewController");
+    SEL checkboxSelector = NSSelectorFromString(@"swithAirBrowserCheckbox");
+    Method checkboxMethod = controllerClass
+        ? class_getInstanceMethod(controllerClass, checkboxSelector) : NULL;
+    if (checkboxMethod) {
+        FilzaOriginalSwitchAirBrowserCheckbox = (void (*)(id, SEL))
+            method_getImplementation(checkboxMethod);
+        method_setImplementation(checkboxMethod, (IMP)FilzaWebDAVSwitchAirBrowserCheckbox);
+    }
+
+    FilzaWebDAVPreferenceHooksInstalled = setMethod || removeMethod || checkboxMethod;
+    FilzaDiagnosticsAppend(@"WebDAV", [NSString stringWithFormat:
+        @"WebDAV toggle hooks installed preference-write=%@ preference-remove=%@ checkbox=%@",
+        setMethod ? @"YES" : @"NO", removeMethod ? @"YES" : @"NO",
+        checkboxMethod ? @"YES" : @"NO"]);
 }
 
 static void FilzaWebDAVResumeIfNeeded(NSString *reason)
@@ -468,6 +564,7 @@ static void FilzaWebDAVInstall(void)
         FilzaOriginalStopAirBrowser = (void (*)(id, SEL))method_getImplementation(stopMethod);
         method_setImplementation(stopMethod, (IMP)FilzaWebDAVStopAirBrowser);
     }
+    FilzaWebDAVInstallPreferenceHooks(preferencesClass);
     FilzaDiagnosticsAppend(@"WebDAV", @"jailed in-process WebDAV lifecycle hook installed");
 
     NSNotificationCenter *center = NSNotificationCenter.defaultCenter;

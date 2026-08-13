@@ -7,91 +7,34 @@ private final class ByeTunesEmbeddedNavigationController: UINavigationController
     }
 }
 
-private final class ByeTunesDeferredHostController: UIViewController {
-    private var hasStarted = false
-    private var hostedController: UIViewController?
-    private let statusLabel = UILabel()
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        FilzaDiagnosticsWriteByeTunesStage("deferred Swift host UIKit shell viewDidLoad")
-        view.backgroundColor = .systemGroupedBackground
-
-        statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        statusLabel.text = "Starting ByeTunes…"
-        statusLabel.textAlignment = .center
-        statusLabel.numberOfLines = 0
-        statusLabel.textColor = .secondaryLabel
-        view.addSubview(statusLabel)
-        NSLayoutConstraint.activate([
-            statusLabel.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 24),
-            statusLabel.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -24),
-            statusLabel.centerYAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerYAnchor)
-        ])
-    }
-
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        startEmbeddedContentIfNeeded()
-    }
-
-    @objc(startEmbeddedContentIfNeeded)
-    func startEmbeddedContentIfNeeded() {
-        guard !hasStarted else { return }
-        hasStarted = true
-        FilzaDiagnosticsWriteByeTunesStage("complete ByeTunes ContentView startup scheduled")
-
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            FilzaDiagnosticsWriteByeTunesStage("before ContentView construction")
-            let root = ContentView()
-            FilzaDiagnosticsWriteByeTunesStage("ContentView constructed")
-
-            let host = UIHostingController(rootView: root)
-            FilzaDiagnosticsWriteByeTunesStage("UIHostingController constructed")
-            host.view.backgroundColor = .systemGroupedBackground
-
-            self.addChild(host)
-            FilzaDiagnosticsWriteByeTunesStage("before ByeTunes Swift host view materialization")
-            let hostedView = host.view!
-            FilzaDiagnosticsWriteByeTunesStage("ByeTunes Swift host view materialized")
-            hostedView.translatesAutoresizingMaskIntoConstraints = false
-            self.view.addSubview(hostedView)
-            NSLayoutConstraint.activate([
-                hostedView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
-                hostedView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
-                hostedView.topAnchor.constraint(equalTo: self.view.topAnchor),
-                hostedView.bottomAnchor.constraint(equalTo: self.view.bottomAnchor)
-            ])
-            host.didMove(toParent: self)
-            self.hostedController = host
-            self.statusLabel.removeFromSuperview()
-            FilzaDiagnosticsWriteByeTunesStage("ByeTunes Swift host attached successfully")
-        }
-    }
+private func makeMusicLibraryHost() -> UIViewController {
+    FilzaDiagnosticsWriteByeTunesStage("before direct Music Library ContentView construction")
+    let root = ContentView()
+    FilzaDiagnosticsWriteByeTunesStage("direct Music Library ContentView constructed")
+    let host = UIHostingController(rootView: root)
+    host.title = "Music Library"
+    host.view.backgroundColor = .systemGroupedBackground
+    FilzaDiagnosticsWriteByeTunesStage("direct Music Library SwiftUI host ready")
+    return host
 }
 
-/// Hosts the complete ByeTunes application inside Filza without constructing
-/// ContentView inside the Objective-C factory call. The UIKit shell is attached
-/// first; ContentView and DeviceManager.shared are entered only after the shell
-/// reaches viewDidAppear, with a persistent breadcrumb at every boundary.
+/// Hosts the complete music application immediately. Its process-global device
+/// work is made inert by patch-byetunes-embedded.sh, so no intermediate UIKit
+/// loading controller or branded splash is needed.
 @objc(ByeTunesEmbeddedHostFactory)
 public final class ByeTunesEmbeddedHostFactory: NSObject {
     @objc(makeLibraryViewController)
     public static func makeLibraryViewController() -> UIViewController {
-        FilzaDiagnosticsWriteByeTunesStage("Swift ByeTunes factory entered")
-        let controller = ByeTunesDeferredHostController()
-        FilzaDiagnosticsWriteByeTunesStage("Swift ByeTunes factory returned deferred UIKit host")
-        return controller
+        FilzaDiagnosticsWriteByeTunesStage("direct Music Library factory entered")
+        return makeMusicLibraryHost()
     }
 
     @objc(makeViewController)
     public static func makeViewController() -> UIViewController {
-        FilzaDiagnosticsWriteByeTunesStage("standalone ByeTunes factory entered")
-        let deferred = ByeTunesDeferredHostController()
-        deferred.title = "ByeTunes"
-        let navigation = ByeTunesEmbeddedNavigationController(rootViewController: deferred)
-        deferred.navigationItem.leftBarButtonItem = UIBarButtonItem(
+        FilzaDiagnosticsWriteByeTunesStage("standalone Music Library factory entered")
+        let host = makeMusicLibraryHost()
+        let navigation = ByeTunesEmbeddedNavigationController(rootViewController: host)
+        host.navigationItem.leftBarButtonItem = UIBarButtonItem(
             barButtonSystemItem: .close,
             target: navigation,
             action: #selector(ByeTunesEmbeddedNavigationController.closeEmbeddedByeTunes)

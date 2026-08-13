@@ -155,7 +155,12 @@ jobs:
           grep -aFq 'Gestalt Editor' "$DYLIB"
           grep -aFq 'MondGestaltHostFactory' "$DYLIB"
           grep -aFq 'Gestalt Editor toolbar hooks installed' "$DYLIB"
-          grep -aFq 'presented visible Gestalt loading screen immediately' "$DYLIB"
+          grep -aFq 'presented complete Gestalt Editor directly' "$DYLIB"
+          grep -aFq 'Device Spoofing Info' "$DYLIB"
+          grep -aFq 'iPadOS UI Warning' "$DYLIB"
+          grep -aFq 'Disable Dynamic Island' "$DYLIB"
+          ! grep -aFq 'Loading MobileGestalt' "$DYLIB"
+          ! grep -aFq 'Opening the complete Gestalt Editor' "$DYLIB"
           grep -aFq 'inserted in-app Gestalt Editor row beside Apps/Music' "$DYLIB"
           grep -aFq 'com.nightvibes33.filzaslop.gestalt-manager' "$DYLIB"
           grep -aFq 'com.nightvibes33.filzaslop.apps-manager' "$DYLIB"
@@ -167,8 +172,15 @@ jobs:
           grep -aFq 'TGMainView direct full ByeTunes route installed' "$DYLIB"
           grep -aFq 'opened complete ByeTunes directly' "$DYLIB"
           grep -aFq 'complete ByeTunes host attached directly to Music Library' "$DYLIB"
-          grep -aFq 'before ContentView construction' "$DYLIB"
+          grep -aFq 'before direct Music Library ContentView construction' "$DYLIB"
+          grep -aFq 'direct Music Library SwiftUI host ready' "$DYLIB"
+          ! grep -aFq 'Starting ByeTunes' "$DYLIB"
+          ! grep -aFq 'before ByeTunes can connect' "$DYLIB"
+          ! grep -aFq 'Add ByeTunes Shortcut' "$DYLIB"
+          ! grep -aFq 'ByeTunes could not be created' "$DYLIB"
           grep -aFq 'jailed in-process WebDAV lifecycle hook installed' "$DYLIB"
+          grep -aFq 'WebDAV toggle hooks installed' "$DYLIB"
+          grep -aFq 'WebDAV checkbox action completed' "$DYLIB"
           grep -aFq 'server did not report listening; rebuilding the in-process server once' "$DYLIB"
           grep -aFq 'GCDWebDAVServer' "$DYLIB"
           grep -aFq 'PROPFIND' "$DYLIB"
@@ -223,8 +235,8 @@ jobs:
             cp -R .theos/byetunes-appintents/Metadata.appintents "$APP/Metadata.appintents"
           fi
 
-          plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemSubtitle":"Browse installed apps","UIApplicationShortcutItemIconSymbolName":"square.grid.2x2"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music Library","UIApplicationShortcutItemSubtitle":"Open ByeTunes","UIApplicationShortcutItemIconSymbolName":"music.note.list"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Editor","UIApplicationShortcutItemSubtitle":"Edit MobileGestalt","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"}]' "$APP/Info.plist"
-          plutil -replace CFBundleShortVersionString -string "4.2" "$APP/Info.plist"
+          plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemSubtitle":"Browse installed apps","UIApplicationShortcutItemIconSymbolName":"square.grid.2x2"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music Library","UIApplicationShortcutItemSubtitle":"Open Music Library","UIApplicationShortcutItemIconSymbolName":"music.note.list"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Editor","UIApplicationShortcutItemSubtitle":"Edit MobileGestalt","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"}]' "$APP/Info.plist"
+          plutil -replace CFBundleShortVersionString -string "4.3" "$APP/Info.plist"
           plutil -replace CFBundleVersion -string "${GITHUB_RUN_NUMBER}" "$APP/Info.plist"
           plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
           plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
@@ -247,7 +259,7 @@ jobs:
           assert info.get('LSSupportsOpeningDocumentsInPlace') is True
           assert info.get('NSLocalNetworkUsageDescription')
           assert info.get('NSBonjourServices') == ['_http._tcp']
-          assert info.get('CFBundleShortVersionString') == '4.2'
+          assert info.get('CFBundleShortVersionString') == '4.3'
           assert str(info.get('CFBundleVersion', '')).isdigit()
           print('Verified exactly three quick actions and Files/Documents exposure flags')
           PY

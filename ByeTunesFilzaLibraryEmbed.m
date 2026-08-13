@@ -72,7 +72,7 @@ static void ByeTunesAttachCompleteHost(UIViewController *legacy)
     UIViewController *host = ByeTunesMakeSwiftController();
     if (!host) {
         ByeTunesShowFailure(legacy,
-            @"ByeTunes could not be created. See Files > FilzaSlop > FilzaSlop Logs.");
+            @"Music Library could not be created. See Files > FilzaSlop > FilzaSlop Logs.");
         return;
     }
 
@@ -108,7 +108,7 @@ static void ByeTunesAttachCompleteHost(UIViewController *legacy)
         [host.view removeFromSuperview];
         [host removeFromParentViewController];
         ByeTunesShowFailure(legacy,
-            @"ByeTunes failed while attaching. See Files > FilzaSlop > FilzaSlop Logs.");
+            @"Music Library failed while attaching. See Files > FilzaSlop > FilzaSlop Logs.");
     }
 }
 
