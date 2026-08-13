@@ -5,6 +5,7 @@
 #import <errno.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
+#import <string.h>
 #import <sys/stat.h>
 #import <unistd.h>
 
@@ -71,8 +72,6 @@ static UIImage *FZProxyIconImage(id proxy)
 
     UIImage *bestImage = nil;
     CGFloat bestArea = 0.0;
-    // LaunchServices icon variants are private and have changed over time.
-    // Probe the bounded historical range and accept only data UIKit can decode.
     for (int variant = 0; variant <= 20; variant++) {
         id data = ((id (*)(id, SEL, int))objc_msgSend)(proxy, iconSelector, variant);
         if (![data isKindOfClass:NSData.class] || [data length] == 0) continue;
@@ -233,12 +232,8 @@ static BOOL FZPathOpenableDirectory(NSString *path)
 
 static void FZSetApplicationItemCalculated(id item)
 {
-    Ivar ivar = class_getInstanceVariable(object_getClass(item) ? [item class] : Nil,
-                                           "_calculatedDiskUsage");
-    if (!ivar) {
-        Class cls = NSClassFromString(@"ApplicationItem");
-        ivar = cls ? class_getInstanceVariable(cls, "_calculatedDiskUsage") : NULL;
-    }
+    Class cls = NSClassFromString(@"ApplicationItem");
+    Ivar ivar = cls ? class_getInstanceVariable(cls, "_calculatedDiskUsage") : NULL;
     if (!ivar) return;
     ptrdiff_t offset = ivar_getOffset(ivar);
     uint8_t *bytes = (__bridge void *)item;
@@ -280,7 +275,6 @@ static NSArray<NSString *> *FZReadableRootsForItem(id item)
 
 static void FZCalculateDiskUsage(id self, SEL _cmd)
 {
-    // Preserve Filza's native behavior first. Only repair the zero-size case.
     if (gFZPreviousCalculateDiskUsage)
         ((void (*)(id, SEL))gFZPreviousCalculateDiskUsage)(self, _cmd);
 
