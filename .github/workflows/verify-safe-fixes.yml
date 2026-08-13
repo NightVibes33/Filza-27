@@ -97,8 +97,8 @@ jobs:
           grep -q 'libidevice_ffi.a' Makefile
           grep -q 'sqlite3' Makefile
           grep -q 'emit-const-values-path' Makefile
-          grep -q 'ThirdParty/bad_query/bad_query/bad_query.c' Makefile
-          grep -q 'BAD_QUERY_ROOT' Makefile
+          grep -q '^BAD_QUERY_ROOT := ThirdParty/bad_query$' Makefile
+          grep -Fq '$(BAD_QUERY_ROOT)/bad_query/bad_query.c' Makefile
           test -f scripts/generate-appintents-metadata.sh
           grep -q '#import "idevice.h"' FilzaApplySandboxExt-Bridging-Header.h
           grep -q 'UIHostingController(rootView: ContentView())' ByeTunesEmbeddedHost.swift
