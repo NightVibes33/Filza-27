@@ -8,6 +8,7 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 #import <string.h>
+#import <stdlib.h>
 #import <sys/stat.h>
 #import <unistd.h>
 
@@ -26,7 +27,12 @@ static IMP gPreviousAllApplications = NULL;
 static IMP gPreviousAppsDidSelect = NULL;
 static BOOL gAppsManagerHooksInstalled = NO;
 static NSMutableDictionary<NSString *, NSNumber *> *gBadQueryHandles;
+static NSMutableDictionary<NSString *, NSString *> *gBadQueryContainerPaths;
+static BOOL gBadQueryContainerDiscoveryStarted = NO;
+static BOOL gBadQueryContainerDiscoveryFinished = NO;
 static const uint64_t kFilzaClass2LookupFlags = 0x900000000ULL;
+static const int64_t kFilzaBadQueryMaxInode = 2000000;
+static NSString *const kFilzaAppDataRoot = @"/var/mobile/Containers/Data/Application";
 
 static NSString *FilzaProxyIdentifier(id proxy)
 {
@@ -127,6 +133,7 @@ static void FilzaEnsureBadQueryState(void)
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         gBadQueryHandles = [NSMutableDictionary dictionary];
+        gBadQueryContainerPaths = [NSMutableDictionary dictionary];
     });
 }
 
@@ -150,6 +157,113 @@ static BOOL FilzaDirectoryCanEnumerate(NSString *path, int *savedErrno)
     }
     if (savedErrno) *savedErrno = 0;
     return YES;
+}
+
+static BOOL FilzaIsDirectAppDataContainerPath(NSString *path)
+{
+    if (!path.length || !path.isAbsolutePath) return NO;
+    NSString *normalized = path.stringByStandardizingPath;
+    if ([normalized hasPrefix:@"/private/var/"])
+        normalized = [normalized substringFromIndex:8];
+    NSString *prefix = [kFilzaAppDataRoot stringByAppendingString:@"/"];
+    if (![normalized hasPrefix:prefix]) return NO;
+    NSString *leaf = [normalized substringFromIndex:prefix.length];
+    if (!leaf.length || [leaf containsString:@"/"]) return NO;
+    return [[NSUUID alloc] initWithUUIDString:leaf] != nil;
+}
+
+static void FilzaDiscoverBadQueryContainers(void)
+{
+    NSInteger major = NSProcessInfo.processInfo.operatingSystemVersion.majorVersion;
+    if (major < 26 || major > 27) {
+        @synchronized (gBadQueryContainerPaths) {
+            gBadQueryContainerDiscoveryFinished = YES;
+        }
+        return;
+    }
+
+    char *listingRaw = bad_query_list((char *)kFilzaAppDataRoot.fileSystemRepresentation,
+                                      kFilzaBadQueryMaxInode);
+    if (!listingRaw) {
+        NSLog(@"[AppsManagerFix][bad_query_list] failed root=%@ maxInode=%lld",
+              kFilzaAppDataRoot, kFilzaBadQueryMaxInode);
+        @synchronized (gBadQueryContainerPaths) {
+            gBadQueryContainerDiscoveryFinished = YES;
+        }
+        return;
+    }
+
+    NSString *listing = [NSString stringWithUTF8String:listingRaw] ?: @"";
+    free(listingRaw);
+    NSUInteger candidates = 0;
+    NSUInteger activated = 0;
+    NSUInteger mapped = 0;
+
+    for (NSString *rawLine in [listing componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
+        NSString *container = [rawLine stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (!FilzaIsDirectAppDataContainerPath(container)) continue;
+        candidates++;
+
+        int64_t handle = bad_query((char *)container.fileSystemRepresentation,
+                                   true, NULL, false);
+        if (handle < 0) continue;
+        activated++;
+
+        NSString *metadataPath = [container stringByAppendingPathComponent:
+            @".com.apple.mobile_container_manager.metadata.plist"];
+        NSDictionary *metadata = [NSDictionary dictionaryWithContentsOfFile:metadataPath];
+        NSString *identifier = [metadata[@"MCMMetadataIdentifier"] isKindOfClass:NSString.class]
+            ? metadata[@"MCMMetadataIdentifier"] : nil;
+        if (identifier.length) {
+            @synchronized (gBadQueryContainerPaths) {
+                gBadQueryContainerPaths[identifier] = container;
+            }
+            mapped++;
+        }
+        bad_query_release(handle);
+    }
+
+    @synchronized (gBadQueryContainerPaths) {
+        gBadQueryContainerDiscoveryFinished = YES;
+    }
+    NSLog(@"[AppsManagerFix][bad_query_list] root=%@ maxInode=%lld candidates=%lu activated=%lu mapped=%lu",
+          kFilzaAppDataRoot, kFilzaBadQueryMaxInode,
+          (unsigned long)candidates, (unsigned long)activated, (unsigned long)mapped);
+}
+
+static void FilzaStartBadQueryContainerDiscovery(void)
+{
+    FilzaEnsureBadQueryState();
+    @synchronized (gBadQueryContainerPaths) {
+        if (gBadQueryContainerDiscoveryStarted) return;
+        gBadQueryContainerDiscoveryStarted = YES;
+    }
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        FilzaDiscoverBadQueryContainers();
+    });
+}
+
+static NSString *FilzaBadQueryContainerPathForIdentifier(NSString *identifier,
+                                                          NSString **error)
+{
+    if (!identifier.length) {
+        if (error) *error = @"missing identifier for bad_query_list lookup";
+        return nil;
+    }
+    FilzaStartBadQueryContainerDiscovery();
+    @synchronized (gBadQueryContainerPaths) {
+        NSString *cached = gBadQueryContainerPaths[identifier];
+        if (cached.length) {
+            if (error) *error = @"bad_query_list metadata map resolved container";
+            return cached.copy;
+        }
+        if (error) {
+            *error = gBadQueryContainerDiscoveryFinished
+                ? @"bad_query_list completed without a matching MCMMetadataIdentifier"
+                : @"bad_query_list container discovery is still running";
+        }
+    }
+    return nil;
 }
 
 static NSString *FilzaBadQueryFailureDescription(int64_t result)
@@ -257,14 +371,18 @@ NSString *FilzaEnsureVirtualAppDataPath(NSString *identifier, NSString **error)
     if (!container.length) {
         NSString *lookupDetail = nil;
         NSString *rawContainer = FilzaRawClass2ContainerPath(identifier, &lookupDetail);
+        NSString *discoveryDetail = nil;
+        if (!rawContainer.length)
+            rawContainer = FilzaBadQueryContainerPathForIdentifier(identifier, &discoveryDetail);
         NSString *fallbackDetail = nil;
         if (!rawContainer.length ||
             !FilzaActivateBadQueryForContainer(identifier, rawContainer, &fallbackDetail)) {
             if (error) {
                 *error = [NSString stringWithFormat:
-                    @"MHA class-2 activation failed: %@; raw lookup: %@; bad_query fallback: %@",
+                    @"MHA class-2 activation failed: %@; raw lookup: %@; published bad_query_list discovery: %@; bad_query fallback: %@",
                     activationDetail ?: @"unknown",
                     lookupDetail ?: @"no detail",
+                    discoveryDetail ?: @"not needed",
                     fallbackDetail ?: @"not available"];
             }
             return nil;
@@ -396,6 +514,7 @@ static void FilzaInstallAppsManagerFixes(void)
 
 __attribute__((constructor)) static void FilzaAppsManagerFixInit(void)
 {
+    FilzaStartBadQueryContainerDiscovery();
     dispatch_async(dispatch_get_main_queue(), ^{
         FilzaInstallAppsManagerFixes();
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC),

@@ -28,6 +28,23 @@ if old_logger in ds:
     ds = ds.replace(old_logger, new_logger, 1)
 elif new_logger not in ds:
     raise SystemExit('embedded DeviceManager logger patch anchor not found')
+init_start = ds.find("    private init() {")
+if init_start < 0:
+    raise SystemExit('DeviceManager private init not found')
+init_end = ds.find("\n    private func ", init_start)
+if init_end < 0:
+    init_end = len(ds)
+init_block = ds[init_start:init_end]
+old_refresh = "        refreshExpectedPairingFileState()\n"
+new_refresh = '''        hasValidExpectedPairingFile = false
+        Logger.shared.log("[DeviceManager] Filza embed: pairing validation deferred until explicit import")
+'''
+if old_refresh in init_block:
+    init_block = init_block.replace(old_refresh, new_refresh, 1)
+    ds = ds[:init_start] + init_block + ds[init_end:]
+elif 'pairing validation deferred until explicit import' not in init_block:
+    raise SystemExit('DeviceManager init refresh anchor not found')
+
 device.write_text(ds)
 
 cs = content.read_text()
@@ -51,4 +68,5 @@ PY
 
 grep -Fq 'Filza embed: deferred idevice logger initialization' "$DEVICE"
 grep -Fq 'Filza embed: transport startup deferred until explicit pairing import' "$CONTENT"
+grep -Fq 'Filza embed: pairing validation deferred until explicit import' "$DEVICE"
 ! grep -A12 -F 'private init() {' "$DEVICE" | grep -Fq 'idevice_init_logger('
