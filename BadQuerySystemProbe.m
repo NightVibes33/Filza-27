@@ -3,6 +3,7 @@
 #import <dirent.h>
 #import <errno.h>
 #import <limits.h>
+#import <string.h>
 #import <sys/stat.h>
 #import <unistd.h>
 
