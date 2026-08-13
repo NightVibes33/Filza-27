@@ -16,7 +16,7 @@ BAD_QUERY_ROOT := ThirdParty/bad_query
 # TGMusicLibraryViewController contents in-place with the real ByeTunes SwiftUI
 # root; the older custom table and modal full-app launcher are intentionally not
 # linked anymore.
-FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
+FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m AppsManagerPresentationFix.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
 
 # Pinned upstream bad_query is used only as a per-container fallback when the
 # MobileHouseArrest class-2 lease resolves a foreign app root but cannot issue
