@@ -15,6 +15,7 @@
 
 static IMP gPreviousAllApplications = NULL;
 static IMP gPreviousAppsDidSelect = NULL;
+static BOOL gAppsManagerHooksInstalled = NO;
 
 static NSString *FilzaProxyIdentifier(id proxy)
 {
@@ -118,30 +119,52 @@ static void FilzaAppsDidSelect(id self, SEL _cmd, id browserView, id indexPath)
             browserView, indexPath);
 }
 
-static IMP FilzaReplaceInstanceMethod(Class cls, SEL selector, IMP replacement)
+static IMP FilzaInstallInstanceHook(Class cls, SEL selector, IMP replacement)
 {
-    Method method = cls ? class_getInstanceMethod(cls, selector) : NULL;
-    if (!method) return NULL;
-    IMP old = method_getImplementation(method);
-    method_setImplementation(method, replacement);
-    return old;
+    Method resolved = cls ? class_getInstanceMethod(cls, selector) : NULL;
+    if (!resolved) return NULL;
+
+    IMP original = method_getImplementation(resolved);
+    const char *types = method_getTypeEncoding(resolved);
+
+    // If the selector is inherited, add a class-local override rather than
+    // mutating the superclass Method returned by class_getInstanceMethod().
+    if (class_addMethod(cls, selector, replacement, types))
+        return original;
+
+    Method owned = class_getInstanceMethod(cls, selector);
+    if (!owned) return NULL;
+    original = method_getImplementation(owned);
+    if (original != replacement)
+        method_setImplementation(owned, replacement);
+    return original;
 }
 
 static void FilzaInstallAppsManagerFixes(void)
 {
-    Class workspace = NSClassFromString(@"LSApplicationWorkspace");
-    gPreviousAllApplications = FilzaReplaceInstanceMethod(workspace,
-        NSSelectorFromString(@"allApplications"), (IMP)FilzaAllApplications);
+    if (gAppsManagerHooksInstalled) return;
 
+    Class workspace = NSClassFromString(@"LSApplicationWorkspace");
     Class apps = NSClassFromString(@"TGApplicationsViewController");
-    gPreviousAppsDidSelect = FilzaReplaceInstanceMethod(apps,
+    if (!workspace || !apps) return;
+
+    gPreviousAllApplications = FilzaInstallInstanceHook(workspace,
+        NSSelectorFromString(@"allApplications"), (IMP)FilzaAllApplications);
+    gPreviousAppsDidSelect = FilzaInstallInstanceHook(apps,
         NSSelectorFromString(@"browserView:didSelectItemAtIndexPath:"),
         (IMP)FilzaAppsDidSelect);
 
+    gAppsManagerHooksInstalled = YES;
     NSLog(@"[AppsManagerFix] ContainerManager-backed Apps Manager hooks installed");
 }
 
 __attribute__((constructor)) static void FilzaAppsManagerFixInit(void)
 {
-    dispatch_async(dispatch_get_main_queue(), ^{ FilzaInstallAppsManagerFixes(); });
+    dispatch_async(dispatch_get_main_queue(), ^{
+        FilzaInstallAppsManagerFixes();
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC),
+                       dispatch_get_main_queue(), ^{
+            FilzaInstallAppsManagerFixes();
+        });
+    });
 }
