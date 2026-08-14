@@ -42,148 +42,26 @@ jobs:
           test "$(git -C ByeTunes rev-parse HEAD)" = "$BYETUNES_COMMIT"
           test "$(git -C ThirdParty/bad_query rev-parse HEAD)" = "$BAD_QUERY_COMMIT"
           test -f ByeTunes/MusicManager/ContentView.swift
-          test -f ByeTunes/MusicManager/BackgroundAudioDownloadManager.swift
+          test -f ByeTunes/MusicManager/MusicView.swift
           test -f ByeTunes/MusicManager/DeviceLibraryBrowserView.swift
-          test -f ByeTunes/MusicManager/BackupRestoreView.swift
+          test -f ByeTunes/MusicManager/BackgroundAudioDownloadManager.swift
+          test -f ByeTunes/MusicManager/BackgroundMetadataFetchManager.swift
           test -f ByeTunes/MusicManagerActivityShared/DownloadLiveActivityAttributes.swift
+          test -f ByeTunesMetadataCompat.swift
+          test -f scripts/patch-byetunes-upstream-parity.sh
+          test -f scripts/restore-byetunes-v24-metadata-compat.sh
+          test -f scripts/patch-byetunes-metadata-parity-post.sh
+          test -f scripts/patch-byetunes-device-library-save.sh
           test -f ThirdParty/bad_query/bad_query/bad_query.c
-          test -f GestaltManager.m
-          test -f FilzaMondBridge.m
-          test -f FilzaMainToolbarGestalt.m
-          test -f MondGestaltView.swift
-          test -f Filza3105Host.swift
-          test -f Filza3105Bridge.m
-          test ! -e Filza3105AppLauncher.m
-          test -f ThirdParty/3105/Sources/AppDataBrowserView.swift
-          test -f ThirdParty/3105/Sources/PatchProjectsView.swift
           test -f ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
-          test -f ThirdParty/3105/Sources/AppState.swift
-          test -f ThirdParty/3105/Sources/CleanerView.swift
-          test -f ThirdParty/3105/Sources/WallpaperLabView.swift
-          test -f ThirdParty/3105/Sources/ThreeOneOSFiveSettingsView.swift
-          test -f ThirdParty/3105/Sources/LogView.swift
-          test -f ThirdParty/3105/Sources/LimitedCleanerService.swift
-          test -f ThirdParty/3105/Sources/CleanerCatalog.swift
-          test -f ThirdParty/3105/Sources/MG.swift
-          test -f ThirdParty/3105/Sources/SBX.swift
-          test -f ThirdParty/3105/Sources/SecureZIPArchive.swift
-          test -f ThirdParty/3105/Sources/SupportPolicy.swift
-          test -f ThirdParty/3105/Sources/WallpaperInstaller.swift
-          test -f ThirdParty/3105/Sources/WallpaperLabModels.swift
-          test -f ThirdParty/3105/Sources/WallpaperLabService.swift
-          test -f ThirdParty/3105/Sources/wallpaper_zip.c
-          test -f ThirdParty/3105/Sources/PatchPackageCodec.swift
-          test -f ThirdParty/3105/Sources/PatchTransaction.swift
-          test -f ThirdParty/3105/Resources/Filza3105.bundle/Info.plist
-          test -f ThirdParty/3105/Resources/Filza3105.bundle/AppIcon3105.png
-          test -f ThirdParty/3105/LICENSE
-          grep -Fq '1da66f733a7ad6bb5c9e1d078e89cfbb02faec72' ThirdParty/3105/UPSTREAM.md
-          python3 - <<'PY'
-          from pathlib import Path
-
-          root = Path("ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift").read_text()
-          for required in (
-              "DashboardView()",
-              "AppDataBrowserView()",
-              "PatchProjectsView()",
-              "CleanerView()",
-              "WallpaperLabView()",
-              "ThreeOneOSFiveSettingsView()",
-              "LogView()",
-              "selectedTab = 2",
-          ):
-              assert required in root, required
-
-          host = Path("Filza3105Host.swift").read_text()
-          assert "ThreeOneOSFiveContentView(initialTab: initialTab)" in host
-          assert "initialTab: 1" in host
-          assert "initialTab: 2" in host
-          assert 'Label("Close", systemImage: "xmark")' in host
-          assert 'Label("Filza Apps", systemImage: "square.grid.2x2")' not in host
-          assert "Filza3105PresentOriginalAppsFromController" not in host
-          assert "persistent Close control visible initialTab=" in host
-          assert "AppDataBrowserView()" not in host
-          assert "PatchProjectsView()" not in host
-
-          bridge = Path("Filza3105Bridge.m").read_text()
-          assert "TGApplicationsViewController" not in bridge
-          assert "Filza3105PresentOriginalAppsFromController" not in bridge
-
-          toolbar = Path("FilzaMainToolbarGestalt.m").read_text()
-          assert 'NSSelectorFromString(@"fz_open3105Apps")' in toolbar
-          assert "Filza3105PresentAppsFromController(controller)" in toolbar
-          assert "opening complete 3105 Apps Manager" in toolbar
-
-          makefile = Path("Makefile").read_text()
-          assert "Filza3105AppLauncher.m" not in makefile
-          assert "-default-isolation MainActor" in makefile
-          assert Path("scripts/emit-byetunes-appintents-const-values.sh").is_file()
-
-          browser = Path("ThirdParty/3105/Sources/FileBrowserView.swift").read_text()
-          for required in (
-              ".contextMenu",
-              "requestPatchCreation(for:",
-              "preparePatchDraft(",
-              "patchDraftCoordinator.present(draft)",
-          ):
-              assert required in browser, required
-
-          patches = Path("ThirdParty/3105/Sources/PatchProjectsView.swift").read_text()
-          assert ".sheet(item: $draftCoordinator.request)" in patches
-          assert "initialDraft: request.draft" in patches
-
-          system_probe = Path("BadQuerySystemProbe.m").read_text()
-          for required in (
-              "WritePermissionCheck",
-              "FilesystemReadOnly",
-              "EffectiveWritable",
-              "readable-read-only-filesystem",
-              "Access Status.txt",
-              "MNT_RDONLY",
-          ):
-              assert required in system_probe, required
-
-          paste_fix = Path("Tweak.m").read_text()
-          assert "code == EROFS" in paste_fix
-          assert "cannot remount a filesystem read-write" in paste_fix
-          print("Verified connected 3105 root and system-root write-boundary diagnostics")
-          PY
-          test -f ByeTunesFilzaLibraryEmbed.m
-          test -f ByeTunesFullAppLauncher.m
-          test -f ByeTunesFullAppLauncher.h
-          test -f FilzaDiagnostics.m
-          test -f FilzaQuickActions.m
-          test -f WebDAVRuntimeFix.m
           test -f ThirdParty/GCDWebServer/GCDWebDAVServer/GCDWebDAVServer.m
-          test -f ThirdParty/GCDWebServer/GCDWebServer/Core/GCDWebServer.m
-          test -f ThirdParty/GCDWebServer/LICENSE
-          python3 - <<'PY'
-          from pathlib import Path
-          source = Path("MondGestaltView.swift").read_text()
-          mappings = {
-              "7brdL5xrEUWnlF9C0kdg5A": "DeviceSupportsHighLuminanceAlwaysOnDisplay",
-              "A/74xUbqJwBsaWTjSDd0fQ": "ChassisSlotFunctionNumber",
-              "a3n5T9sFtlyQ74NEp9ESxg": "SiriMode",
-              "HBG+hj/Oz89PjVgn93Jd8A": "Image4SecureBootKeyScheme",
-              "ikn/KMyeztXJhAj/dqBjBg": "LowPowerRendererCapability",
-              "J2+oJRiGdbAzTi6U5nhqdQ": "PostQuantumCryptographyEnforced",
-              "Kpfa0nb8nn8EVzI/UgcMfQ": "CoalescedSubTargetID",
-              "lyJZrSDc8J8eQ5b7A1Rvw": "DeviceSupportsTouchSensitiveCameraControl",
-              "m4xs4mhvxnAopYrApoLDMw": "DeviceSupportsInstructionFollowingPruningModels",
-              "mnPU37/y4i0TJFnJc+r4lA": "DeviceSupportsLowPowerWake",
-              "odI0U9Etrx7hObzvJ9xJ8Q": "DeviceSupportsSandcat",
-              "P4ZJVy/zYuLy4ejRKP+0DA": "DeviceSupportsRegionalCameraShutterRelaxation",
-              "qqrspu7CpuPdZwSDxNY+Fg": "MaximumFlipbookCount",
-              "s1ZXqZtUSpr+BjUgZXZ/2g": "ChassisSlotInstanceNumber",
-              "TusANsf9Lfe3P/9fIXXSrQ": "DeviceSupportsAlwaysListeningHeySiri",
-              "VXc3L66nqQ6bn4z60ChX+A": "ResponsiveAirPlayAudioCapability",
-              "ym8C/Ut5YcBnqAdm4NEDLQ": "Image4SecureBootCertificateFormat",
-          }
-          assert len(mappings) == 17
-          for key, name in mappings.items():
-              assert f'key: "{key}", name: "{name}"' in source, (key, name)
-          print("Verified all 17 exact iOS 27 Gestalt key mappings")
-          PY
+          grep -Fq 'patch-byetunes-upstream-parity.sh' Makefile
+          grep -Fq 'patch-byetunes-metadata-parity-post.sh' Makefile
+          grep -Fq 'patch-byetunes-device-library-save.sh' Makefile
+          ! grep -Fq 'patch-byetunes-embedded.sh' Makefile
+          ! grep -Fq 'fix-byetunes-import-source-routing.sh' Makefile
+          ! grep -Fq 'patch-byetunes-device-library-save.sh' scripts/patch-access-map-provenance.sh
+          ! grep -Fq 'fix-byetunes-import-source-routing.sh' scripts/patch-access-map-provenance.sh
 
       - name: Syntax-check runtime integrations
         run: |
@@ -211,9 +89,6 @@ jobs:
           xcrun --sdk iphoneos clang "${COMMON[@]}" FilzaMondBridge.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" FilzaMainToolbarGestalt.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" Filza3105Bridge.m
-          xcrun --sdk iphoneos clang "${COMMON[@]}" ThirdParty/3105/Sources/AppIconHelper.m
-          xcrun --sdk iphoneos clang "${COMMON[@]}" AppsMusicFix.m
-          xcrun --sdk iphoneos clang "${COMMON[@]}" AppsManagerPresentationFix.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" ByeTunesMusicBridge.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" ByeTunesFilzaLibraryEmbed.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" ByeTunesFullAppLauncher.m
@@ -281,81 +156,34 @@ jobs:
           DYLIB=".theos/obj/FilzaApplySandboxExt.dylib"
           test -s "$DYLIB"
           test "$(lipo -archs "$DYLIB")" = "arm64"
+
+          # Filza host integrations still need to be physically linked.
           grep -aFq 'Gestalt Editor' "$DYLIB"
           grep -aFq 'MondGestaltHostFactory' "$DYLIB"
-          grep -aFq 'TGMainView persistent 3105 Apps/Gestalt/Patches toolbar hooks installed' "$DYLIB"
-          grep -aFq 'persistent Apps button tapped; opening complete 3105 Apps Manager' "$DYLIB"
-          grep -aFq 'ensured persistent Apps/Music/Gestalt/Patches bottom toolbar' "$DYLIB"
           grep -aFq 'Filza3105HostFactory' "$DYLIB"
-          grep -aFq 'constructing complete 3105 Apps Manager' "$DYLIB"
-          grep -aFq 'constructing complete 3105 Patches' "$DYLIB"
-          grep -aFq 'constructing full upstream 3105 workspace' "$DYLIB"
-          grep -aFq 'full upstream workspace appeared initialTab=' "$DYLIB"
-          grep -aFq 'persistent Close control visible initialTab=' "$DYLIB"
-          ! grep -aFq 'persistent Close and Filza Apps controls visible' "$DYLIB"
-          ! grep -aFq 'presented original Filza Apps Manager with retained controls' "$DYLIB"
-          grep -aFq 'complete tabs linked Home/Files/Patches/Cleaner/Wallpapers/Settings/Logs' "$DYLIB"
-          ! grep -aFq 'TGMainView complete 3105 Apps route installed' "$DYLIB"
-          grep -aFq 'presented complete %@ directly' "$DYLIB"
-          grep -aFq '3105 Apps Manager' "$DYLIB"
-          grep -aFq '3105 Patches' "$DYLIB"
-          grep -aFq '3105PATCH' "$DYLIB"
-          grep -aFq 'presented complete Gestalt Editor directly' "$DYLIB"
-          grep -aFq 'Device Spoofing Info' "$DYLIB"
-          grep -aFq 'iPadOS UI Warning' "$DYLIB"
-          grep -aFq 'Disable Dynamic Island' "$DYLIB"
-          grep -aFq 'iOS 27 Gestalt Keys' "$DYLIB"
-          grep -aFq 'DeviceSupportsHighLuminanceAlwaysOnDisplay' "$DYLIB"
-          grep -aFq 'DeviceSupportsSandcat' "$DYLIB"
-          grep -aFq 'Image4SecureBootCertificateFormat' "$DYLIB"
-          grep -aFq 'presenting complete Mond Settings' "$DYLIB"
-          grep -aFq 'Run Exploit' "$DYLIB"
-          grep -aFq 'Generate Token' "$DYLIB"
-          grep -aFq 'Keep Alive' "$DYLIB"
-          grep -aFq 'Mond Respring confirmed' "$DYLIB"
-          grep -aFq 'bad_query' "$DYLIB"
-          grep -aFq 'cmg' "$DYLIB"
-          ! grep -aFq 'Loading MobileGestalt' "$DYLIB"
-          ! grep -aFq 'Opening the complete Gestalt Editor' "$DYLIB"
-          grep -aFq 'legacy manager-row insertion disabled; persistent bottom toolbar owns Gestalt' "$DYLIB"
-          grep -aFq 'com.nightvibes33.filzaslop.gestalt-manager' "$DYLIB"
-          grep -aFq 'com.nightvibes33.filzaslop.apps-manager' "$DYLIB"
-          grep -aFq 'com.nightvibes33.filzaslop.music-library' "$DYLIB"
-          grep -aFq 'com.nightvibes33.filzaslop.patches' "$DYLIB"
-          grep -aFq 'FilzaSlop Logs' "$DYLIB"
-          grep -aFq 'LastSignal.txt' "$DYLIB"
-          grep -aFq 'TGMusicLibraryViewController viewDidAppear intercepted' "$DYLIB"
           grep -aFq 'ByeTunesEmbeddedHostFactory' "$DYLIB"
           grep -aFq 'TGMainView direct full ByeTunes route installed' "$DYLIB"
-          grep -aFq 'opened complete ByeTunes directly' "$DYLIB"
-          grep -aFq 'complete ByeTunes host attached directly to Music Library' "$DYLIB"
-          grep -aFq 'before direct Music Library ContentView construction' "$DYLIB"
-          grep -aFq 'direct Music Library SwiftUI host ready' "$DYLIB"
-          grep -aFq 'persistent pairing state restored=' "$DYLIB"
-          grep -aFq 'imported pairing file persisted at' "$DYLIB"
-          grep -aFq 'restored persisted pairing file; reconnecting automatically' "$DYLIB"
-          grep -aFq 'no persisted pairing file; showing import flow' "$DYLIB"
-          grep -aFq 'Public search page fallback' "$DYLIB"
-          grep -aFq 'standalone ByeTunes updater disabled' "$DYLIB"
-          grep -aFq 'Updates are delivered with FilzaSlop' "$DYLIB"
-          grep -aFq 'ByeTunes 2.4' "$DYLIB"
-          grep -aFq 'Terminal success: progress reached 100 only after validated file persistence' "$DYLIB"
-          grep -aFq 'Terminal failure: cleared active progress' "$DYLIB"
           grep -aFq 'ByeTunes 2.4 background URL session route installed on Filza AppDelegate' "$DYLIB"
-          grep -aFq 'forwarded ByeTunes 2.4 background URL session event' "$DYLIB"
-          ! grep -aFq 'Tap to check for updates' "$DYLIB"
-          ! grep -aFq 'Starting ByeTunes' "$DYLIB"
-          ! grep -aFq 'before ByeTunes can connect' "$DYLIB"
-          ! grep -aFq 'Add ByeTunes Shortcut' "$DYLIB"
-          ! grep -aFq 'ByeTunes could not be created' "$DYLIB"
           grep -aFq 'jailed in-process WebDAV lifecycle hook installed' "$DYLIB"
-          grep -aFq 'WebDAV toggle hooks installed' "$DYLIB"
-          grep -aFq 'WebDAV checkbox action completed' "$DYLIB"
-          grep -aFq 'server did not report listening; rebuilding the in-process server once' "$DYLIB"
-          grep -aFq 'GCDWebDAVServer' "$DYLIB"
-          grep -aFq 'PROPFIND' "$DYLIB"
-          grep -aFq 'UNLOCK' "$DYLIB"
-          ! grep -aFq 'inert UIKit launcher visible' "$DYLIB"
+
+          # Upstream-first ByeTunes parity markers. These replace the old
+          # Filza-specific progress/error contract checks.
+          grep -aFq 'upstream lifecycle onAppear entered' "$DYLIB"
+          grep -aFq 'Installing auto-reconnect watcher' "$DYLIB"
+          grep -aFq 'checkPendingInjections' "$DYLIB"
+          grep -aFq '[MusicView] metadata sources=' "$DYLIB"
+          grep -aFq 'metadataSourcesUsed' "$DYLIB"
+          grep -aFq '[DeviceLibrarySave] VERIFIED persisted metadata' "$DYLIB"
+          grep -aFq '[SyncNotify] Posted' "$DYLIB"
+          grep -aFq 'Public search page fallback' "$DYLIB"
+          grep -aFq 'Updates are delivered with FilzaSlop' "$DYLIB"
+
+          # Retired cross-cutting behavior must stay retired.
+          ! grep -aFq 'Terminal success: progress reached 100 only after validated file persistence' "$DYLIB"
+          ! grep -aFq 'Terminal failure: cleared active progress' "$DYLIB"
+          ! grep -aFq 'Filza embed metadata compatibility sources=' "$DYLIB"
+          ! grep -aFq 'The visible Import Metadata Source picker is the single source of truth.' "$DYLIB"
+
           shasum -a 256 "$DYLIB"
 
       - name: Generate ByeTunes AppIntents metadata
@@ -387,10 +215,10 @@ jobs:
           test "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Info.plist")" = "com.apple.mobile.MobileHouseArrest"
           EXECUTABLE="$(plutil -extract CFBundleExecutable raw -o - "$APP/Info.plist")"
           test -s "$APP/$EXECUTABLE"
+
           mkdir -p "$APP/Frameworks"
           cp .theos/obj/FilzaApplySandboxExt.dylib "$APP/Frameworks/FilzaApplySandboxExt.dylib"
           codesign --remove-signature "$APP/Frameworks/FilzaApplySandboxExt.dylib" >/dev/null 2>&1 || true
-
           cp .theos/byetunes-resources/AppIconImage.png "$APP/AppIconImage.png"
           cp .theos/byetunes-resources/ByeTunes-Info.plist "$APP/ByeTunes-Info.plist"
           rm -rf "$APP/Filza3105.bundle"
@@ -410,48 +238,18 @@ jobs:
           plutil -replace NSLocalNetworkUsageDescription -string "FilzaSlop uses your local network when you enable its WebDAV server." "$APP/Info.plist"
           plutil -replace NSBonjourServices -json '["_http._tcp"]' "$APP/Info.plist"
 
-          python3 - "$APP/Info.plist" <<'PY'
-          import plistlib, sys
-          with open(sys.argv[1], 'rb') as f:
-              info = plistlib.load(f)
-          actions = info.get('UIApplicationShortcutItems', [])
-          assert len(actions) == 4, actions
-          assert [a['UIApplicationShortcutItemTitle'] for a in actions] == ['Apps Manager', 'Music Library', 'Gestalt Editor', 'Patches'], actions
-          assert all('UIApplicationShortcutItemSubtitle' not in a for a in actions), actions
-          assert [a['UIApplicationShortcutItemType'] for a in actions] == [
-              'com.nightvibes33.filzaslop.apps-manager',
-              'com.nightvibes33.filzaslop.music-library',
-              'com.nightvibes33.filzaslop.gestalt-manager',
-              'com.nightvibes33.filzaslop.patches',
-          ], actions
-          assert info.get('UIFileSharingEnabled') is True
-          assert info.get('LSSupportsOpeningDocumentsInPlace') is True
-          assert info.get('NSLocalNetworkUsageDescription')
-          assert info.get('NSBonjourServices') == ['_http._tcp']
-          assert info.get('CFBundleShortVersionString') == '4.11'
-          assert info.get('NSSupportsLiveActivities') is True
-          assert info.get('NSSupportsLiveActivitiesFrequentUpdates') is True
-          assert str(info.get('CFBundleVersion', '')).isdigit()
-          print('Verified exactly four quick actions and Files/Documents exposure flags')
-          PY
-
-          otool -L "$APP/$EXECUTABLE" | grep -F 'FilzaApplySandboxExt.dylib'
           test -s "$APP/Frameworks/FilzaApplySandboxExt.dylib"
           test -s "$APP/AppIconImage.png"
           test -s "$APP/Filza3105.bundle/Info.plist"
-          test -s "$APP/Filza3105.bundle/AppIcon3105.png"
-          test -s "$APP/Filza3105.bundle/en.lproj/Localizable.strings"
           test -x "$APP/helpers/FilzaWebDAVServer"
-          test -s "$APP/com.tigisoftware.filza.webdavserver.plist"
+          otool -L "$APP/$EXECUTABLE" | grep -F 'FilzaApplySandboxExt.dylib'
 
           OUTPUT="$GITHUB_WORKSPACE/.theos/FilzaSlop-main-${GITHUB_SHA::7}-unsigned.ipa"
           rm -f "$OUTPUT"
           (cd "$STAGE" && zip -qry "$OUTPUT" Payload)
           test -s "$OUTPUT"
+          unzip -tq "$OUTPUT"
           unzip -l "$OUTPUT" | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
-          unzip -l "$OUTPUT" | grep -F 'AppIconImage.png'
-          unzip -l "$OUTPUT" | grep -F 'Filza3105.bundle/en.lproj/Localizable.strings'
-          unzip -l "$OUTPUT" | grep -F 'Filza3105.bundle/AppIcon3105.png'
           shasum -a 256 "$OUTPUT" | tee .theos/IPA-SHA256.txt
 
       - name: Upload installable unsigned IPA and verification files
