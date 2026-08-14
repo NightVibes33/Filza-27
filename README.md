@@ -36,6 +36,13 @@ runtime rather than a look-alike screen. The original five-tab navigation is
 present: Home, Files, Patches, Cleaner, and Wallpapers. Home also exposes the
 original Settings and Logs sheets.
 
+The 3105 sheet has a persistent **Close** control above every tab, so it can be
+left from Apps Manager, Patches, or any other page. A persistent **Filza Apps**
+control opens the original `TGApplicationsViewController` in a second
+dismissible sheet. This retains FilzaSlop's existing native Apps Manager
+controls and its container/selection fixes alongside the complete 3105 UI;
+3105 supplements the native manager instead of deleting it.
+
 Current behavior includes:
 
 - LaunchServices-backed application discovery fallback.

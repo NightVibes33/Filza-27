@@ -4,27 +4,68 @@ import UIKit
 private struct Filza3105EmbeddedRoot: View {
     let initialTab: Int
 
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var appState = AppState()
     @StateObject private var patchDraftCoordinator = PatchDraftCoordinator()
     @AppStorage(AppLanguage.storageKey) private var languageCode = AppLanguage.english.rawValue
+    @State private var originalAppsUnavailable = false
 
     private var language: AppLanguage {
         AppLanguage(rawValue: languageCode) ?? .english
     }
 
     var body: some View {
-        ThreeOneOSFiveContentView(initialTab: initialTab)
-            .environmentObject(appState)
-            .environmentObject(patchDraftCoordinator)
-            .environment(\.appLanguage, language)
-            .environment(\.locale, language.locale)
-            .onAppear {
-                appState.detectSupport()
-                FilzaDiagnosticsAppend(
-                    "3105",
-                    "full upstream workspace appeared initialTab=\(initialTab)"
-                )
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Button {
+                    dismiss()
+                } label: {
+                    Label("Close", systemImage: "xmark")
+                }
+
+                Spacer(minLength: 12)
+
+                Button {
+                    if !Filza3105PresentOriginalAppsFromController(nil) {
+                        originalAppsUnavailable = true
+                    }
+                } label: {
+                    Label("Filza Apps", systemImage: "square.grid.2x2")
+                }
             }
+            .font(.callout.weight(.semibold))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(.ultraThinMaterial)
+
+            Divider()
+
+            ThreeOneOSFiveContentView(initialTab: initialTab)
+                .environmentObject(appState)
+                .environmentObject(patchDraftCoordinator)
+                .environment(\.appLanguage, language)
+                .environment(\.locale, language.locale)
+        }
+        .alert("Filza Apps Manager unavailable", isPresented: $originalAppsUnavailable) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("The original Filza Apps Manager could not be constructed in this build.")
+        }
+        .onAppear {
+            appState.detectSupport()
+            FilzaDiagnosticsAppend(
+                "3105",
+                "persistent Close and Filza Apps controls visible initialTab=\(initialTab)"
+            )
+            FilzaDiagnosticsAppend(
+                "3105",
+                "full upstream workspace appeared initialTab=\(initialTab)"
+            )
+            FilzaDiagnosticsAppend(
+                "3105",
+                "complete tabs linked Home/Files/Patches/Cleaner/Wallpapers/Settings/Logs"
+            )
+        }
     }
 }
 

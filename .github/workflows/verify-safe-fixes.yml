@@ -95,8 +95,16 @@ jobs:
           assert "ThreeOneOSFiveContentView(initialTab: initialTab)" in host
           assert "initialTab: 1" in host
           assert "initialTab: 2" in host
+          assert 'Label("Close", systemImage: "xmark")' in host
+          assert 'Label("Filza Apps", systemImage: "square.grid.2x2")' in host
+          assert "Filza3105PresentOriginalAppsFromController(nil)" in host
           assert "AppDataBrowserView()" not in host
           assert "PatchProjectsView()" not in host
+
+          bridge = Path("Filza3105Bridge.m").read_text()
+          assert "TGApplicationsViewController" in bridge
+          assert "F3105OriginalAppsNavigationController" in bridge
+          assert "presented original Filza Apps Manager with retained controls" in bridge
 
           browser = Path("ThirdParty/3105/Sources/FileBrowserView.swift").read_text()
           for required in (
@@ -255,15 +263,10 @@ jobs:
           grep -aFq 'constructing complete 3105 Patches' "$DYLIB"
           grep -aFq 'constructing full upstream 3105 workspace' "$DYLIB"
           grep -aFq 'full upstream workspace appeared initialTab=' "$DYLIB"
-          grep -aFq 'tab.home' "$DYLIB"
-          grep -aFq 'tab.files' "$DYLIB"
-          grep -aFq 'tab.patches' "$DYLIB"
-          grep -aFq 'tab.cleaner' "$DYLIB"
-          grep -aFq 'tab.wallpapers' "$DYLIB"
-          grep -aFq 'cleaner.scan_again' "$DYLIB"
-          grep -aFq 'wallpaper.checking' "$DYLIB"
-          grep -aFq 'settings.verified_versions' "$DYLIB"
-          grep -aFq 'logs.empty_title' "$DYLIB"
+          grep -aFq 'persistent Close and Filza Apps controls visible initialTab=' "$DYLIB"
+          grep -aFq 'presented original Filza Apps Manager with retained controls' "$DYLIB"
+          grep -aFq 'Close Filza Apps Manager' "$DYLIB"
+          grep -aFq 'complete tabs linked Home/Files/Patches/Cleaner/Wallpapers/Settings/Logs' "$DYLIB"
           grep -aFq 'TGMainView complete 3105 Apps route installed' "$DYLIB"
           grep -aFq 'presented complete %@ directly' "$DYLIB"
           grep -aFq '3105 Apps Manager' "$DYLIB"
