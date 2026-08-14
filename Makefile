@@ -70,7 +70,7 @@ FilzaApplySandboxExt_LDFLAGS += $(IDEVICE_STATIC)
 
 # Framework coverage matches the complete ByeTunes source tree rather than the
 # old reduced music-library bridge.
-FilzaApplySandboxExt_FRAMEWORKS = UIKit Foundation SwiftUI Combine AVFoundation CoreMedia AudioToolbox CryptoKit UniformTypeIdentifiers PhotosUI JavaScriptCore AppIntents CFNetwork MobileCoreServices
+FilzaApplySandboxExt_FRAMEWORKS = UIKit Foundation SwiftUI Combine AVFoundation CoreMedia AudioToolbox CryptoKit UniformTypeIdentifiers PhotosUI JavaScriptCore AppIntents CFNetwork MobileCoreServices WebKit
 FilzaApplySandboxExt_PRIVATE_FRAMEWORKS = IOSurface
 FilzaApplySandboxExt_LIBRARIES = z xml2 sandbox sqlite3
 

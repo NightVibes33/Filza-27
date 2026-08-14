@@ -159,6 +159,13 @@ jobs:
           grep -aFq 'Device Spoofing Info' "$DYLIB"
           grep -aFq 'iPadOS UI Warning' "$DYLIB"
           grep -aFq 'Disable Dynamic Island' "$DYLIB"
+          grep -aFq 'presenting complete Mond Settings' "$DYLIB"
+          grep -aFq 'Run Exploit' "$DYLIB"
+          grep -aFq 'Generate Token' "$DYLIB"
+          grep -aFq 'Keep Alive' "$DYLIB"
+          grep -aFq 'Mond Respring confirmed' "$DYLIB"
+          grep -aFq 'bad_query' "$DYLIB"
+          grep -aFq 'cmg' "$DYLIB"
           ! grep -aFq 'Loading MobileGestalt' "$DYLIB"
           ! grep -aFq 'Opening the complete Gestalt Editor' "$DYLIB"
           grep -aFq 'inserted in-app Gestalt Editor row beside Apps/Music' "$DYLIB"
@@ -178,6 +185,7 @@ jobs:
           grep -aFq 'imported pairing file persisted at' "$DYLIB"
           grep -aFq 'restored persisted pairing file; reconnecting automatically' "$DYLIB"
           grep -aFq 'no persisted pairing file; showing import flow' "$DYLIB"
+          grep -aFq 'Current Apple Music JWT token selected' "$DYLIB"
           ! grep -aFq 'Starting ByeTunes' "$DYLIB"
           ! grep -aFq 'before ByeTunes can connect' "$DYLIB"
           ! grep -aFq 'Add ByeTunes Shortcut' "$DYLIB"
@@ -240,7 +248,7 @@ jobs:
           fi
 
           plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemSubtitle":"Browse installed apps","UIApplicationShortcutItemIconSymbolName":"square.grid.2x2"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music Library","UIApplicationShortcutItemSubtitle":"Open Music Library","UIApplicationShortcutItemIconSymbolName":"music.note.list"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Editor","UIApplicationShortcutItemSubtitle":"Edit MobileGestalt","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"}]' "$APP/Info.plist"
-          plutil -replace CFBundleShortVersionString -string "4.4" "$APP/Info.plist"
+          plutil -replace CFBundleShortVersionString -string "4.5" "$APP/Info.plist"
           plutil -replace CFBundleVersion -string "${GITHUB_RUN_NUMBER}" "$APP/Info.plist"
           plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
           plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
@@ -263,7 +271,7 @@ jobs:
           assert info.get('LSSupportsOpeningDocumentsInPlace') is True
           assert info.get('NSLocalNetworkUsageDescription')
           assert info.get('NSBonjourServices') == ['_http._tcp']
-          assert info.get('CFBundleShortVersionString') == '4.4'
+          assert info.get('CFBundleShortVersionString') == '4.5'
           assert str(info.get('CFBundleVersion', '')).isdigit()
           print('Verified exactly three quick actions and Files/Documents exposure flags')
           PY

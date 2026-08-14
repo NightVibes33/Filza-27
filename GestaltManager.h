@@ -6,6 +6,9 @@ FOUNDATION_EXPORT void FilzaGestaltManagerInstall(void);
 FOUNDATION_EXPORT void FilzaGestaltManagerPresent(void);
 FOUNDATION_EXPORT void FilzaGestaltManagerPresentFromController(UIViewController * _Nullable controller);
 FOUNDATION_EXPORT NSString * _Nullable FilzaGestaltResolvePath(NSString * _Nullable * _Nullable detail);
+FOUNDATION_EXPORT NSString *FilzaGestaltPreferredMethod(void);
+FOUNDATION_EXPORT void FilzaGestaltSetPreferredMethod(NSString *method);
+FOUNDATION_EXPORT NSString * _Nullable FilzaGestaltRefreshAccess(NSString * _Nullable * _Nullable detail);
 FOUNDATION_EXPORT NSError * _Nullable FilzaGestaltWritePlist(NSString *path, NSDictionary *plist);
 FOUNDATION_EXPORT NSError * _Nullable FilzaGestaltRestoreBackup(NSString *path);
 
