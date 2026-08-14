@@ -34,12 +34,12 @@ grep -Fq '/DownloadLiveActivityAttributes.swift' "$SOURCE_LIST"
 ! grep -Fq '/SplashView.swift' "$SOURCE_LIST"
 
 # Swift only emits the supplementary constant-value sidecar for conformances
-# named in this JSON array. These are the two AppIntents protocols implemented
-# by the complete ByeTunes 2.4 source graph in MusicManagerIntents.swift.
-printf '%s\n' '["AppIntents.AppIntent", "AppIntents.AppShortcutsProvider"]' > "$PROTOCOL_LIST"
+# whose unqualified declaration names appear in this JSON array. These are the
+# two protocols implemented by the complete ByeTunes 2.4 intents source.
+printf '%s\n' '["AppIntent", "AppShortcutsProvider"]' > "$PROTOCOL_LIST"
 test -s "$PROTOCOL_LIST"
-grep -Fq 'AppIntents.AppIntent' "$PROTOCOL_LIST"
-grep -Fq 'AppIntents.AppShortcutsProvider' "$PROTOCOL_LIST"
+grep -Fq '"AppIntent"' "$PROTOCOL_LIST"
+grep -Fq '"AppShortcutsProvider"' "$PROTOCOL_LIST"
 
 SOURCES=()
 while IFS= read -r file; do
