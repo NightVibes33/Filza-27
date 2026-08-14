@@ -1134,6 +1134,11 @@ void FilzaGestaltManagerPresent(void)
 
 #pragma mark - Filza manager-menu insertion
 
+// The editor now lives in TGMainView's persistent bottom toolbar. Keep the old
+// table-row injector out of the runtime so opening a new browser page cannot
+// move or duplicate the Gestalt entry.
+#if 0
+
 static NSString *GMCellText(UITableViewCell *cell)
 {
     if (cell.textLabel.text.length) return cell.textLabel.text;
@@ -1350,17 +1355,12 @@ static void GMInstallShortcutDelegateHook(void)
     gGMShortcutHookInstalled = YES;
     NSLog(@"[GestaltManager] quick-action delegate hook installed on %@", NSStringFromClass(cls));
 }
+#endif
 
 void FilzaGestaltManagerInstall(void)
 {
-    // Scan repeatedly because Filza creates and populates its manager table
-    // after launch. The inserted row opens the exact same complete Mond surface
-    // as the static Home Screen quick action.
-    if (!gGMMenuHooksInstalled && !gGMMenuScanScheduled) {
-        gGMMenuScanScheduled = YES;
-        GMScheduleMenuScan(8);
-        FilzaDiagnosticsAppend(@"Gestalt", @"in-app manager-row discovery scheduled");
-    }
+    FilzaDiagnosticsAppend(@"Gestalt",
+        @"legacy manager-row insertion disabled; persistent bottom toolbar owns Gestalt");
 }
 
 __attribute__((constructor)) static void GestaltManagerInit(void)

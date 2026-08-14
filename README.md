@@ -11,7 +11,8 @@ This fork currently targets the iOS 18 / iOS 26 / early iOS 27 behavior exposed 
 | Area | Status |
 | --- | --- |
 | Real unsigned arm64 IPA build | ✅ CI builds and uploads a real IPA |
-| App container discovery | ✅ Integrated |
+| 3105 Apps Manager | ✅ Full native app-data browser integrated |
+| Portable Patches | ✅ Full `.3105` project/import/apply/restore flow integrated |
 | Foreign app data-container fallback | ✅ Integrated |
 | App size metadata retry | ✅ Integrated |
 | App icon fallback | ✅ Integrated |
@@ -27,7 +28,11 @@ This fork currently targets the iOS 18 / iOS 26 / early iOS 27 behavior exposed 
 
 ### Apps Manager
 
-The fork keeps Filza's Apps Manager path and adds compatibility work for modern iOS application discovery and metadata.
+Filza's `openApps` route and Home Screen action now open the native App Data
+Browser from `NightVibes33/3105` commit
+`1da66f733a7ad6bb5c9e1d078e89cfbb02faec72`. This is the real 3105 browser,
+adapted to reuse FilzaSlop's retained ContainerManager leases and `bad_query`
+runtime rather than a look-alike screen.
 
 Current behavior includes:
 
@@ -37,6 +42,24 @@ Current behavior includes:
 - Container access is considered successful only after directory access can be verified.
 - App disk usage is retried after a real foreign data-container path becomes available instead of permanently showing `0 KB` from the initial inaccessible path.
 - App icon lookup includes a MobileIcons resource-proxy fallback and format `10` before older formats.
+- Native app search, container browsing, file preview, multi-file import, create,
+  rename, replace, and delete operations are included.
+- Files and folders can be turned directly into portable patch drafts.
+
+### Patches
+
+**Patches** is a fourth static Home Screen quick action and a persistent bottom
+toolbar button. It opens the complete selected 3105 patch implementation:
+
+- create and edit portable `.3105` projects;
+- import and export packages;
+- optional password protection with PBKDF2, AES-GCM, and Keychain-backed keys;
+- stable bundle-identifier targets that survive app-container UUID changes;
+- validated path and payload limits;
+- transactional apply with backups, receipts, and restore.
+
+The imported GPLv3 license, upstream commit pin, and third-party notices are
+preserved under `ThirdParty/3105`.
 
 ### Music Library
 
@@ -76,9 +99,11 @@ validation.
 
 ### Gestalt Editor
 
-The complete Gestalt editor is compiled into the Filza runtime. A **Gestalt Editor**
-action is inserted beside the existing Apps Manager and Music Library entries, with a
-`TGMainView` toolbar hook as a second in-app route.
+The complete Gestalt editor is compiled into the Filza runtime. **Gestalt Editor**
+and **Patches** are small icon buttons beside Filza's existing Apps Manager and Music
+Library buttons in the bottom `TGMainView` toolbar. The toolbar is restored after
+Filza rebuilds it, when a browser page/window appears, and when the app becomes active;
+the old manager-table-row insertion is disabled.
 
 It is also exposed as a static Home Screen quick action:
 
@@ -298,7 +323,7 @@ now performs the complete installable build:
 4. stages ByeTunes runtime resources;
 5. downloads and hash-verifies the pinned unsigned Filza base IPA;
 6. injects the current runtime dylib and resources;
-7. writes exactly three Home Screen shortcuts plus Local Network/Bonjour declarations into `Info.plist` and assigns build version `4.6`;
+7. writes exactly four Home Screen shortcuts plus Local Network/Bonjour declarations into `Info.plist` and assigns build version `4.7`;
 8. verifies the base executable actually loads `FilzaApplySandboxExt.dylib`;
 9. repacks a real unsigned IPA;
 10. uploads the IPA as a GitHub Actions artifact.
@@ -316,7 +341,7 @@ Open **Actions → Verify Filza installable IPA** to download the latest build a
 ## Current limitations
 
 - A green build proves the current source compiled, linked, packaged, and uploaded successfully. It does **not** prove every private API or sandbox-extension path still works on a specific iOS build.
-- Music Library, Gestalt Editor, and WebDAV should be revalidated on-device after each new IPA build.
+- Apps Manager, Patches, Music Library, Gestalt Editor, and WebDAV should be revalidated on-device after each new IPA build.
 - The existing container-access primitives do not establish unrestricted `/`, `/System`, `/Library`, `/Applications`, or arbitrary `/private` traversal.
 - No kernel read/write or full jailbreak primitive is claimed by this README.
 
@@ -335,3 +360,4 @@ Open **Actions → Verify Filza installable IPA** to download the latest build a
 - `SerStars/nugget-wallpapers`
 - mightycooldude12
 - [`rooootdev/mond`](https://github.com/rooootdev/mond) for the Gestalt editor behavior integrated into this fork
+- [`YangJiiii/3105`](https://github.com/YangJiiii/3105) and [`NightVibes33/3105`](https://github.com/NightVibes33/3105) for the native app-data browser and portable patch manager integrated under GPLv3
