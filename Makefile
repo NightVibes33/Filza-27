@@ -45,10 +45,10 @@ FilzaApplySandboxExt_FILES += XPF/external/ChOma/src/arm64.c XPF/external/ChOma/
 
 # Full ByeTunes embedding. Compile every Swift source from the pinned ByeTunes
 # app, including all screens, downloader, ringtones, settings and metadata
-# tools. The Filza compatibility layer restores the pre-v2.4 multi-source and
-# YouTube metadata contract that upstream v2.4 removed. Only MusicManagerApp.swift
-# is omitted because its @main owns a standalone UIApplication lifecycle; Filza
-# already owns that lifecycle.
+# tools. The compatibility layer restores the exact pre-v2.4 multi-source and
+# YouTube metadata state semantics while retaining v2.4 features. Only
+# MusicManagerApp.swift is omitted because its @main owns a standalone
+# UIApplication lifecycle; Filza already owns that lifecycle.
 BYETUNES_SWIFT_FILES := $(shell find $(BYETUNES_ROOT) -type f -name '*.swift' ! -name 'MusicManagerApp.swift' ! -name 'SplashView.swift' -print)
 THREEONE_SWIFT_FILES := $(shell find $(THREEONE_ROOT)/Sources -type f -name '*.swift' -print)
 FilzaApplySandboxExt_SWIFT_FILES = ByeTunesEmbeddedHost.swift ByeTunesMetadataCompat.swift MondGestaltView.swift Filza3105Host.swift $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
@@ -83,6 +83,7 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/patch-access-map-provenance.sh
 	@bash scripts/patch-byetunes-upstream-parity.sh
 	@bash scripts/restore-byetunes-v24-metadata-compat.sh
+	@bash scripts/patch-byetunes-metadata-parity-post.sh
 	@bash scripts/patch-byetunes-device-library-save.sh
 	@test -s "$(IDEVICE_STATIC)" || (echo "Missing $(IDEVICE_STATIC). Run: bash scripts/build-idevice.sh" >&2; exit 1)
 	@test -d "$(BYETUNES_ROOT)" || (echo "Missing ByeTunes submodule. Run: git submodule update --init --recursive" >&2; exit 1)
@@ -91,6 +92,7 @@ before-FilzaApplySandboxExt-all::
 	@test -f "$(BYETUNES_ACTIVITY_SHARED)" || (echo "Missing ByeTunes 2.4 shared Live Activity model" >&2; exit 1)
 	@test -f "ByeTunesMetadataCompat.swift" || (echo "Missing ByeTunes metadata compatibility layer" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-upstream-parity.sh" || (echo "Missing ByeTunes upstream-parity patch" >&2; exit 1)
+	@test -f "scripts/patch-byetunes-metadata-parity-post.sh" || (echo "Missing ByeTunes metadata-parity post-patch" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-device-library-save.sh" || (echo "Missing ByeTunes device-library save verifier" >&2; exit 1)
 	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.c" || (echo "Missing pinned bad_query submodule. Run: git submodule update --init --recursive" >&2; exit 1)
 	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.h" || (echo "Incomplete bad_query submodule" >&2; exit 1)
