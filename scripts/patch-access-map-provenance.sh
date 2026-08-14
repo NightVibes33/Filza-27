@@ -70,7 +70,7 @@ old_live_block = (
     '         "Current Filza access\\n"\n'
     '         "The sections below are generated during the current launch.\\n"\n'
     '         "Only direct symlinks created after token activation and a directory-open check appear as enabled roots.\\n"\n'
-    '         "Experimental sections also show each checked subpath and its current open status.\\n\\n"];' 
+    '         "Experimental sections also show each checked subpath and its current open status.\\n\\n"];'
 )
 new_live_block = (
     '         "Current-launch Filza access\\n"\n'
@@ -78,7 +78,7 @@ new_live_block = (
     '         "Enabled roots are symlinks whose MCM-returned directory passed the code\'s read-only directory-open gate; this line alone is not a claim that sandbox_extension_consume succeeded.\\n"\n'
     '         "Experimental status=linked means a symlink was installed after the scoped lookup returned a directory that passed the read-only open gate.\\n"\n'
     '         "Probe semantics: readable/writable are access(R_OK/W_OK) checks; open=yes means an O_RDONLY open succeeded. These fields do not claim an actual target write.\\n"\n'
-    '         "Actual mutation is claimed only where a separately labeled controlled-write proof explicitly says bytes were written, verified, and restored.\\n\\n"];' 
+    '         "Actual mutation is claimed only where a separately labeled controlled-write proof explicitly says bytes were written, verified, and restored.\\n\\n"];'
 )
 replace_exact(old_live_block, new_live_block, "current-launch proof semantics")
 
@@ -97,11 +97,5 @@ grep -Fq 'Recorded negative-control result on build 24A5390f:' "$TARGET"
 grep -Fq 'readable/writable are access(R_OK/W_OK) checks' "$TARGET"
 grep -Fq 'These fields do not claim an actual target write.' "$TARGET"
 
-# Keep the on-device Music library mutation hardening in the same fail-closed
-# pre-build chain so every produced IPA gets persistence verification.
-bash scripts/patch-byetunes-device-library-save.sh
-
-# Make the visible Import Metadata Source picker authoritative before the
-# metadata-compatibility source is compiled. This prevents stale pre-v2.4
-# metadataSourcesJSON state from silently turning Local Files into All Sources.
-bash scripts/fix-byetunes-import-source-routing.sh
+# Deliberately no ByeTunes patch calls here. ACCESS MAP provenance and Music
+# behavior are independent build concerns and must not have hidden ordering.
