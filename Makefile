@@ -44,14 +44,14 @@ FilzaApplySandboxExt_FILES += XPF/src/xpf.c XPF/src/common.c XPF/src/decompress.
 FilzaApplySandboxExt_FILES += XPF/external/ChOma/src/arm64.c XPF/external/ChOma/src/Base64.c XPF/external/ChOma/src/BufferedStream.c XPF/external/ChOma/src/CodeDirectory.c XPF/external/ChOma/src/CSBlob.c XPF/external/ChOma/src/DER.c XPF/external/ChOma/src/DyldSharedCache.c XPF/external/ChOma/src/Entitlements.c XPF/external/ChOma/src/Fat.c XPF/external/ChOma/src/FileStream.c XPF/external/ChOma/src/Host.c XPF/external/ChOma/src/MachO.c XPF/external/ChOma/src/MachOLoadCommand.c XPF/external/ChOma/src/MemoryStream.c XPF/external/ChOma/src/PatchFinder.c XPF/external/ChOma/src/PatchFinder_arm64.c XPF/external/ChOma/src/Util.c
 
 # Full ByeTunes embedding. Compile every Swift source from the pinned ByeTunes
-# app, including all screens, downloader, ringtones, settings, metadata tools,
-# DeviceManager, intents and YouTubeKit. Only MusicManagerApp.swift is omitted
-# because its @main owns a standalone UIApplication lifecycle; Filza already
-# owns that lifecycle. ByeTunesEmbeddedHost.swift exposes ContentView() as a
-# child controller that is mounted directly inside Filza's Music Library.
+# app, including all screens, downloader, ringtones, settings and metadata
+# tools. The Filza compatibility layer restores the pre-v2.4 multi-source and
+# YouTube metadata contract that upstream v2.4 removed. Only MusicManagerApp.swift
+# is omitted because its @main owns a standalone UIApplication lifecycle; Filza
+# already owns that lifecycle.
 BYETUNES_SWIFT_FILES := $(shell find $(BYETUNES_ROOT) -type f -name '*.swift' ! -name 'MusicManagerApp.swift' ! -name 'SplashView.swift' -print)
 THREEONE_SWIFT_FILES := $(shell find $(THREEONE_ROOT)/Sources -type f -name '*.swift' -print)
-FilzaApplySandboxExt_SWIFT_FILES = ByeTunesEmbeddedHost.swift MondGestaltView.swift Filza3105Host.swift $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
+FilzaApplySandboxExt_SWIFT_FILES = ByeTunesEmbeddedHost.swift ByeTunesMetadataCompat.swift MondGestaltView.swift Filza3105Host.swift $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
 
 # --- Flags ---
 FilzaApplySandboxExt_CFLAGS = -I$(PWD)/compat -I$(PWD) -I$(PWD)/XPF/src -I$(PWD)/XPF/external/ChOma/include -I$(IDEVICE_VENDOR)/include -I$(PWD)/$(BAD_QUERY_ROOT)/bad_query -I$(PWD)/$(THREEONE_ROOT)/Sources \
@@ -80,11 +80,13 @@ FilzaApplySandboxExt_INSTALL_TARGET_PROCESSES = Filza
 before-FilzaApplySandboxExt-all::
 	@bash scripts/patch-access-map-provenance.sh
 	@bash scripts/patch-byetunes-embedded.sh
+	@bash scripts/restore-byetunes-v24-metadata-compat.sh
 	@test -s "$(IDEVICE_STATIC)" || (echo "Missing $(IDEVICE_STATIC). Run: bash scripts/build-idevice.sh" >&2; exit 1)
 	@test -d "$(BYETUNES_ROOT)" || (echo "Missing ByeTunes submodule. Run: git submodule update --init --recursive" >&2; exit 1)
 	@test -f "$(BYETUNES_ROOT)/ContentView.swift" || (echo "Incomplete ByeTunes submodule" >&2; exit 1)
 	@test -f "$(BYETUNES_ROOT)/BackgroundAudioDownloadManager.swift" || (echo "Incomplete ByeTunes 2.4 sources" >&2; exit 1)
 	@test -f "$(BYETUNES_ACTIVITY_SHARED)" || (echo "Missing ByeTunes 2.4 shared Live Activity model" >&2; exit 1)
+	@test -f "ByeTunesMetadataCompat.swift" || (echo "Missing ByeTunes metadata compatibility layer" >&2; exit 1)
 	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.c" || (echo "Missing pinned bad_query submodule. Run: git submodule update --init --recursive" >&2; exit 1)
 	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.h" || (echo "Incomplete bad_query submodule" >&2; exit 1)
 	@test -f "AppProxyMetadataFix.m" || (echo "Missing AppProxyMetadataFix.m" >&2; exit 1)
