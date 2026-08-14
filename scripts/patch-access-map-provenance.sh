@@ -96,3 +96,7 @@ grep -Fq 'Recorded controlled-write proof on build 24A5380h:' "$TARGET"
 grep -Fq 'Recorded negative-control result on build 24A5390f:' "$TARGET"
 grep -Fq 'readable/writable are access(R_OK/W_OK) checks' "$TARGET"
 grep -Fq 'These fields do not claim an actual target write.' "$TARGET"
+
+# Keep the on-device Music library mutation hardening in the same fail-closed
+# pre-build chain so every produced IPA gets persistence verification.
+bash scripts/patch-byetunes-device-library-save.sh
