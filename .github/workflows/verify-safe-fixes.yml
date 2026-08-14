@@ -131,7 +131,22 @@ jobs:
           patches = Path("ThirdParty/3105/Sources/PatchProjectsView.swift").read_text()
           assert ".sheet(item: $draftCoordinator.request)" in patches
           assert "initialDraft: request.draft" in patches
-          print("Verified the complete connected 3105 root instead of standalone partial hosts")
+
+          system_probe = Path("BadQuerySystemProbe.m").read_text()
+          for required in (
+              "WritePermissionCheck",
+              "FilesystemReadOnly",
+              "EffectiveWritable",
+              "readable-read-only-filesystem",
+              "Access Status.txt",
+              "MNT_RDONLY",
+          ):
+              assert required in system_probe, required
+
+          paste_fix = Path("Tweak.m").read_text()
+          assert "code == EROFS" in paste_fix
+          assert "cannot remount a filesystem read-write" in paste_fix
+          print("Verified connected 3105 root and system-root write-boundary diagnostics")
           PY
           test -f ByeTunesFilzaLibraryEmbed.m
           test -f ByeTunesFullAppLauncher.m
@@ -386,7 +401,7 @@ jobs:
           fi
 
           plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemIconSymbolName":"square.grid.2x2"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music Library","UIApplicationShortcutItemIconSymbolName":"music.note.list"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Editor","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.patches","UIApplicationShortcutItemTitle":"Patches","UIApplicationShortcutItemIconSymbolName":"shippingbox"}]' "$APP/Info.plist"
-          plutil -replace CFBundleShortVersionString -string "4.10" "$APP/Info.plist"
+          plutil -replace CFBundleShortVersionString -string "4.11" "$APP/Info.plist"
           plutil -replace CFBundleVersion -string "${GITHUB_RUN_NUMBER}" "$APP/Info.plist"
           plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
           plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
@@ -413,7 +428,7 @@ jobs:
           assert info.get('LSSupportsOpeningDocumentsInPlace') is True
           assert info.get('NSLocalNetworkUsageDescription')
           assert info.get('NSBonjourServices') == ['_http._tcp']
-          assert info.get('CFBundleShortVersionString') == '4.10'
+          assert info.get('CFBundleShortVersionString') == '4.11'
           assert info.get('NSSupportsLiveActivities') is True
           assert info.get('NSSupportsLiveActivitiesFrequentUpdates') is True
           assert str(info.get('CFBundleVersion', '')).isdigit()
