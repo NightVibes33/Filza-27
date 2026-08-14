@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euxo pipefail
+set -euo pipefail
 
 OUTPUT_ROOT="${1:-.theos/byetunes-appintents}"
 SOURCE_LIST="$OUTPUT_ROOT/source-files.txt"
@@ -7,6 +7,7 @@ CONST_VALUES="$OUTPUT_ROOT/FilzaApplySandboxExt.swiftconstvalues"
 OBJECT_OUT="$OUTPUT_ROOT/MusicManagerIntents.o"
 MODULE_CACHE="$OUTPUT_ROOT/module-cache"
 PROTOCOL_LIST="$OUTPUT_ROOT/FilzaApplySandboxExt_const_extract_protocols.json"
+FRONTEND_STDERR="$OUTPUT_ROOT/swift-frontend.stderr"
 ROOT="$(pwd)"
 INTENTS_SOURCE="$(python3 -c 'import os; print(os.path.realpath("ByeTunes/MusicManager/MusicManagerIntents.swift"))')"
 
@@ -35,13 +36,8 @@ grep -Fq '/DownloadLiveActivityAttributes.swift' "$SOURCE_LIST"
 ! grep -Fq '/MusicManagerApp.swift' "$SOURCE_LIST"
 ! grep -Fq '/SplashView.swift' "$SOURCE_LIST"
 
-# Swift only emits the supplementary constant-value sidecar for conformances
-# whose unqualified declaration names appear in this JSON array. These are the
-# two protocols implemented by the complete ByeTunes 2.4 intents source.
 printf '%s\n' '["AppIntent", "AppShortcutsProvider"]' > "$PROTOCOL_LIST"
 test -s "$PROTOCOL_LIST"
-grep -Fq '"AppIntent"' "$PROTOCOL_LIST"
-grep -Fq '"AppShortcutsProvider"' "$PROTOCOL_LIST"
 
 SOURCES=()
 FRONTEND_SOURCES=()
@@ -59,11 +55,10 @@ test "$(printf '%s\n' "${FRONTEND_SOURCES[@]}" | grep -Fc -- '-primary-file')" =
 DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
 SDK_ROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
 
-# Match Xcode's per-primary Swift frontend job: compile the intents source as
-# the primary file while making the complete embedded module graph visible.
-# Calling swift-frontend directly prevents swiftc's module-only driver action
-# from discarding the supplementary constant-values output.
-xcrun --sdk iphoneos swift-frontend \
+rm -f "$FRONTEND_STDERR"
+echo "AppIntents const extraction: compiling MusicManagerIntents.swift as the single primary file across ${#SOURCES[@]} embedded Swift sources"
+
+if ! xcrun --sdk iphoneos swift-frontend \
   -frontend \
   -c \
   "${FRONTEND_SOURCES[@]}" \
@@ -88,7 +83,16 @@ xcrun --sdk iphoneos swift-frontend \
   -Xcc -I"$ROOT/ThirdParty/bad_query/bad_query" \
   -Xcc -I"$ROOT/ThirdParty/3105/Sources" \
   -Xcc -I"$SDK_ROOT/usr/include/libxml2" \
-  -o "$OBJECT_OUT"
+  -o "$OBJECT_OUT" 2>"$FRONTEND_STDERR"; then
+  echo "ERROR: Swift AppIntents constant-value extraction failed. Compiler diagnostics:"
+  cat "$FRONTEND_STDERR"
+  exit 1
+fi
+
+if test -s "$FRONTEND_STDERR"; then
+  echo "Swift AppIntents constant-value extraction diagnostics:"
+  cat "$FRONTEND_STDERR"
+fi
 
 test -s "$OBJECT_OUT"
 test -s "$CONST_VALUES"
