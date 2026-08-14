@@ -15,7 +15,7 @@ mkdir -p "$OUTPUT_ROOT" "$MODULE_CACHE"
 # Match the Swift source graph in Makefile exactly. The standalone @main and
 # splash owners are intentionally excluded because Filza owns the lifecycle.
 {
-  for file in ByeTunesEmbeddedHost.swift MondGestaltView.swift Filza3105Host.swift; do
+  for file in ByeTunesEmbeddedHost.swift ByeTunesMetadataCompat.swift MondGestaltView.swift Filza3105Host.swift; do
     python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$file"
   done
   find ThirdParty/3105/Sources -type f -name '*.swift' -print | sort | while IFS= read -r file; do
@@ -29,6 +29,7 @@ mkdir -p "$OUTPUT_ROOT" "$MODULE_CACHE"
 } > "$SOURCE_LIST"
 
 test -s "$SOURCE_LIST"
+grep -Fq '/ByeTunesMetadataCompat.swift' "$SOURCE_LIST"
 grep -Fq '/MusicManagerIntents.swift' "$SOURCE_LIST"
 grep -Fq '/DownloadLiveActivityAttributes.swift' "$SOURCE_LIST"
 ! grep -Fq '/MusicManagerApp.swift' "$SOURCE_LIST"
