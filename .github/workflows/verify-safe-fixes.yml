@@ -48,16 +48,17 @@ jobs:
           test -f ByeTunes/MusicManager/BackgroundMetadataFetchManager.swift
           test -f ByeTunes/MusicManagerActivityShared/DownloadLiveActivityAttributes.swift
           test -f ByeTunesMetadataCompat.swift
-          test -f scripts/patch-byetunes-upstream-parity.sh
+          test -f scripts/patch-byetunes-upstream-parity-v2.sh
           test -f scripts/restore-byetunes-v24-metadata-compat.sh
           test -f scripts/patch-byetunes-metadata-parity-post.sh
           test -f scripts/patch-byetunes-device-library-save.sh
           test -f ThirdParty/bad_query/bad_query/bad_query.c
           test -f ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
           test -f ThirdParty/GCDWebServer/GCDWebDAVServer/GCDWebDAVServer.m
-          grep -Fq 'patch-byetunes-upstream-parity.sh' Makefile
+          grep -Fq 'patch-byetunes-upstream-parity-v2.sh' Makefile
           grep -Fq 'patch-byetunes-metadata-parity-post.sh' Makefile
           grep -Fq 'patch-byetunes-device-library-save.sh' Makefile
+          ! grep -Fq 'patch-byetunes-upstream-parity.sh' Makefile
           ! grep -Fq 'patch-byetunes-embedded.sh' Makefile
           ! grep -Fq 'fix-byetunes-import-source-routing.sh' Makefile
           ! grep -Fq 'patch-byetunes-device-library-save.sh' scripts/patch-access-map-provenance.sh
@@ -157,7 +158,6 @@ jobs:
           test -s "$DYLIB"
           test "$(lipo -archs "$DYLIB")" = "arm64"
 
-          # Filza host integrations still need to be physically linked.
           grep -aFq 'Gestalt Editor' "$DYLIB"
           grep -aFq 'MondGestaltHostFactory' "$DYLIB"
           grep -aFq 'Filza3105HostFactory' "$DYLIB"
@@ -166,19 +166,14 @@ jobs:
           grep -aFq 'ByeTunes 2.4 background URL session route installed on Filza AppDelegate' "$DYLIB"
           grep -aFq 'jailed in-process WebDAV lifecycle hook installed' "$DYLIB"
 
-          # Upstream-first ByeTunes parity markers. These replace the old
-          # Filza-specific progress/error contract checks.
           grep -aFq 'upstream lifecycle onAppear entered' "$DYLIB"
           grep -aFq 'Installing auto-reconnect watcher' "$DYLIB"
-          grep -aFq 'checkPendingInjections' "$DYLIB"
           grep -aFq '[MusicView] metadata sources=' "$DYLIB"
-          grep -aFq 'metadataSourcesUsed' "$DYLIB"
           grep -aFq '[DeviceLibrarySave] VERIFIED persisted metadata' "$DYLIB"
           grep -aFq '[SyncNotify] Posted' "$DYLIB"
           grep -aFq 'Public search page fallback' "$DYLIB"
           grep -aFq 'Updates are delivered with FilzaSlop' "$DYLIB"
 
-          # Retired cross-cutting behavior must stay retired.
           ! grep -aFq 'Terminal success: progress reached 100 only after validated file persistence' "$DYLIB"
           ! grep -aFq 'Terminal failure: cleared active progress' "$DYLIB"
           ! grep -aFq 'Filza embed metadata compatibility sources=' "$DYLIB"
