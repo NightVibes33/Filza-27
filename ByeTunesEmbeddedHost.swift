@@ -23,6 +23,32 @@ private func makeMusicLibraryHost() -> UIViewController {
 /// loading controller or branded splash is needed.
 @objc(ByeTunesEmbeddedHostFactory)
 public final class ByeTunesEmbeddedHostFactory: NSObject {
+    @objc(handleBackgroundEventsForSessionIdentifier:completionHandler:)
+    public static func handleBackgroundEvents(
+        forSessionIdentifier identifier: String,
+        completionHandler: @escaping () -> Void
+    ) -> Bool {
+        if identifier == MetadataBackgroundURLSession.sessionIdentifier {
+            guard BackgroundMetadataFetchManager.isEnabled else {
+                completionHandler()
+                return true
+            }
+            MetadataBackgroundURLSession.shared.setBackgroundEventsCompletionHandler(completionHandler)
+            BackgroundMetadataFetchManager.shared.processPendingDownloadsInBackground()
+            return true
+        }
+
+        guard identifier == BackgroundAudioDownloadManager.sessionIdentifier else {
+            return false
+        }
+        guard UserDefaults.standard.bool(forKey: "backgroundDownloadsEnabled") else {
+            completionHandler()
+            return true
+        }
+        BackgroundAudioDownloadManager.shared.setBackgroundEventsCompletionHandler(completionHandler)
+        return true
+    }
+
     @objc(makeLibraryViewController)
     public static func makeLibraryViewController() -> UIViewController {
         FilzaDiagnosticsWriteByeTunesStage("direct Music Library factory entered")

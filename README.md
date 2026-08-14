@@ -28,10 +28,8 @@ This fork currently targets the iOS 18 / iOS 26 / early iOS 27 behavior exposed 
 
 ### Apps Manager
 
-Filza's bottom **Apps Manager** button continues to use the original
-`TGApplicationsViewController`, retaining its existing controls and the
-FilzaSlop container/selection fixes. The Home Screen **Apps Manager** action
-opens the Files tab in the complete native workspace from `NightVibes33/3105` commit
+Filza's bottom **Apps Manager** button and the Home Screen **Apps Manager** action
+both open the Files tab in the complete native workspace from `NightVibes33/3105` commit
 `1da66f733a7ad6bb5c9e1d078e89cfbb02faec72`. This is the real 3105 browser,
 adapted to reuse FilzaSlop's retained ContainerManager leases and `bad_query`
 runtime rather than a look-alike screen. The original five-tab navigation is
@@ -81,9 +79,6 @@ The complete upstream music-management implementation is compiled into the arm64
 The packaged IPA includes:
 
 ```text
-meriyah.umd.js
-astring.umd.js
-yt_ejs_helper.js
 AppIconImage.png
 ByeTunes-Info.plist
 ```
@@ -95,9 +90,17 @@ or artificial delay. `TGMusicLibraryViewController` remains only as a fallback r
 Imported pairing files are copied into FilzaSlop's persistent Documents container. On
 later launches the embedded manager validates that saved copy, skips the import screen,
 and reconnects automatically; the document picker is shown only when no valid saved
-pairing file exists. Apple Music search extracts the current unexpired JWT from Apple's
-live web-player bundle and prefers its `AMPWebPlay` token, so token header-field order
-changes do not silently empty the Download tab.
+pairing file exists. The source pin is the official ByeTunes `v2.4` tag, including its
+background download queue, queue persistence, device-library browser, backup/restore,
+repair, and Live Activity support. Apple Music lookup uses ByeTunes 2.4's public catalog
+page parser instead of the older web-player JWT scraper.
+
+Transport completion is capped below 100% until the response has passed HTTP and audio
+validation. Each failed backend clears its progress before the next fallback, failed
+tracks remain visibly retryable, and 100% is published only after the validated file is
+handed off or persisted. The embedded Settings version row is informational because a
+standalone ByeTunes IPA cannot update the copy compiled into FilzaSlop; Music Library
+updates are delivered by the FilzaSlop IPA.
 
 A runtime stage marker is written to:
 
@@ -118,12 +121,9 @@ Library buttons in the bottom `TGMainView` toolbar. The toolbar is restored afte
 Filza rebuilds it, when a browser page/window appears, and when the app becomes active;
 the old manager-table-row insertion is disabled.
 
-It is also exposed as a static Home Screen quick action:
-
-```text
-Gestalt Editor
-Edit MobileGestalt
-```
+It is also exposed as a static Home Screen quick action named **Gestalt Editor**.
+All four quick actions use only their feature names—Apps Manager, Music Library,
+Gestalt Editor, and Patches—with no redundant subtitle text.
 
 Both the in-app button and Home Screen quick action open the same editor directly with
 no intermediate loading controller. MobileGestalt access is prewarmed after launch;
@@ -336,7 +336,7 @@ now performs the complete installable build:
 4. stages ByeTunes runtime resources;
 5. downloads and hash-verifies the pinned unsigned Filza base IPA;
 6. injects the current runtime dylib and resources;
-7. writes exactly four Home Screen shortcuts plus Local Network/Bonjour declarations into `Info.plist` and assigns build version `4.9`;
+7. writes exactly four Home Screen shortcuts plus Local Network/Bonjour and Live Activity declarations into `Info.plist` and assigns build version `4.10`;
 8. verifies the base executable actually loads `FilzaApplySandboxExt.dylib`;
 9. repacks a real unsigned IPA;
 10. uploads the IPA as a GitHub Actions artifact.

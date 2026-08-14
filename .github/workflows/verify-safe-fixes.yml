@@ -16,7 +16,7 @@ jobs:
     env:
       THEOS: ${{ github.workspace }}/theos
       DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
-      BYETUNES_COMMIT: 1a90f9e0f2b1a1787b208809ad2373f5c52175c8
+      BYETUNES_COMMIT: 8a4be32f188f30b98f15b00566c5ff3edc1c03b1
       BAD_QUERY_COMMIT: 73ef6da1adabef0982fd00e36cb85f21b8f8194a
       IDEVICE_COMMIT: 37ee77cf713f483551f3cf33ea8b2087a40058ca
       THEOS_COMMIT: 5280bd038207e14f8bd76f5417aa2fe641c03228
@@ -42,7 +42,10 @@ jobs:
           test "$(git -C ByeTunes rev-parse HEAD)" = "$BYETUNES_COMMIT"
           test "$(git -C ThirdParty/bad_query rev-parse HEAD)" = "$BAD_QUERY_COMMIT"
           test -f ByeTunes/MusicManager/ContentView.swift
-          test -f ByeTunes/MusicManager/YouTubeKit/Resources/meriyah.umd.js
+          test -f ByeTunes/MusicManager/BackgroundAudioDownloadManager.swift
+          test -f ByeTunes/MusicManager/DeviceLibraryBrowserView.swift
+          test -f ByeTunes/MusicManager/BackupRestoreView.swift
+          test -f ByeTunes/MusicManagerActivityShared/DownloadLiveActivityAttributes.swift
           test -f ThirdParty/bad_query/bad_query/bad_query.c
           test -f GestaltManager.m
           test -f FilzaMondBridge.m
@@ -105,6 +108,11 @@ jobs:
           bridge = Path("Filza3105Bridge.m").read_text()
           assert "TGApplicationsViewController" not in bridge
           assert "Filza3105PresentOriginalAppsFromController" not in bridge
+
+          toolbar = Path("FilzaMainToolbarGestalt.m").read_text()
+          assert 'NSSelectorFromString(@"fz_open3105Apps")' in toolbar
+          assert "Filza3105PresentAppsFromController(controller)" in toolbar
+          assert "opening complete 3105 Apps Manager" in toolbar
 
           makefile = Path("Makefile").read_text()
           assert "Filza3105AppLauncher.m" not in makefile
@@ -258,7 +266,8 @@ jobs:
           test "$(lipo -archs "$DYLIB")" = "arm64"
           grep -aFq 'Gestalt Editor' "$DYLIB"
           grep -aFq 'MondGestaltHostFactory' "$DYLIB"
-          grep -aFq 'TGMainView persistent Gestalt/Patches toolbar hooks installed' "$DYLIB"
+          grep -aFq 'TGMainView persistent 3105 Apps/Gestalt/Patches toolbar hooks installed' "$DYLIB"
+          grep -aFq 'persistent Apps button tapped; opening complete 3105 Apps Manager' "$DYLIB"
           grep -aFq 'ensured persistent Apps/Music/Gestalt/Patches bottom toolbar' "$DYLIB"
           grep -aFq 'Filza3105HostFactory' "$DYLIB"
           grep -aFq 'constructing complete 3105 Apps Manager' "$DYLIB"
@@ -309,7 +318,15 @@ jobs:
           grep -aFq 'imported pairing file persisted at' "$DYLIB"
           grep -aFq 'restored persisted pairing file; reconnecting automatically' "$DYLIB"
           grep -aFq 'no persisted pairing file; showing import flow' "$DYLIB"
-          grep -aFq 'Current Apple Music JWT token selected' "$DYLIB"
+          grep -aFq 'Public search page fallback' "$DYLIB"
+          grep -aFq 'standalone ByeTunes updater disabled' "$DYLIB"
+          grep -aFq 'Updates are delivered with FilzaSlop' "$DYLIB"
+          grep -aFq 'ByeTunes 2.4' "$DYLIB"
+          grep -aFq 'Terminal success: progress reached 100 only after validated file persistence' "$DYLIB"
+          grep -aFq 'Terminal failure: cleared active progress' "$DYLIB"
+          grep -aFq 'ByeTunes 2.4 background URL session route installed on Filza AppDelegate' "$DYLIB"
+          grep -aFq 'forwarded ByeTunes 2.4 background URL session event' "$DYLIB"
+          ! grep -aFq 'Tap to check for updates' "$DYLIB"
           ! grep -aFq 'Starting ByeTunes' "$DYLIB"
           ! grep -aFq 'before ByeTunes can connect' "$DYLIB"
           ! grep -aFq 'Add ByeTunes Shortcut' "$DYLIB"
@@ -334,9 +351,6 @@ jobs:
         run: |
           set -euxo pipefail
           bash scripts/stage-byetunes-resources.sh .theos/byetunes-resources
-          test -s .theos/byetunes-resources/meriyah.umd.js
-          test -s .theos/byetunes-resources/astring.umd.js
-          test -s .theos/byetunes-resources/yt_ejs_helper.js
           test -s .theos/byetunes-resources/AppIconImage.png
           plutil -lint .theos/byetunes-resources/ByeTunes-Info.plist
 
@@ -361,9 +375,6 @@ jobs:
           cp .theos/obj/FilzaApplySandboxExt.dylib "$APP/Frameworks/FilzaApplySandboxExt.dylib"
           codesign --remove-signature "$APP/Frameworks/FilzaApplySandboxExt.dylib" >/dev/null 2>&1 || true
 
-          cp .theos/byetunes-resources/meriyah.umd.js "$APP/meriyah.umd.js"
-          cp .theos/byetunes-resources/astring.umd.js "$APP/astring.umd.js"
-          cp .theos/byetunes-resources/yt_ejs_helper.js "$APP/yt_ejs_helper.js"
           cp .theos/byetunes-resources/AppIconImage.png "$APP/AppIconImage.png"
           cp .theos/byetunes-resources/ByeTunes-Info.plist "$APP/ByeTunes-Info.plist"
           rm -rf "$APP/Filza3105.bundle"
@@ -373,11 +384,13 @@ jobs:
             cp -R .theos/byetunes-appintents/Metadata.appintents "$APP/Metadata.appintents"
           fi
 
-          plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemSubtitle":"Browse app data with 3105","UIApplicationShortcutItemIconSymbolName":"square.grid.2x2"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music Library","UIApplicationShortcutItemSubtitle":"Open Music Library","UIApplicationShortcutItemIconSymbolName":"music.note.list"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Editor","UIApplicationShortcutItemSubtitle":"Edit MobileGestalt","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.patches","UIApplicationShortcutItemTitle":"Patches","UIApplicationShortcutItemSubtitle":"Manage portable .3105 patches","UIApplicationShortcutItemIconSymbolName":"shippingbox"}]' "$APP/Info.plist"
-          plutil -replace CFBundleShortVersionString -string "4.9" "$APP/Info.plist"
+          plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemIconSymbolName":"square.grid.2x2"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music Library","UIApplicationShortcutItemIconSymbolName":"music.note.list"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Editor","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.patches","UIApplicationShortcutItemTitle":"Patches","UIApplicationShortcutItemIconSymbolName":"shippingbox"}]' "$APP/Info.plist"
+          plutil -replace CFBundleShortVersionString -string "4.10" "$APP/Info.plist"
           plutil -replace CFBundleVersion -string "${GITHUB_RUN_NUMBER}" "$APP/Info.plist"
           plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
           plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
+          plutil -replace NSSupportsLiveActivities -bool YES "$APP/Info.plist"
+          plutil -replace NSSupportsLiveActivitiesFrequentUpdates -bool YES "$APP/Info.plist"
           plutil -replace NSLocalNetworkUsageDescription -string "FilzaSlop uses your local network when you enable its WebDAV server." "$APP/Info.plist"
           plutil -replace NSBonjourServices -json '["_http._tcp"]' "$APP/Info.plist"
 
@@ -388,6 +401,7 @@ jobs:
           actions = info.get('UIApplicationShortcutItems', [])
           assert len(actions) == 4, actions
           assert [a['UIApplicationShortcutItemTitle'] for a in actions] == ['Apps Manager', 'Music Library', 'Gestalt Editor', 'Patches'], actions
+          assert all('UIApplicationShortcutItemSubtitle' not in a for a in actions), actions
           assert [a['UIApplicationShortcutItemType'] for a in actions] == [
               'com.nightvibes33.filzaslop.apps-manager',
               'com.nightvibes33.filzaslop.music-library',
@@ -398,16 +412,15 @@ jobs:
           assert info.get('LSSupportsOpeningDocumentsInPlace') is True
           assert info.get('NSLocalNetworkUsageDescription')
           assert info.get('NSBonjourServices') == ['_http._tcp']
-          assert info.get('CFBundleShortVersionString') == '4.9'
+          assert info.get('CFBundleShortVersionString') == '4.10'
+          assert info.get('NSSupportsLiveActivities') is True
+          assert info.get('NSSupportsLiveActivitiesFrequentUpdates') is True
           assert str(info.get('CFBundleVersion', '')).isdigit()
           print('Verified exactly four quick actions and Files/Documents exposure flags')
           PY
 
           otool -L "$APP/$EXECUTABLE" | grep -F 'FilzaApplySandboxExt.dylib'
           test -s "$APP/Frameworks/FilzaApplySandboxExt.dylib"
-          test -s "$APP/meriyah.umd.js"
-          test -s "$APP/astring.umd.js"
-          test -s "$APP/yt_ejs_helper.js"
           test -s "$APP/AppIconImage.png"
           test -s "$APP/Filza3105.bundle/Info.plist"
           test -s "$APP/Filza3105.bundle/AppIcon3105.png"
@@ -420,7 +433,6 @@ jobs:
           (cd "$STAGE" && zip -qry "$OUTPUT" Payload)
           test -s "$OUTPUT"
           unzip -l "$OUTPUT" | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
-          unzip -l "$OUTPUT" | grep -F 'meriyah.umd.js'
           unzip -l "$OUTPUT" | grep -F 'AppIconImage.png'
           unzip -l "$OUTPUT" | grep -F 'Filza3105.bundle/en.lproj/Localizable.strings'
           unzip -l "$OUTPUT" | grep -F 'Filza3105.bundle/AppIcon3105.png'

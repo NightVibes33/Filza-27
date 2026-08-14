@@ -16,7 +16,7 @@ jobs:
     env:
       THEOS: ${{ github.workspace }}/theos
       DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
-      BYETUNES_COMMIT: 1a90f9e0f2b1a1787b208809ad2373f5c52175c8
+      BYETUNES_COMMIT: 8a4be32f188f30b98f15b00566c5ff3edc1c03b1
     steps:
       - name: Xcode 26.2 setup
         uses: maxim-lobanov/setup-xcode@v1
