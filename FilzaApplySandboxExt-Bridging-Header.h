@@ -9,6 +9,7 @@
 #import "GestaltManager.h"
 
 // Native 3105 App Data Browser and portable Patches integration.
+#import "Filza3105Bridge.h"
 #import "MCMBridge.h"
 #import "ThirdParty/bad_query/bad_query/bad_query.h"
 #import "ThirdParty/3105/Sources/AppIconHelper.h"

@@ -19,6 +19,7 @@ THREEONE_ROOT := ThirdParty/3105
 # linked only as a compatibility fallback.
 FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataRetryFix.m AppIconResourceProxyFix.m VirtualBackendFix.m SystemPathDiagnostics.m BadQuerySystemProbe.m GestaltManager.m FilzaMondBridge.m FilzaMainToolbarGestalt.m Filza3105Bridge.m Filza3105AppLauncher.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ByeTunesFullAppLauncher.m FilzaDiagnostics.m FilzaQuickActions.m WebDAVRuntimeFix.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
 FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/AppIconHelper.m
+FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/wallpaper_zip.c
 
 # Pinned bad_query backs the verified foreign-container, system-root, and
 # MobileGestalt access paths. A returned handle is not treated as proof of
@@ -101,7 +102,14 @@ before-FilzaApplySandboxExt-all::
 	@test -f "Filza3105Bridge.m" || (echo "Missing Filza3105Bridge.m" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/Sources/AppDataBrowserView.swift" || (echo "Missing 3105 Apps Manager" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/Sources/PatchProjectsView.swift" || (echo "Missing 3105 Patches" >&2; exit 1)
+	@test -f "$(THREEONE_ROOT)/Sources/ThreeOneOSFiveContentView.swift" || (echo "Missing complete 3105 root navigation" >&2; exit 1)
+	@test -f "$(THREEONE_ROOT)/Sources/CleanerView.swift" || (echo "Missing 3105 Cleaner" >&2; exit 1)
+	@test -f "$(THREEONE_ROOT)/Sources/WallpaperLabView.swift" || (echo "Missing 3105 Wallpaper Lab" >&2; exit 1)
+	@test -f "$(THREEONE_ROOT)/Sources/ThreeOneOSFiveSettingsView.swift" || (echo "Missing 3105 Settings" >&2; exit 1)
+	@test -f "$(THREEONE_ROOT)/Sources/LogView.swift" || (echo "Missing 3105 Logs" >&2; exit 1)
+	@test -f "$(THREEONE_ROOT)/Sources/wallpaper_zip.c" || (echo "Missing 3105 secure wallpaper ZIP extractor" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/Resources/Filza3105.bundle/en.lproj/Localizable.strings" || (echo "Missing 3105 resources" >&2; exit 1)
+	@test -f "$(THREEONE_ROOT)/Resources/Filza3105.bundle/AppIcon3105.png" || (echo "Missing 3105 app icon resource" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/LICENSE" || (echo "Missing 3105 license" >&2; exit 1)
 	@test -f "ByeTunesFullAppLauncher.m" || (echo "Missing ByeTunesFullAppLauncher.m" >&2; exit 1)
 	@test -f "FilzaDiagnostics.m" || (echo "Missing FilzaDiagnostics.m" >&2; exit 1)
