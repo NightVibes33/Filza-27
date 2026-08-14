@@ -7,7 +7,61 @@
 #import "FilzaDiagnostics.h"
 
 static IMP gByeTunesOriginalOpenMusicLibrary = NULL;
+static IMP gByeTunesOriginalBackgroundSessionHandler = NULL;
 static BOOL gByeTunesDirectRouteInstalled = NO;
+static BOOL gByeTunesBackgroundSessionRouteInstalled = NO;
+
+static void ByeTunesHandleBackgroundSession(id self, SEL _cmd,
+                                             UIApplication *application,
+                                             NSString *identifier,
+                                             void (^completionHandler)(void))
+{
+    Class factory = NSClassFromString(@"ByeTunesEmbeddedHostFactory");
+    SEL bridge = NSSelectorFromString(
+        @"handleBackgroundEventsForSessionIdentifier:completionHandler:");
+    BOOL handled = NO;
+    if (factory && [factory respondsToSelector:bridge]) {
+        handled = ((BOOL (*)(id, SEL, NSString *, void (^)(void)))objc_msgSend)(
+            factory, bridge, identifier, completionHandler);
+    }
+    if (handled) {
+        FilzaDiagnosticsWriteByeTunesStage(
+            @"forwarded ByeTunes 2.4 background URL session event");
+        return;
+    }
+
+    if (gByeTunesOriginalBackgroundSessionHandler) {
+        ((void (*)(id, SEL, UIApplication *, NSString *, void (^)(void)))
+            gByeTunesOriginalBackgroundSessionHandler)(
+                self, _cmd, application, identifier, completionHandler);
+    } else if (completionHandler) {
+        completionHandler();
+    }
+}
+
+static void ByeTunesInstallBackgroundSessionRoute(void)
+{
+    if (gByeTunesBackgroundSessionRouteInstalled) return;
+    id<UIApplicationDelegate> delegate = UIApplication.sharedApplication.delegate;
+    Class delegateClass = delegate ? [delegate class] : Nil;
+    if (!delegateClass) return;
+
+    SEL selector = @selector(application:handleEventsForBackgroundURLSession:completionHandler:);
+    Method method = class_getInstanceMethod(delegateClass, selector);
+    if (method) {
+        IMP current = method_getImplementation(method);
+        if (current != (IMP)ByeTunesHandleBackgroundSession) {
+            gByeTunesOriginalBackgroundSessionHandler = current;
+            method_setImplementation(method, (IMP)ByeTunesHandleBackgroundSession);
+        }
+    } else {
+        class_addMethod(delegateClass, selector,
+                        (IMP)ByeTunesHandleBackgroundSession, "v@:@@@?");
+    }
+    gByeTunesBackgroundSessionRouteInstalled = YES;
+    FilzaDiagnosticsWriteByeTunesStage(
+        @"ByeTunes 2.4 background URL session route installed on Filza AppDelegate");
+}
 
 static UIViewController *ByeTunesTopController(void)
 {
@@ -108,6 +162,7 @@ static void ByeTunesOpenMusicLibrary(id self, SEL _cmd)
 
 void FilzaByeTunesInstallDirectRoutes(void)
 {
+    ByeTunesInstallBackgroundSessionRoute();
     if (gByeTunesDirectRouteInstalled) return;
     Class mainClass = NSClassFromString(@"TGMainView");
     SEL selector = NSSelectorFromString(@"openMusicLib");

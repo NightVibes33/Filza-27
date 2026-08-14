@@ -81,9 +81,6 @@ The complete upstream music-management implementation is compiled into the arm64
 The packaged IPA includes:
 
 ```text
-meriyah.umd.js
-astring.umd.js
-yt_ejs_helper.js
 AppIconImage.png
 ByeTunes-Info.plist
 ```
@@ -95,9 +92,17 @@ or artificial delay. `TGMusicLibraryViewController` remains only as a fallback r
 Imported pairing files are copied into FilzaSlop's persistent Documents container. On
 later launches the embedded manager validates that saved copy, skips the import screen,
 and reconnects automatically; the document picker is shown only when no valid saved
-pairing file exists. Apple Music search extracts the current unexpired JWT from Apple's
-live web-player bundle and prefers its `AMPWebPlay` token, so token header-field order
-changes do not silently empty the Download tab.
+pairing file exists. The source pin is the official ByeTunes `v2.4` tag, including its
+background download queue, queue persistence, device-library browser, backup/restore,
+repair, and Live Activity support. Apple Music lookup uses ByeTunes 2.4's public catalog
+page parser instead of the older web-player JWT scraper.
+
+Transport completion is capped below 100% until the response has passed HTTP and audio
+validation. Each failed backend clears its progress before the next fallback, failed
+tracks remain visibly retryable, and 100% is published only after the validated file is
+handed off or persisted. The embedded Settings version row is informational because a
+standalone ByeTunes IPA cannot update the copy compiled into FilzaSlop; Music Library
+updates are delivered by the FilzaSlop IPA.
 
 A runtime stage marker is written to:
 
@@ -336,7 +341,7 @@ now performs the complete installable build:
 4. stages ByeTunes runtime resources;
 5. downloads and hash-verifies the pinned unsigned Filza base IPA;
 6. injects the current runtime dylib and resources;
-7. writes exactly four Home Screen shortcuts plus Local Network/Bonjour declarations into `Info.plist` and assigns build version `4.9`;
+7. writes exactly four Home Screen shortcuts plus Local Network/Bonjour and Live Activity declarations into `Info.plist` and assigns build version `4.10`;
 8. verifies the base executable actually loads `FilzaApplySandboxExt.dylib`;
 9. repacks a real unsigned IPA;
 10. uploads the IPA as a GitHub Actions artifact.
