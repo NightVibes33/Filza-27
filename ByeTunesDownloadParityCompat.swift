@@ -1,5 +1,32 @@
 import Foundation
 
+@MainActor
+enum ByeTunesLegacyYouTubeAlbumCache {
+    private static var tracksByAlbumID: [String: [DownloadTrack]] = [:]
+
+    static func replace(with tracks: [DownloadTrack]) {
+        var next: [String: [DownloadTrack]] = [:]
+        for track in tracks {
+            next[albumID(for: track), default: []].append(track)
+        }
+        tracksByAlbumID = next
+    }
+
+    static func clear() {
+        tracksByAlbumID.removeAll()
+    }
+
+    static func tracks(for albumID: String) -> [DownloadTrack] {
+        tracksByAlbumID[albumID] ?? []
+    }
+
+    static func albumID(for track: DownloadTrack) -> String {
+        let normalizedArtist = DownloadSupport.normalizedSearchValue(track.artistLine)
+        let normalizedAlbum = DownloadSupport.normalizedSearchValue(track.albumName)
+        return "youtube-album-\(normalizedArtist)-\(normalizedAlbum)"
+    }
+}
+
 enum ByeTunesLegacyYouTubeAudioResolver {
     private static let invidiousInstances = [
         "https://invidious.darkness.services",
@@ -93,6 +120,7 @@ extension DownloadViewModel {
     func searchYouTubeLegacyCompat(query: String) async {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
+            ByeTunesLegacyYouTubeAlbumCache.clear()
             artistResults = []
             songResults = []
             albumResults = []
@@ -123,10 +151,15 @@ extension DownloadViewModel {
             )
         }
 
+        ByeTunesLegacyYouTubeAlbumCache.replace(with: tracks)
         artistResults = []
         songResults = tracks
         albumResults = Self.legacyYouTubeAlbums(from: tracks)
         playlistResults = []
+
+        // The pre-v2.4 load-more branch re-ran the identical first-page query
+        // without an offset/token. Keep the visible result contract but do not
+        // advertise a non-functional pagination path.
         canLoadMoreSongs = false
         canLoadMoreAlbums = false
         canLoadMorePlaylists = false
@@ -134,9 +167,6 @@ extension DownloadViewModel {
     }
 
     func searchAllLegacySourcesCompat(query: String) async {
-        // Match the pre-v2.4 All Sources ordering: Apple Music, Tidal, YouTube,
-        // then iTunes/Deezer metadata. Ordering matters because merged result
-        // arrays preserve the first provider's result when IDs collide.
         await search(query: query, provider: .appleMusic)
         let appleArtists = artistResults
         let appleSongs = songResults
@@ -165,6 +195,8 @@ extension DownloadViewModel {
         let metadataPlaylists = playlistResults
         let metadataError = errorText
 
+        // Pre-v2.4 All Sources result order was Apple -> Tidal -> YouTube ->
+        // iTunes/Deezer metadata.
         artistResults = Self.mergeLegacyUnique([appleArtists, tidalArtists, youtubeArtists, metadataArtists])
         songResults = Self.mergeLegacyUnique([appleSongs, tidalSongs, youtubeSongs, metadataSongs])
         albumResults = Self.mergeLegacyUnique([appleAlbums, tidalAlbums, youtubeAlbums, metadataAlbums])
@@ -186,9 +218,7 @@ extension DownloadViewModel {
         var seen = Set<String>()
         var albums: [DownloadAlbum] = []
         for track in tracks {
-            let normalizedArtist = DownloadSupport.normalizedSearchValue(track.artistLine)
-            let normalizedAlbum = DownloadSupport.normalizedSearchValue(track.albumName)
-            let id = "youtube-album-\(normalizedArtist)-\(normalizedAlbum)"
+            let id = ByeTunesLegacyYouTubeAlbumCache.albumID(for: track)
             guard seen.insert(id).inserted else { continue }
             albums.append(
                 DownloadAlbum(
