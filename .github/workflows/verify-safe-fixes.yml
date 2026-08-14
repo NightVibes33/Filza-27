@@ -22,6 +22,8 @@ jobs:
       THEOS_COMMIT: 5280bd038207e14f8bd76f5417aa2fe641c03228
       BASE_IPA_SHA256: b11ce30a2db6f6bc77773ed30bdb855d7c847830891b14d21230f2d893d5f223
       BASE_IPA_URL: https://github.com/0xjohnnydev/FilzaSlop/releases/download/v1.0.2/FilzaSlop-v1.0.2-unsigned.ipa
+      BYETUNES_RELEASE_IPA_URL: https://github.com/EduAlexxis/ByeTunes/releases/download/v2.4/ByeTunes.ipa
+      BYETUNES_RELEASE_IPA_SHA256: bd84ce18fbd80a4c738abff8e533c849ebb51d1cfe3248640c033e499681fca6
 
     steps:
       - name: Xcode 26.2 setup
@@ -52,6 +54,7 @@ jobs:
           test -f scripts/restore-byetunes-v24-metadata-compat.sh
           test -f scripts/patch-byetunes-metadata-parity-post.sh
           test -f scripts/patch-byetunes-device-library-save.sh
+          test -f scripts/stage-byetunes-resources.sh
           test -f ThirdParty/bad_query/bad_query/bad_query.c
           test -f ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
           test -f ThirdParty/GCDWebServer/GCDWebDAVServer/GCDWebDAVServer.m
@@ -192,6 +195,8 @@ jobs:
           bash scripts/stage-byetunes-resources.sh .theos/byetunes-resources
           test -s .theos/byetunes-resources/AppIconImage.png
           plutil -lint .theos/byetunes-resources/ByeTunes-Info.plist
+          test -s .theos/byetunes-resources/Config.plist
+          plutil -lint .theos/byetunes-resources/Config.plist
 
       - name: Download and verify unsigned Filza base IPA
         run: |
@@ -216,6 +221,30 @@ jobs:
           codesign --remove-signature "$APP/Frameworks/FilzaApplySandboxExt.dylib" >/dev/null 2>&1 || true
           cp .theos/byetunes-resources/AppIconImage.png "$APP/AppIconImage.png"
           cp .theos/byetunes-resources/ByeTunes-Info.plist "$APP/ByeTunes-Info.plist"
+          cp .theos/byetunes-resources/Config.plist "$APP/Config.plist"
+          plutil -lint "$APP/Config.plist"
+          python3 - "$APP/Config.plist" <<'PY'
+          import ipaddress
+          import plistlib
+          import sys
+          from urllib.parse import urlparse
+
+          with open(sys.argv[1], 'rb') as f:
+              config = plistlib.load(f)
+          raw = config.get('ByeTunesApiUrl')
+          parsed = urlparse(raw if isinstance(raw, str) else '')
+          if parsed.scheme != 'https' or not parsed.hostname:
+              raise SystemExit('embedded ByeTunes API configuration is invalid')
+          host = parsed.hostname.lower()
+          if host == 'localhost':
+              raise SystemExit('embedded ByeTunes API configuration is loopback')
+          try:
+              if ipaddress.ip_address(host).is_loopback:
+                  raise SystemExit('embedded ByeTunes API configuration is loopback')
+          except ValueError:
+              pass
+          print('Verified embedded ByeTunes API configuration is present and non-loopback')
+          PY
           rm -rf "$APP/Filza3105.bundle"
           cp -R ThirdParty/3105/Resources/Filza3105.bundle "$APP/Filza3105.bundle"
           if test -d .theos/byetunes-appintents/Metadata.appintents; then
@@ -235,6 +264,7 @@ jobs:
 
           test -s "$APP/Frameworks/FilzaApplySandboxExt.dylib"
           test -s "$APP/AppIconImage.png"
+          test -s "$APP/Config.plist"
           test -s "$APP/Filza3105.bundle/Info.plist"
           test -x "$APP/helpers/FilzaWebDAVServer"
           otool -L "$APP/$EXECUTABLE" | grep -F 'FilzaApplySandboxExt.dylib'
@@ -245,6 +275,7 @@ jobs:
           test -s "$OUTPUT"
           unzip -tq "$OUTPUT"
           unzip -l "$OUTPUT" | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
+          unzip -l "$OUTPUT" | grep -F 'Config.plist'
           shasum -a 256 "$OUTPUT" | tee .theos/IPA-SHA256.txt
 
       - name: Upload installable unsigned IPA and verification files
