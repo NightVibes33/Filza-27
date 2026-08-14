@@ -121,6 +121,30 @@ or `cmg` access, Run Exploit, sandbox-token generation and validation, Keep Aliv
 and confirmed Respring. Filza's bridge runs the selected access method in-process and
 preserves property-list read-back validation and automatic backup restoration.
 
+On iOS 27, the editor also exposes these beta key mappings. Boolean capabilities use
+toggles; the remaining scalar values open a type-aware editor that detects the current
+plist type and supports Boolean, integer, decimal, and string values.
+
+| MobileGestalt key | Name |
+|---|---|
+| `7brdL5xrEUWnlF9C0kdg5A` | `DeviceSupportsHighLuminanceAlwaysOnDisplay` |
+| `A/74xUbqJwBsaWTjSDd0fQ` | `ChassisSlotFunctionNumber` |
+| `a3n5T9sFtlyQ74NEp9ESxg` | `SiriMode` |
+| `HBG+hj/Oz89PjVgn93Jd8A` | `Image4SecureBootKeyScheme` |
+| `ikn/KMyeztXJhAj/dqBjBg` | `LowPowerRendererCapability` |
+| `J2+oJRiGdbAzTi6U5nhqdQ` | `PostQuantumCryptographyEnforced` |
+| `Kpfa0nb8nn8EVzI/UgcMfQ` | `CoalescedSubTargetID` |
+| `lyJZrSDc8J8eQ5b7A1Rvw` | `DeviceSupportsTouchSensitiveCameraControl` |
+| `m4xs4mhvxnAopYrApoLDMw` | `DeviceSupportsInstructionFollowingPruningModels` |
+| `mnPU37/y4i0TJFnJc+r4lA` | `DeviceSupportsLowPowerWake` |
+| `odI0U9Etrx7hObzvJ9xJ8Q` | `DeviceSupportsSandcat` |
+| `P4ZJVy/zYuLy4ejRKP+0DA` | `DeviceSupportsRegionalCameraShutterRelaxation` |
+| `qqrspu7CpuPdZwSDxNY+Fg` | `MaximumFlipbookCount` |
+| `s1ZXqZtUSpr+BjUgZXZ/2g` | `ChassisSlotInstanceNumber` |
+| `TusANsf9Lfe3P/9fIXXSrQ` | `DeviceSupportsAlwaysListeningHeySiri` |
+| `VXc3L66nqQ6bn4z60ChX+A` | `ResponsiveAirPlayAudioCapability` |
+| `ym8C/Ut5YcBnqAdm4NEDLQ` | `Image4SecureBootCertificateFormat` |
+
 ### WebDAV server
 
 Filza's original **Run as system service** option targets jailbreak-only `launchctl`
@@ -274,7 +298,7 @@ now performs the complete installable build:
 4. stages ByeTunes runtime resources;
 5. downloads and hash-verifies the pinned unsigned Filza base IPA;
 6. injects the current runtime dylib and resources;
-7. writes exactly three Home Screen shortcuts plus Local Network/Bonjour declarations into `Info.plist` and assigns build version `4.5`;
+7. writes exactly three Home Screen shortcuts plus Local Network/Bonjour declarations into `Info.plist` and assigns build version `4.6`;
 8. verifies the base executable actually loads `FilzaApplySandboxExt.dylib`;
 9. repacks a real unsigned IPA;
 10. uploads the IPA as a GitHub Actions artifact.
