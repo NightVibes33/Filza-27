@@ -1,9 +1,36 @@
 import SwiftUI
 import UIKit
 
-private final class ByeTunesEmbeddedNavigationController: UINavigationController {
-    @objc func closeEmbeddedByeTunes() {
-        dismiss(animated: true)
+/// The standalone ByeTunes app renders ContentView directly from WindowGroup.
+/// Keep the embedded full-screen route geometrically equivalent: no extra
+/// UINavigationController, navigation title, or safe-area shift. Filza still
+/// needs an escape hatch from a presented full-screen controller, so the close
+/// control is overlaid without participating in ContentView layout.
+private struct ByeTunesEmbeddedModalRoot: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topTrailing) {
+                ContentView()
+
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 28, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.secondary)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close")
+                .padding(.top, max(proxy.safeAreaInsets.top + 6, 10))
+                .padding(.trailing, 12)
+                .zIndex(1000)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
     }
 }
 
@@ -12,15 +39,20 @@ private func makeMusicLibraryHost() -> UIViewController {
     let root = ContentView()
     FilzaDiagnosticsWriteByeTunesStage("direct Music Library ContentView constructed")
     let host = UIHostingController(rootView: root)
-    host.title = "Music Library"
     host.view.backgroundColor = .systemGroupedBackground
     FilzaDiagnosticsWriteByeTunesStage("direct Music Library SwiftUI host ready")
     return host
 }
 
-/// Hosts the complete music application immediately. Its process-global device
-/// work is made inert by patch-byetunes-embedded.sh, so no intermediate UIKit
-/// loading controller or branded splash is needed.
+private func makePresentedMusicLibraryHost() -> UIViewController {
+    FilzaDiagnosticsWriteByeTunesStage("before parity-preserving presented Music Library host construction")
+    let host = UIHostingController(rootView: ByeTunesEmbeddedModalRoot())
+    host.view.backgroundColor = .systemGroupedBackground
+    host.modalPresentationStyle = .fullScreen
+    FilzaDiagnosticsWriteByeTunesStage("parity-preserving full-screen Music Library host ready")
+    return host
+}
+
 @objc(ByeTunesEmbeddedHostFactory)
 public final class ByeTunesEmbeddedHostFactory: NSObject {
     @objc(handleBackgroundEventsForSessionIdentifier:completionHandler:)
@@ -49,23 +81,20 @@ public final class ByeTunesEmbeddedHostFactory: NSObject {
         return true
     }
 
+    /// Used when Filza's existing Music Library controller owns navigation.
+    /// This is a raw upstream ContentView host with no extra container UI.
     @objc(makeLibraryViewController)
     public static func makeLibraryViewController() -> UIViewController {
         FilzaDiagnosticsWriteByeTunesStage("direct Music Library factory entered")
         return makeMusicLibraryHost()
     }
 
+    /// Used by the direct full-screen fallback route. The close affordance is
+    /// an overlay, not a UINavigationController, so it does not move or resize
+    /// the original ByeTunes content hierarchy.
     @objc(makeViewController)
     public static func makeViewController() -> UIViewController {
         FilzaDiagnosticsWriteByeTunesStage("standalone Music Library factory entered")
-        let host = makeMusicLibraryHost()
-        let navigation = ByeTunesEmbeddedNavigationController(rootViewController: host)
-        host.navigationItem.leftBarButtonItem = UIBarButtonItem(
-            barButtonSystemItem: .close,
-            target: navigation,
-            action: #selector(ByeTunesEmbeddedNavigationController.closeEmbeddedByeTunes)
-        )
-        navigation.modalPresentationStyle = .fullScreen
-        return navigation
+        return makePresentedMusicLibraryHost()
     }
 }
