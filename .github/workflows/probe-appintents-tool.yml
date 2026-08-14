@@ -34,7 +34,7 @@ jobs:
           test "$(git -C ByeTunes rev-parse HEAD)" = "$BYETUNES_COMMIT"
           test "$(xcrun --sdk iphoneos --show-sdk-version)" = "26.2"
           xcrun --find appintentsmetadataprocessor
-          grep -q 'emit-const-values-path' Makefile
+          grep -q -- '-emit-const-values -emit-const-values-path' Makefile
           test -f scripts/generate-appintents-metadata.sh
 
       - name: Install Procursus build tools

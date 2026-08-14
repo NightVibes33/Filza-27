@@ -116,6 +116,7 @@ jobs:
 
           makefile = Path("Makefile").read_text()
           assert "Filza3105AppLauncher.m" not in makefile
+          assert "-emit-const-values -emit-const-values-path" in makefile
 
           browser = Path("ThirdParty/3105/Sources/FileBrowserView.swift").read_text()
           for required in (
