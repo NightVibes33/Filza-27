@@ -62,6 +62,7 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/patch-byetunes-upstream-parity-v2.sh
 	@bash scripts/restore-byetunes-v24-metadata-compat.sh
 	@bash scripts/patch-byetunes-metadata-parity-post.sh
+	@bash scripts/patch-byetunes-background-provider-parity.sh
 	@bash scripts/patch-byetunes-device-library-save.sh
 	@test -s "$(IDEVICE_STATIC)" || (echo "Missing $(IDEVICE_STATIC). Run: bash scripts/build-idevice.sh" >&2; exit 1)
 	@test -d "$(BYETUNES_ROOT)" || (echo "Missing ByeTunes submodule. Run: git submodule update --init --recursive" >&2; exit 1)
@@ -71,6 +72,7 @@ before-FilzaApplySandboxExt-all::
 	@test -f "ByeTunesMetadataCompat.swift" || (echo "Missing ByeTunes metadata compatibility layer" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-upstream-parity-v2.sh" || (echo "Missing structural ByeTunes upstream-parity patch" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-metadata-parity-post.sh" || (echo "Missing ByeTunes metadata-parity post-patch" >&2; exit 1)
+	@test -f "scripts/patch-byetunes-background-provider-parity.sh" || (echo "Missing ByeTunes background-provider parity patch" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-device-library-save.sh" || (echo "Missing ByeTunes device-library save verifier" >&2; exit 1)
 	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.c" || (echo "Missing pinned bad_query submodule" >&2; exit 1)
 	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.h" || (echo "Incomplete bad_query submodule" >&2; exit 1)
