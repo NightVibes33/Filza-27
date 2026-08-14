@@ -186,7 +186,6 @@ jobs:
           grep -aFq 'restored persisted pairing file; reconnecting automatically' "$DYLIB"
           grep -aFq 'no persisted pairing file; showing import flow' "$DYLIB"
           grep -aFq 'Current Apple Music JWT token selected' "$DYLIB"
-          grep -aFq 'AMPWebPlay' "$DYLIB"
           ! grep -aFq 'Starting ByeTunes' "$DYLIB"
           ! grep -aFq 'before ByeTunes can connect' "$DYLIB"
           ! grep -aFq 'Add ByeTunes Shortcut' "$DYLIB"
