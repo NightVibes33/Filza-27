@@ -66,11 +66,7 @@ FilzaApplySandboxExt_CFLAGS += -Wno-arc-performSelector-leaks
 FilzaApplySandboxExt_CCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 FilzaApplySandboxExt_OBJCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 FilzaApplySandboxExt_OBJCCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
-# AppIntents metadata extraction consumes Swift's supplementary constant-value
-# output. Xcode emits this automatically for app targets; Theos does not, so
-# preserve the equivalent module-level file for the post-link processor.
 FilzaApplySandboxExt_SWIFTFLAGS += -swift-version 5 -default-isolation MainActor -Xcc -I$(IDEVICE_VENDOR)/include
-FilzaApplySandboxExt_SWIFTFLAGS += -emit-const-values-path $(THEOS_OBJ_DIR)/FilzaApplySandboxExt.swiftconstvalues
 FilzaApplySandboxExt_LDFLAGS += $(IDEVICE_STATIC)
 
 # Framework coverage matches the complete ByeTunes source tree rather than the

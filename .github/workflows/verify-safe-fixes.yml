@@ -116,6 +116,8 @@ jobs:
 
           makefile = Path("Makefile").read_text()
           assert "Filza3105AppLauncher.m" not in makefile
+          assert "-default-isolation MainActor" in makefile
+          assert Path("scripts/emit-byetunes-appintents-const-values.sh").is_file()
 
           browser = Path("ThirdParty/3105/Sources/FileBrowserView.swift").read_text()
           for required in (
@@ -342,7 +344,6 @@ jobs:
           shasum -a 256 "$DYLIB"
 
       - name: Generate ByeTunes AppIntents metadata
-        continue-on-error: true
         run: |
           set -euxo pipefail
           bash scripts/generate-appintents-metadata.sh .theos/byetunes-appintents

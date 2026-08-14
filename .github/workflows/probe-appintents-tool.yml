@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - '.github/workflows/probe-appintents-tool.yml'
+      - 'scripts/emit-byetunes-appintents-const-values.sh'
+      - 'scripts/generate-appintents-metadata.sh'
   workflow_dispatch:
 
 concurrency:
@@ -34,7 +36,7 @@ jobs:
           test "$(git -C ByeTunes rev-parse HEAD)" = "$BYETUNES_COMMIT"
           test "$(xcrun --sdk iphoneos --show-sdk-version)" = "26.2"
           xcrun --find appintentsmetadataprocessor
-          grep -q 'emit-const-values-path' Makefile
+          test -f scripts/emit-byetunes-appintents-const-values.sh
           test -f scripts/generate-appintents-metadata.sh
 
       - name: Install Procursus build tools
@@ -66,8 +68,6 @@ jobs:
           test -f "$DYLIB"
           test "$(lipo -archs "$DYLIB")" = "arm64"
           grep -aFq 'MusicManagerShortcuts' "$DYLIB"
-          find .theos -type f -name '*.swiftconstvalues' -print -exec test -s {} \;
-          test -n "$(find .theos -type f -name '*.swiftconstvalues' -print -quit)"
 
       - name: Extract AppIntents metadata from actual module
         run: |
@@ -75,6 +75,10 @@ jobs:
           bash scripts/generate-appintents-metadata.sh .theos/byetunes-appintents
           META=.theos/byetunes-appintents/Metadata.appintents
           test -d "$META"
+          test -s .theos/byetunes-appintents/FilzaApplySandboxExt.swiftconstvalues
+          test -s .theos/byetunes-appintents/FilzaApplySandboxExt_const_extract_protocols.json
+          grep -Fq '"AppIntent"' .theos/byetunes-appintents/FilzaApplySandboxExt_const_extract_protocols.json
+          grep -Fq '"AppShortcutsProvider"' .theos/byetunes-appintents/FilzaApplySandboxExt_const_extract_protocols.json
           find "$META" -type f -print
           test "$(find "$META" -type f | wc -l | tr -d ' ')" -gt 0
           grep -aR -q 'InjectMusicIntent' "$META"

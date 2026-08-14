@@ -4,8 +4,8 @@ set -euxo pipefail
 OUTPUT_ROOT="${1:-.theos/byetunes-appintents}"
 SOURCE_LIST="$OUTPUT_ROOT/source-files.txt"
 CONST_LIST="$OUTPUT_ROOT/swift-const-values.txt"
+CONST_VALUES="$OUTPUT_ROOT/FilzaApplySandboxExt.swiftconstvalues"
 METADATA_OUT="$OUTPUT_ROOT/Metadata.appintents"
-BYETUNES_ROOT="ByeTunes/MusicManager"
 MODULE_NAME="FilzaApplySandboxExt"
 DEPLOYMENT_TARGET="16.0"
 TARGET_TRIPLE="arm64-apple-ios16.0"
@@ -13,25 +13,13 @@ TARGET_TRIPLE="arm64-apple-ios16.0"
 rm -rf "$OUTPUT_ROOT"
 mkdir -p "$OUTPUT_ROOT"
 
-# The metadata must describe the embedded module, not the standalone
-# MusicManager @main target. Use the exact Swift source set compiled by Theos.
-{
-  python3 -c 'import os; print(os.path.realpath("ByeTunesEmbeddedHost.swift"))'
-  find "$BYETUNES_ROOT" -type f -name '*.swift' ! -name 'MusicManagerApp.swift' -print | sort | while IFS= read -r file; do
-    python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$file"
-  done
-} > "$SOURCE_LIST"
-
-test "$(wc -l < "$SOURCE_LIST" | tr -d ' ')" = "48"
-
-# Xcode's AppIntents metadata processor consumes supplementary constant-value
-# output emitted by swiftc. Find the module-level file produced by the Theos
-# build; fail rather than silently shipping undiscoverable shortcuts.
-find .theos -type f -name '*.swiftconstvalues' -print | sort > "$CONST_LIST"
+# Generate the supplementary constant-value sidecar from the exact Swift graph
+# compiled into FilzaApplySandboxExt. Do not substitute standalone ByeTunes.
+bash scripts/emit-byetunes-appintents-const-values.sh "$OUTPUT_ROOT"
+printf '%s\n' "$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$CONST_VALUES")" > "$CONST_LIST"
+test -s "$SOURCE_LIST"
 test -s "$CONST_LIST"
-while IFS= read -r file; do
-  test -s "$file"
-done < "$CONST_LIST"
+test -s "$CONST_VALUES"
 
 DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
 TOOLCHAIN_DIR="$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain"
