@@ -13,6 +13,9 @@ jobs:
   ipa-only:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: macos-26-intel
+    env:
+      BYETUNES_RELEASE_IPA_URL: https://github.com/EduAlexxis/ByeTunes/releases/download/v2.4/ByeTunes.ipa
+      BYETUNES_RELEASE_IPA_SHA256: bd84ce18fbd80a4c738abff8e533c849ebb51d1cfe3248640c033e499681fca6
     steps:
       - name: Download verified build artifact
         env:
@@ -47,6 +50,45 @@ jobs:
           mkdir -p verified-build
           unzip -q verified-build.zip -d verified-build
 
+      - name: Restore exact upstream ByeTunes runtime API configuration
+        run: |
+          set -euxo pipefail
+          curl -fL --retry 3 --retry-delay 2 "$BYETUNES_RELEASE_IPA_URL" -o byetunes-v2.4.ipa
+          echo "$BYETUNES_RELEASE_IPA_SHA256  byetunes-v2.4.ipa" | shasum -a 256 -c -
+          rm -rf byetunes-release
+          mkdir -p byetunes-release
+          unzip -q byetunes-v2.4.ipa -d byetunes-release
+          BYETUNES_APP="$(find byetunes-release/Payload -maxdepth 1 -type d -name '*.app' -print -quit)"
+          test -n "$BYETUNES_APP"
+          test -s "$BYETUNES_APP/Config.plist"
+          plutil -lint "$BYETUNES_APP/Config.plist"
+          python3 - "$BYETUNES_APP/Config.plist" <<'PY'
+          import ipaddress
+          import plistlib
+          import sys
+          from urllib.parse import urlparse
+
+          with open(sys.argv[1], 'rb') as f:
+              config = plistlib.load(f)
+          raw = config.get('ByeTunesApiUrl')
+          if not isinstance(raw, str) or not raw.strip():
+              raise SystemExit('official ByeTunes v2.4 Config.plist has no ByeTunesApiUrl')
+          parsed = urlparse(raw)
+          if parsed.scheme != 'https' or not parsed.hostname:
+              raise SystemExit('official ByeTunes v2.4 ByeTunesApiUrl is not a valid HTTPS endpoint')
+          host = parsed.hostname.lower()
+          if host == 'localhost':
+              raise SystemExit('official ByeTunes API endpoint unexpectedly resolves to localhost')
+          try:
+              if ipaddress.ip_address(host).is_loopback:
+                  raise SystemExit('official ByeTunes API endpoint unexpectedly resolves to loopback')
+          except ValueError:
+              pass
+          print('Verified official ByeTunes v2.4 runtime API configuration without exposing its endpoint')
+          PY
+          mkdir -p upstream-runtime
+          cp "$BYETUNES_APP/Config.plist" upstream-runtime/Config.plist
+
       - name: Stage only the installable IPA
         env:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -55,12 +97,40 @@ jobs:
           IPA="$(find verified-build -type f -name '*.ipa' -print -quit)"
           test -n "$IPA"
           test -s "$IPA"
+
+          STAGE="$(mktemp -d /tmp/filza27-ipa-only.XXXXXX)"
+          trap 'rm -rf "$STAGE"' EXIT
+          unzip -q "$IPA" -d "$STAGE"
+          APP="$(find "$STAGE/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          test -n "$APP"
+
+          # ByeTunes Config.swift calls Bundle.main.path(forResource: "Config",
+          # ofType: "plist"). Preserve that exact upstream runtime contract in
+          # the embedded Filza bundle instead of allowing its 127.0.0.1 fallback.
+          cp upstream-runtime/Config.plist "$APP/Config.plist"
+          plutil -lint "$APP/Config.plist"
+          python3 - "$APP/Config.plist" <<'PY'
+          import plistlib
+          import sys
+          from urllib.parse import urlparse
+          with open(sys.argv[1], 'rb') as f:
+              config = plistlib.load(f)
+          url = config.get('ByeTunesApiUrl', '')
+          host = (urlparse(url).hostname or '').lower()
+          assert urlparse(url).scheme == 'https', url
+          assert host not in ('', 'localhost', '127.0.0.1', '::1'), host
+          print('Verified embedded ByeTunes API configuration is present and non-loopback')
+          PY
+
           mkdir -p ipa-output
           SHORT_SHA="${HEAD_SHA:0:7}"
-          OUT="ipa-output/Filza-27-${SHORT_SHA}-unsigned.ipa"
-          cp "$IPA" "$OUT"
+          OUT="$GITHUB_WORKSPACE/ipa-output/Filza-27-${SHORT_SHA}-unsigned.ipa"
+          rm -f "$OUT"
+          (cd "$STAGE" && zip -qry "$OUT" Payload)
+          test -s "$OUT"
           unzip -tq "$OUT"
           unzip -l "$OUT" | grep -F 'Payload/'
+          unzip -l "$OUT" | grep -F 'Config.plist'
           shasum -a 256 "$OUT" > ipa-output/SHA256.txt
           echo "IPA=$OUT" >> "$GITHUB_ENV"
 
