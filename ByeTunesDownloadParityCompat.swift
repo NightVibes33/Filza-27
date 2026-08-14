@@ -1,10 +1,5 @@
 import Foundation
 
-// Narrow compatibility layer for download-provider behavior that existed before
-// ByeTunes v2.4. The v2.4 queue, downloader, persistence and background-transfer
-// implementations remain authoritative; this file only restores the provider
-// search surface and the old public YouTube stream-resolution fallbacks.
-
 enum ByeTunesLegacyYouTubeAudioResolver {
     private static let invidiousInstances = [
         "https://invidious.darkness.services",
@@ -23,18 +18,13 @@ enum ByeTunesLegacyYouTubeAudioResolver {
     ]
 
     static func resolve(videoID: String) async -> URL? {
-        // Pre-v2.4 fallback #1: Invidious adaptive audio-only formats, choosing
-        // the highest reported bitrate.
         for instance in invidiousInstances.shuffled() {
             guard let url = URL(string: "\(instance)/api/v1/videos/\(videoID)"),
                   let json = await fetchDictionary(url),
-                  let adaptiveFormats = json["adaptiveFormats"] as? [[String: Any]] else {
-                continue
-            }
+                  let adaptiveFormats = json["adaptiveFormats"] as? [[String: Any]] else { continue }
 
             let audioFormats = adaptiveFormats.filter {
-                let type = $0["type"] as? String ?? ""
-                return type.hasPrefix("audio/")
+                ($0["type"] as? String ?? "").hasPrefix("audio/")
             }
             let sortedAudio = audioFormats.sorted {
                 integer($0["bitrate"]) > integer($1["bitrate"])
@@ -47,14 +37,10 @@ enum ByeTunesLegacyYouTubeAudioResolver {
             }
         }
 
-        // Pre-v2.4 fallback #2: Piped audioStreams, again preferring highest
-        // reported bitrate.
         for instance in pipedInstances.shuffled() {
             guard let url = URL(string: "\(instance)/streams/\(videoID)"),
                   let json = await fetchDictionary(url),
-                  let audioStreams = json["audioStreams"] as? [[String: Any]] else {
-                continue
-            }
+                  let audioStreams = json["audioStreams"] as? [[String: Any]] else { continue }
 
             let sortedAudio = audioStreams.sorted {
                 integer($0["bitrate"]) > integer($1["bitrate"])
@@ -75,18 +61,13 @@ enum ByeTunesLegacyYouTubeAudioResolver {
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.setValue(
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 27_0 like Mac OS X) AppleWebKit/605.1.15",
-            forHTTPHeaderField: "User-Agent"
-        )
+        request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 27_0 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse,
                   (200..<300).contains(http.statusCode),
                   let object = try? JSONSerialization.jsonObject(with: data),
-                  let dictionary = object as? [String: Any] else {
-                return nil
-            }
+                  let dictionary = object as? [String: Any] else { return nil }
             return dictionary
         } catch {
             return nil
@@ -153,6 +134,9 @@ extension DownloadViewModel {
     }
 
     func searchAllLegacySourcesCompat(query: String) async {
+        // Match the pre-v2.4 All Sources ordering: Apple Music, Tidal, YouTube,
+        // then iTunes/Deezer metadata. Ordering matters because merged result
+        // arrays preserve the first provider's result when IDs collide.
         await search(query: query, provider: .appleMusic)
         let appleArtists = artistResults
         let appleSongs = songResults
@@ -167,13 +151,6 @@ extension DownloadViewModel {
         let tidalPlaylists = playlistResults
         let tidalError = errorText
 
-        await search(query: query, provider: .metadata)
-        let metadataArtists = artistResults
-        let metadataSongs = songResults
-        let metadataAlbums = albumResults
-        let metadataPlaylists = playlistResults
-        let metadataError = errorText
-
         await searchYouTubeLegacyCompat(query: query)
         let youtubeArtists = artistResults
         let youtubeSongs = songResults
@@ -181,17 +158,23 @@ extension DownloadViewModel {
         let youtubePlaylists = playlistResults
         let youtubeError = errorText
 
-        artistResults = Self.mergeLegacyUnique([appleArtists, tidalArtists, metadataArtists, youtubeArtists])
-        songResults = Self.mergeLegacyUnique([appleSongs, tidalSongs, metadataSongs, youtubeSongs])
-        albumResults = Self.mergeLegacyUnique([appleAlbums, tidalAlbums, metadataAlbums, youtubeAlbums])
-        playlistResults = Self.mergeLegacyUnique([applePlaylists, tidalPlaylists, metadataPlaylists, youtubePlaylists])
+        await search(query: query, provider: .metadata)
+        let metadataArtists = artistResults
+        let metadataSongs = songResults
+        let metadataAlbums = albumResults
+        let metadataPlaylists = playlistResults
+        let metadataError = errorText
+
+        artistResults = Self.mergeLegacyUnique([appleArtists, tidalArtists, youtubeArtists, metadataArtists])
+        songResults = Self.mergeLegacyUnique([appleSongs, tidalSongs, youtubeSongs, metadataSongs])
+        albumResults = Self.mergeLegacyUnique([appleAlbums, tidalAlbums, youtubeAlbums, metadataAlbums])
+        playlistResults = Self.mergeLegacyUnique([applePlaylists, tidalPlaylists, youtubePlaylists, metadataPlaylists])
 
         canLoadMoreSongs = false
         canLoadMoreAlbums = false
         canLoadMorePlaylists = false
-
         if artistResults.isEmpty && songResults.isEmpty && albumResults.isEmpty && playlistResults.isEmpty {
-            errorText = [appleError, tidalError, metadataError, youtubeError]
+            errorText = [appleError, tidalError, youtubeError, metadataError]
                 .compactMap { $0 }
                 .first ?? "No results found across available sources."
         } else {
