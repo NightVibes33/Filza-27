@@ -1,0 +1,74 @@
+name: Publish Filza IPA-only artifact
+
+on:
+  workflow_run:
+    workflows: ["Verify Filza installable IPA"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  ipa-only:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: macos-26-intel
+    steps:
+      - name: Download verified build artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euxo pipefail
+          API="$GITHUB_API_URL/repos/$GITHUB_REPOSITORY"
+          curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$API/actions/runs/$RUN_ID/artifacts" -o artifacts.json
+          ARTIFACT_ID="$(python3 - <<'PY'
+          import json
+          with open('artifacts.json', 'r', encoding='utf-8') as f:
+              data = json.load(f)
+          matches = [a for a in data.get('artifacts', [])
+                     if a.get('name') == 'FilzaSlop-installable-unsigned-arm64'
+                     and not a.get('expired')]
+          if len(matches) != 1:
+              raise SystemExit(f'expected exactly one Filza build artifact, got {len(matches)}')
+          print(matches[0]['id'])
+          PY
+          )"
+          test -n "$ARTIFACT_ID"
+          curl -fsSL -L \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$API/actions/artifacts/$ARTIFACT_ID/zip" -o verified-build.zip
+          mkdir -p verified-build
+          unzip -q verified-build.zip -d verified-build
+
+      - name: Stage only the installable IPA
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euxo pipefail
+          IPA="$(find verified-build -type f -name '*.ipa' -print -quit)"
+          test -n "$IPA"
+          test -s "$IPA"
+          mkdir -p ipa-output
+          SHORT_SHA="${HEAD_SHA:0:7}"
+          OUT="ipa-output/Filza-27-${SHORT_SHA}-unsigned.ipa"
+          cp "$IPA" "$OUT"
+          unzip -tq "$OUT"
+          unzip -l "$OUT" | grep -F 'Payload/'
+          shasum -a 256 "$OUT" > ipa-output/SHA256.txt
+          echo "IPA=$OUT" >> "$GITHUB_ENV"
+
+      - name: Upload IPA-only artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Filza-27-IPA
+          path: ipa-output/
+          if-no-files-found: error
+          include-hidden-files: false
+          compression-level: 0
