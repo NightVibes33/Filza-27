@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# This script is intentionally kept independent from the runtime parity patches;
+# changing/retrying AppIntents packaging must not alter the linked ByeTunes code.
 OUTPUT_ROOT="${1:-.theos/byetunes-appintents}"
 SOURCE_LIST="$OUTPUT_ROOT/source-files.txt"
 CONST_LIST="$OUTPUT_ROOT/swift-const-values.txt"
