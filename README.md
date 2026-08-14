@@ -28,8 +28,10 @@ This fork currently targets the iOS 18 / iOS 26 / early iOS 27 behavior exposed 
 
 ### Apps Manager
 
-Filza's `openApps` route and Home Screen action now open the Files tab in the
-complete native workspace from `NightVibes33/3105` commit
+Filza's bottom **Apps Manager** button continues to use the original
+`TGApplicationsViewController`, retaining its existing controls and the
+FilzaSlop container/selection fixes. The Home Screen **Apps Manager** action
+opens the Files tab in the complete native workspace from `NightVibes33/3105` commit
 `1da66f733a7ad6bb5c9e1d078e89cfbb02faec72`. This is the real 3105 browser,
 adapted to reuse FilzaSlop's retained ContainerManager leases and `bad_query`
 runtime rather than a look-alike screen. The original five-tab navigation is
@@ -37,11 +39,8 @@ present: Home, Files, Patches, Cleaner, and Wallpapers. Home also exposes the
 original Settings and Logs sheets.
 
 The 3105 sheet has a persistent **Close** control above every tab, so it can be
-left from Apps Manager, Patches, or any other page. A persistent **Filza Apps**
-control opens the original `TGApplicationsViewController` in a second
-dismissible sheet. This retains FilzaSlop's existing native Apps Manager
-controls and its container/selection fixes alongside the complete 3105 UI;
-3105 supplements the native manager instead of deleting it.
+left from Apps Manager, Patches, or any other page. It does not duplicate the
+original Filza Apps Manager inside the 3105 Apps Manager.
 
 Current behavior includes:
 
@@ -337,7 +336,7 @@ now performs the complete installable build:
 4. stages ByeTunes runtime resources;
 5. downloads and hash-verifies the pinned unsigned Filza base IPA;
 6. injects the current runtime dylib and resources;
-7. writes exactly four Home Screen shortcuts plus Local Network/Bonjour declarations into `Info.plist` and assigns build version `4.8`;
+7. writes exactly four Home Screen shortcuts plus Local Network/Bonjour declarations into `Info.plist` and assigns build version `4.9`;
 8. verifies the base executable actually loads `FilzaApplySandboxExt.dylib`;
 9. repacks a real unsigned IPA;
 10. uploads the IPA as a GitHub Actions artifact.

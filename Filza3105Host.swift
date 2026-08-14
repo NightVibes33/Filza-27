@@ -8,7 +8,6 @@ private struct Filza3105EmbeddedRoot: View {
     @StateObject private var appState = AppState()
     @StateObject private var patchDraftCoordinator = PatchDraftCoordinator()
     @AppStorage(AppLanguage.storageKey) private var languageCode = AppLanguage.english.rawValue
-    @State private var originalAppsUnavailable = false
 
     private var language: AppLanguage {
         AppLanguage(rawValue: languageCode) ?? .english
@@ -16,22 +15,14 @@ private struct Filza3105EmbeddedRoot: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
+            HStack {
                 Button {
                     dismiss()
                 } label: {
                     Label("Close", systemImage: "xmark")
                 }
 
-                Spacer(minLength: 12)
-
-                Button {
-                    if !Filza3105PresentOriginalAppsFromController(nil) {
-                        originalAppsUnavailable = true
-                    }
-                } label: {
-                    Label("Filza Apps", systemImage: "square.grid.2x2")
-                }
+                Spacer()
             }
             .font(.callout.weight(.semibold))
             .padding(.horizontal, 16)
@@ -46,16 +37,11 @@ private struct Filza3105EmbeddedRoot: View {
                 .environment(\.appLanguage, language)
                 .environment(\.locale, language.locale)
         }
-        .alert("Filza Apps Manager unavailable", isPresented: $originalAppsUnavailable) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("The original Filza Apps Manager could not be constructed in this build.")
-        }
         .onAppear {
             appState.detectSupport()
             FilzaDiagnosticsAppend(
                 "3105",
-                "persistent Close and Filza Apps controls visible initialTab=\(initialTab)"
+                "persistent Close control visible initialTab=\(initialTab)"
             )
             FilzaDiagnosticsAppend(
                 "3105",
