@@ -1,5 +1,7 @@
 import SwiftUI
 import UIKit
+import AVFoundation
+import WebKit
 import Darwin
 import MachO
 
@@ -158,6 +160,267 @@ Do not spoof back afterward.
 private let mondIPadUIWarning = """
 This is a very dangerous tweak. Do not use it with an alphanumeric passcode. Do not turn off “Show Dock In Stage Manager” or the device can bootloop when rotating to landscape. Opening Stage Manager after enabling this can also enter Recovery Mode. Other instability, including app data disappearing, has been reported.
 """
+
+// Mond's settings are part of the embedded editor, including its original
+// silent-audio keep-alive behavior and WebKit respring tool. They live in this
+// process instead of launching a separate branded app.
+private var mondKeepAlivePlayer: AVAudioPlayer?
+private var mondKeepAliveTimer: Timer?
+
+private func mondKeepAlive() {
+    guard mondKeepAlivePlayer == nil else { return }
+    try? AVAudioSession.sharedInstance().setCategory(.playback, options: .mixWithOthers)
+    try? AVAudioSession.sharedInstance().setActive(true)
+
+    let sampleRate = 8000
+    let samples = Int(Double(sampleRate) * 0.5)
+    var wave = Data("RIFF".utf8)
+    wave.append(withUnsafeBytes(of: UInt32(36 + samples * 2).littleEndian) { Data($0) })
+    wave.append(Data("WAVEfmt ".utf8))
+    wave.append(withUnsafeBytes(of: UInt32(16).littleEndian) { Data($0) })
+    wave.append(withUnsafeBytes(of: UInt16(1).littleEndian) { Data($0) })
+    wave.append(withUnsafeBytes(of: UInt16(1).littleEndian) { Data($0) })
+    wave.append(withUnsafeBytes(of: UInt32(sampleRate).littleEndian) { Data($0) })
+    wave.append(withUnsafeBytes(of: UInt32(sampleRate * 2).littleEndian) { Data($0) })
+    wave.append(withUnsafeBytes(of: UInt16(2).littleEndian) { Data($0) })
+    wave.append(withUnsafeBytes(of: UInt16(16).littleEndian) { Data($0) })
+    wave.append(Data("data".utf8))
+    wave.append(withUnsafeBytes(of: UInt32(samples * 2).littleEndian) { Data($0) })
+    wave.append(Data(count: samples * 2))
+
+    mondKeepAlivePlayer = try? AVAudioPlayer(data: wave)
+    mondKeepAlivePlayer?.volume = 0
+    mondKeepAlivePlayer?.numberOfLoops = -1
+    mondKeepAlivePlayer?.play()
+    mondKeepAliveTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+        mondKeepAlivePlayer?.play()
+    }
+    FilzaDiagnosticsAppend("Gestalt", "Mond Keep Alive started")
+}
+
+private func mondLetDie() {
+    mondKeepAliveTimer?.invalidate()
+    mondKeepAliveTimer = nil
+    mondKeepAlivePlayer?.stop()
+    mondKeepAlivePlayer = nil
+    try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    FilzaDiagnosticsAppend("Gestalt", "Mond Keep Alive stopped")
+}
+
+private func mondIssueSandboxToken(path: String) -> String? {
+    typealias IssueFunction = @convention(c) (
+        UnsafePointer<CChar>?, UnsafePointer<CChar>?, Int32, Int32
+    ) -> UnsafeMutablePointer<CChar>?
+    guard let library = dlopen("/usr/lib/system/libsystem_sandbox.dylib", RTLD_NOW) else { return nil }
+    defer { dlclose(library) }
+    guard let symbol = dlsym(library, "sandbox_extension_issue_file") else { return nil }
+    let issue = unsafeBitCast(symbol, to: IssueFunction.self)
+    let pointer = path.withCString {
+        issue("com.apple.app-sandbox.read-write", $0, 0, 0)
+    }
+    guard let pointer else { return nil }
+    defer { free(pointer) }
+    return String(cString: pointer)
+}
+
+private func mondConsumeSandboxToken(_ token: String) -> Int64? {
+    typealias ConsumeFunction = @convention(c) (UnsafePointer<CChar>?) -> Int64
+    guard !token.isEmpty,
+          let library = dlopen("/usr/lib/system/libsystem_sandbox.dylib", RTLD_NOW) else { return nil }
+    defer { dlclose(library) }
+    guard let symbol = dlsym(library, "sandbox_extension_consume") else { return nil }
+    let consume = unsafeBitCast(symbol, to: ConsumeFunction.self)
+    return token.withCString { consume($0) }
+}
+
+private let mondRespringDocument = """
+<!DOCTYPE html>
+<html>
+<body>
+<iframe id="frame" srcdoc="" sandbox="allow-forms allow-modals allow-orientation-lock allow-pointer-lock allow-popups allow-presentation allow-scripts"></iframe>
+<script>
+const frame = document.getElementById('frame');
+const respringScript = `
+<html><body><script>
+const container = document.createElement('div');
+container.style.cssText = 'perspective:1px;perspective-origin:9999999% 9999999%;';
+document.body.appendChild(container);
+for (let i = 0; i < 500; i++) {
+  const d = document.createElement('div');
+  d.style.cssText = 'position:absolute;width:100vw;height:100vh;backdrop-filter:blur(100px);-webkit-backdrop-filter:blur(100px);transform:translate3d(100000px,100000px,' + i + 'px) rotateY(90deg);';
+  container.appendChild(d);
+}
+setInterval(() => {
+  navigator.share({title:'R', text:'R'.repeat(100000)}).catch(() => {});
+  const x = new Uint8Array(1024 * 1024 * 10);
+  crypto.getRandomValues(x);
+}, 0);
+<\\/script></body></html>`;
+frame.srcdoc = respringScript;
+</script>
+</body>
+</html>
+"""
+
+private struct MondRespringView: UIViewRepresentable {
+    func makeUIView(context: Context) -> WKWebView { WKWebView() }
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        webView.loadHTMLString(mondRespringDocument, baseURL: nil)
+    }
+}
+
+private struct MondSettingsView: View {
+    let gestaltPath: String
+
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage("method") private var method = "bad_query"
+    @AppStorage("ka_on") private var keepAlive = true
+    @AppStorage("token") private var token = ""
+    @State private var accessStatus = "Access has not been refreshed from Settings yet."
+    @State private var runningExploit = false
+    @State private var showRespringConfirmation = false
+    @State private var showRespring = false
+
+    private var gestaltDirectory: String {
+        (gestaltPath as NSString).deletingLastPathComponent
+    }
+
+    private var tokenValid: Bool {
+        guard !token.isEmpty else { return false }
+        return (mondConsumeSandboxToken(token) ?? -1) >= 0
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Picker("Method", selection: $method) {
+                        Text("bad_query").tag("bad_query")
+                        Text("cmg").tag("cmg")
+                    }
+                    .pickerStyle(.segmented)
+
+                    Button(runningExploit ? "Running…" : "Run Exploit", action: runExploit)
+                        .disabled(runningExploit)
+                } header: {
+                    Label("Exploit", systemImage: "wrench.and.screwdriver")
+                } footer: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(method == "cmg"
+                            ? "CMG supports iOS 27.0 beta 1–4. Use it when bad_query is not working."
+                            : "bad_query supports iOS 27.0 beta 1–4.")
+                        Text(accessStatus)
+                    }
+                }
+
+                Section {
+                    HStack {
+                        TextField("Sandbox Extension Token", text: $token)
+                            .lineLimit(1)
+                        Button {
+                            UIPasteboard.general.string = token
+                        } label: {
+                            Image(systemName: "document.on.document")
+                        }
+                        .disabled(token.isEmpty)
+                    }
+
+                    Button("Generate Token", action: generateToken)
+                } header: {
+                    Label("Token", systemImage: "key")
+                } footer: {
+                    if !token.isEmpty {
+                        Text(tokenValid ? "Your sandbox token is valid." : "Your sandbox token is invalid.")
+                    }
+                }
+
+                Section {
+                    Toggle("Keep Alive", isOn: $keepAlive)
+                } header: {
+                    Label("Settings", systemImage: "gear")
+                }
+
+                Section {
+                    Button("Respring") { showRespringConfirmation = true }
+                } header: {
+                    Label("Tools", systemImage: "wrench.and.screwdriver")
+                }
+
+                Section {
+                    Link("roooot — Main developer", destination: URL(string: "https://github.com/rooootdev")!)
+                    Link("forcequit — bad_query", destination: URL(string: "https://github.com/forcequitOS")!)
+                    Link("jailbreak.party — Gestalt and respring work", destination: URL(string: "https://github.com/jailbreakdotparty")!)
+                } header: {
+                    Label("Credits", systemImage: "person.3.fill")
+                }
+            }
+            .navigationTitle("Settings")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .onAppear {
+                method = FilzaGestaltPreferredMethod()
+                if keepAlive { mondKeepAlive() }
+            }
+            .onChange(of: method) { newMethod in
+                FilzaGestaltSetPreferredMethod(newMethod)
+                accessStatus = "Method changed to \(newMethod). Tap Run Exploit to refresh access."
+            }
+            .onChange(of: keepAlive) { enabled in
+                if enabled { mondKeepAlive() } else { mondLetDie() }
+            }
+            .alert("Are you sure?", isPresented: $showRespringConfirmation) {
+                Button("Cancel", role: .cancel) {}
+                Button("Confirm") {
+                    FilzaDiagnosticsAppend("Gestalt", "Mond Respring confirmed")
+                    showRespring = true
+                }
+            } message: {
+                Text("Confirm that you want to respring.")
+            }
+            .overlay {
+                if showRespring {
+                    MondRespringView()
+                        .brightness(-1.0)
+                        .ignoresSafeArea()
+                }
+            }
+        }
+    }
+
+    private func runExploit() {
+        FilzaGestaltSetPreferredMethod(method)
+        runningExploit = true
+        accessStatus = "Running \(method)…"
+        DispatchQueue.global(qos: .userInitiated).async {
+            var detail: NSString?
+            let path = FilzaGestaltRefreshAccess(&detail)
+            DispatchQueue.main.async {
+                runningExploit = false
+                let detailText = detail.map { String($0) }
+                if let path, !path.isEmpty {
+                    accessStatus = "\(detailText ?? "Access active")\n\(path)"
+                } else {
+                    accessStatus = detailText ?? "Access failed"
+                }
+            }
+        }
+    }
+
+    private func generateToken() {
+        guard let generated = mondIssueSandboxToken(path: gestaltDirectory) else {
+            token = ""
+            accessStatus = "Failed to issue a sandbox extension token. Run Exploit first."
+            FilzaDiagnosticsAppend("Gestalt", "Generate Token failed")
+            return
+        }
+        token = generated
+        accessStatus = "Sandbox extension token generated for \(gestaltDirectory)."
+        FilzaDiagnosticsAppend("Gestalt", "Generate Token completed")
+    }
+}
 
 struct MondGestaltView: View {
     let gestaltPath: String
@@ -576,6 +839,16 @@ public final class MondGestaltHostFactory: NSObject {
         let controller = UIHostingController(rootView: MondGestaltView(gestaltPath: path))
         controller.title = "Gestalt Editor"
         controller.view.backgroundColor = .systemGroupedBackground
+        let settingsAction = UIAction { [weak controller] _ in
+            FilzaDiagnosticsAppend("Gestalt", "presenting complete Mond Settings")
+            let settings = UIHostingController(rootView: MondSettingsView(gestaltPath: path))
+            settings.modalPresentationStyle = .pageSheet
+            controller?.present(settings, animated: true)
+        }
+        controller.navigationItem.rightBarButtonItem = UIBarButtonItem(
+            image: UIImage(systemName: "gear"),
+            primaryAction: settingsAction
+        )
         return controller
     }
 }

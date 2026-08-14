@@ -59,7 +59,9 @@ or artificial delay. `TGMusicLibraryViewController` remains only as a fallback r
 Imported pairing files are copied into FilzaSlop's persistent Documents container. On
 later launches the embedded manager validates that saved copy, skips the import screen,
 and reconnects automatically; the document picker is shown only when no valid saved
-pairing file exists.
+pairing file exists. Apple Music search extracts the current unexpired JWT from Apple's
+live web-player bundle and prefers its `AMPWebPlay` token, so token header-field order
+changes do not silently empty the Download tab.
 
 A runtime stage marker is written to:
 
@@ -96,11 +98,10 @@ The editor attempts to resolve:
 
 Access flow:
 
-1. Query the MobileGestalt system-group container through ContainerManager.
-2. Activate the returned sandbox extension when available.
-3. Fall back to the bundled directory-access primitive when required.
-4. Verify the actual MobileGestalt plist is readable before exposing it.
-5. Detect whether the file is read-only or read/write.
+1. Run the access method selected in Settings (`bad_query` by default or `cmg`).
+2. Activate the returned sandbox extension when the selected method provides one.
+3. Verify the actual MobileGestalt plist is readable before exposing it.
+4. Detect whether the file is read-only or read/write.
 
 Write handling includes:
 
@@ -114,9 +115,11 @@ Write handling includes:
 The editor follows `rooootdev/mond` GestaltView at upstream commit
 `50b76a500b34d70119e30e04921dcb138c284855`: complete device-artwork, software,
 hardware, eligibility, iPadOS, internal-feature, spoofing, Apply, and Revert controls;
-the same device/version gating; and the same warning and information dialogs. Filza's
-verified write bridge replaces Mond's standalone exploit lifecycle while preserving
-property-list read-back validation and automatic backup restoration.
+the same device/version gating; and the same warning and information dialogs. Its
+navigation-bar gear opens Mond's functional Settings surface: selectable `bad_query`
+or `cmg` access, Run Exploit, sandbox-token generation and validation, Keep Alive,
+and confirmed Respring. Filza's bridge runs the selected access method in-process and
+preserves property-list read-back validation and automatic backup restoration.
 
 ### WebDAV server
 
@@ -271,7 +274,7 @@ now performs the complete installable build:
 4. stages ByeTunes runtime resources;
 5. downloads and hash-verifies the pinned unsigned Filza base IPA;
 6. injects the current runtime dylib and resources;
-7. writes exactly three Home Screen shortcuts plus Local Network/Bonjour declarations into `Info.plist` and assigns build version `4.4`;
+7. writes exactly three Home Screen shortcuts plus Local Network/Bonjour declarations into `Info.plist` and assigns build version `4.5`;
 8. verifies the base executable actually loads `FilzaApplySandboxExt.dylib`;
 9. repacks a real unsigned IPA;
 10. uploads the IPA as a GitHub Actions artifact.

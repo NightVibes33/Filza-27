@@ -3,16 +3,19 @@ set -euo pipefail
 
 DEVICE="ByeTunes/MusicManager/iDeviceManager.swift"
 CONTENT="ByeTunes/MusicManager/ContentView.swift"
+SONG_METADATA="ByeTunes/MusicManager/SongMetadata.swift"
 test -f "$DEVICE"
 test -f "$CONTENT"
+test -f "$SONG_METADATA"
 
-python3 - "$DEVICE" "$CONTENT" <<'PY'
+python3 - "$DEVICE" "$CONTENT" "$SONG_METADATA" <<'PY'
 from pathlib import Path
 import re
 import sys
 
 device = Path(sys.argv[1])
 content = Path(sys.argv[2])
+song_metadata = Path(sys.argv[3])
 
 ds = device.read_text()
 
@@ -82,9 +85,10 @@ new_import_write = '''        let importedPairingData = try Data(contentsOf: url
 
         refreshExpectedPairingFileState()
 '''
-if old_import_write not in ds:
+if old_import_write in ds:
+    ds = ds.replace(old_import_write, new_import_write, 1)
+elif 'Filza embed: imported pairing file persisted at' not in ds:
     raise SystemExit('DeviceManager pairing import write anchor not found')
-ds = ds.replace(old_import_write, new_import_write, 1)
 device.write_text(ds)
 
 cs = content.read_text()
@@ -138,6 +142,68 @@ if 'showSplash' in cs or 'SplashView()' in cs:
     raise SystemExit('embedded splash route was not fully removed')
 content.write_text(cs)
 
+# Apple changed the ordering of fields in the web-player JWT header. The
+# standalone ByeTunes matcher required the token to begin with {"alg":...},
+# which now rejects the valid current {"typ":...,"alg":...} token and leaves
+# the Download tab with no search results. Match complete JWTs, decode their
+# payloads, reject expired candidates and prefer Apple's AMPWebPlay token.
+sms = song_metadata.read_text()
+new_token_block = '''            let tokenPattern = #"eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{20,}"#
+            guard let tokenRegex = try? NSRegularExpression(pattern: tokenPattern) else {
+                await Logger.shared.log("[AppleMusicAPI] ⚠️ Failed to construct JWT matcher")
+                return nil
+            }
+
+            let tokenMatches = tokenRegex.matches(
+                in: jsContent,
+                range: NSRange(jsContent.startIndex..<jsContent.endIndex, in: jsContent)
+            )
+
+            func payload(for token: String) -> [String: Any]? {
+                let pieces = token.split(separator: ".", omittingEmptySubsequences: false)
+                guard pieces.count == 3 else { return nil }
+                var encoded = String(pieces[1])
+                    .replacingOccurrences(of: "-", with: "+")
+                    .replacingOccurrences(of: "_", with: "/")
+                let padding = (4 - encoded.count % 4) % 4
+                encoded += String(repeating: "=", count: padding)
+                guard let data = Data(base64Encoded: encoded),
+                      let object = try? JSONSerialization.jsonObject(with: data),
+                      let dictionary = object as? [String: Any] else { return nil }
+                return dictionary
+            }
+
+            let now = Date().timeIntervalSince1970
+            let candidates: [(token: String, payload: [String: Any])] = tokenMatches.compactMap { match in
+                guard let range = Range(match.range, in: jsContent) else { return nil }
+                let token = String(jsContent[range])
+                guard let decoded = payload(for: token) else { return nil }
+                if let expiry = (decoded["exp"] as? NSNumber)?.doubleValue, expiry <= now + 60 {
+                    return nil
+                }
+                return (token, decoded)
+            }
+
+            guard let selected = candidates.first(where: { $0.payload["iss"] as? String == "AMPWebPlay" })
+                    ?? candidates.first else {
+                await Logger.shared.log("[AppleMusicAPI] ⚠️ No current unexpired JWT found in JS bundle")
+                return nil
+            }
+
+            self.cachedToken = selected.token
+            let issuer = selected.payload["iss"] as? String ?? "unknown"
+            await Logger.shared.log("[AppleMusicAPI] ✅ Current Apple Music JWT token selected issuer=\\(issuer) candidates=\\(candidates.count)")
+            return selected.token
+'''
+if 'Current Apple Music JWT token selected' not in sms:
+    token_start = sms.find('            let tokenPattern = #"eyJhbGciOi')
+    token_return = sms.find('            return token\n', token_start)
+    if token_start < 0 or token_return < 0:
+        raise SystemExit('Apple Music token matcher anchor not found')
+    token_end = token_return + len('            return token\n')
+    sms = sms[:token_start] + new_token_block + sms[token_end:]
+song_metadata.write_text(sms)
+
 visible_replacements = {
     Path("ByeTunes/MusicManager/OnboardingView.swift"): [
         ('Text("ByeTunes")', 'Text("Music Library")'),
@@ -167,6 +233,9 @@ grep -Fq 'persistent pairing state restored=' "$DEVICE"
 grep -Fq 'imported pairing file persisted at' "$DEVICE"
 grep -Fq 'Filza embed: immediate safe onAppear entered' "$CONTENT"
 grep -Fq 'restored persisted pairing file; reconnecting automatically' "$CONTENT"
+grep -Fq 'Current Apple Music JWT token selected' "$SONG_METADATA"
+grep -Fq 'AMPWebPlay' "$SONG_METADATA"
+! grep -Fq 'eyJhbGciOi[A-Za-z0-9_-]' "$SONG_METADATA"
 ! grep -Fq 'SplashView()' "$CONTENT"
 ! grep -Fq 'showSplash' "$CONTENT"
 grep -Fq 'Text("Music Library")' ByeTunes/MusicManager/OnboardingView.swift

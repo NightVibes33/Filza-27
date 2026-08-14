@@ -23,8 +23,10 @@ static NSString *const GMSystemGroupIdentifier = @"systemgroup.com.apple.mobileg
 static NSString *const GMFallbackDirectory = @"/private/var/containers/Shared/SystemGroup/systemgroup.com.apple.mobilegestaltcache/Library/Caches";
 static NSString *const GMPlistName = @"com.apple.MobileGestalt.plist";
 static NSString *const GMShortcutType = @"com.nightvibes33.filzaslop.gestalt-manager";
+static NSString *const GMMethodDefaultsKey = @"method";
 
 static NSString *gGMResolvedPath;
+static NSString *gGMResolvedMethod;
 static int64_t gGMBadQueryHandle = -1;
 static BOOL gGMMenuHooksInstalled = NO;
 static BOOL gGMMenuScanScheduled = NO;
@@ -163,11 +165,6 @@ static NSString *GMTryContainerManagerAccess(NSString **detail)
 static NSString *GMTryBadQueryAccess(NSString **detail)
 {
     NSString *file = [GMFallbackDirectory stringByAppendingPathComponent:GMPlistName];
-    if (GMFileReadable(file)) {
-        if (detail) *detail = @"MobileGestalt cache already readable";
-        return file;
-    }
-
     int64_t handle = bad_query((char *)GMFallbackDirectory.fileSystemRepresentation,
                                false, NULL, false);
     if (handle < 0) {
@@ -191,27 +188,50 @@ static NSString *GMTryBadQueryAccess(NSString **detail)
     return file;
 }
 
+NSString *FilzaGestaltPreferredMethod(void)
+{
+    NSString *method = [NSUserDefaults.standardUserDefaults stringForKey:GMMethodDefaultsKey];
+    return [method isEqualToString:@"cmg"] ? @"cmg" : @"bad_query";
+}
+
+void FilzaGestaltSetPreferredMethod(NSString *method)
+{
+    NSString *normalized = [method isEqualToString:@"cmg"] ? @"cmg" : @"bad_query";
+    NSString *previous = FilzaGestaltPreferredMethod();
+    [NSUserDefaults.standardUserDefaults setObject:normalized forKey:GMMethodDefaultsKey];
+    if (![previous isEqualToString:normalized]) {
+        if ([normalized isEqualToString:@"cmg"] && gGMBadQueryHandle >= 0) {
+            bad_query_release(gGMBadQueryHandle);
+            gGMBadQueryHandle = -1;
+        }
+        gGMResolvedPath = nil;
+        gGMResolvedMethod = nil;
+        FilzaDiagnosticsAppend(@"Gestalt", [NSString stringWithFormat:
+            @"access method changed from %@ to %@", previous, normalized]);
+    }
+}
+
 static NSString *GMEnsureAccess(NSString **detail)
 {
-    if (gGMResolvedPath.length && GMFileReadable(gGMResolvedPath)) {
+    NSString *method = FilzaGestaltPreferredMethod();
+    if (gGMResolvedPath.length && [gGMResolvedMethod isEqualToString:method] &&
+        GMFileReadable(gGMResolvedPath)) {
         if (detail) *detail = GMFileWritable(gGMResolvedPath)
-            ? @"MobileGestalt cache read/write access active"
-            : @"MobileGestalt cache read-only access active";
+            ? [NSString stringWithFormat:@"%@ MobileGestalt read/write access active", method]
+            : [NSString stringWithFormat:@"%@ MobileGestalt read-only access active", method];
         return gGMResolvedPath;
     }
 
-    NSString *cmgDetail = nil;
-    NSString *path = GMTryContainerManagerAccess(&cmgDetail);
-    if (!path.length) {
-        NSString *bqDetail = nil;
-        path = GMTryBadQueryAccess(&bqDetail);
-        if (detail) *detail = [NSString stringWithFormat:@"%@; %@",
-            cmgDetail ?: @"ContainerManager path unavailable",
-            bqDetail ?: @"fallback unavailable"];
-    } else if (detail) {
-        *detail = cmgDetail;
+    NSString *methodDetail = nil;
+    NSString *path = [method isEqualToString:@"cmg"]
+        ? GMTryContainerManagerAccess(&methodDetail)
+        : GMTryBadQueryAccess(&methodDetail);
+    if (detail) *detail = [NSString stringWithFormat:@"%@ — %@", method,
+        methodDetail ?: @"access unavailable"];
+    if (path.length) {
+        gGMResolvedPath = path;
+        gGMResolvedMethod = method;
     }
-    if (path.length) gGMResolvedPath = path;
     return path;
 }
 
@@ -432,6 +452,19 @@ NSString *FilzaGestaltResolvePath(NSString **detail)
 {
     NSString *path = GMEnsureAccess(detail);
     if (path.length) (void)GMEnsureBackup(path, nil);
+    return path;
+}
+
+NSString *FilzaGestaltRefreshAccess(NSString **detail)
+{
+    gGMResolvedPath = nil;
+    gGMResolvedMethod = nil;
+    NSString *path = GMEnsureAccess(detail);
+    if (path.length) (void)GMEnsureBackup(path, nil);
+    FilzaDiagnosticsAppend(@"Gestalt", path.length
+        ? [NSString stringWithFormat:@"Run Exploit completed using %@", FilzaGestaltPreferredMethod()]
+        : [NSString stringWithFormat:@"Run Exploit failed using %@: %@",
+            FilzaGestaltPreferredMethod(), detail && *detail ? *detail : @"unknown"]);
     return path;
 }
 
