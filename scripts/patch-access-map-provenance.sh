@@ -100,3 +100,8 @@ grep -Fq 'These fields do not claim an actual target write.' "$TARGET"
 # Keep the on-device Music library mutation hardening in the same fail-closed
 # pre-build chain so every produced IPA gets persistence verification.
 bash scripts/patch-byetunes-device-library-save.sh
+
+# Make the visible Import Metadata Source picker authoritative before the
+# metadata-compatibility source is compiled. This prevents stale pre-v2.4
+# metadataSourcesJSON state from silently turning Local Files into All Sources.
+bash scripts/fix-byetunes-import-source-routing.sh
