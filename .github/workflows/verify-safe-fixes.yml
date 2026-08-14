@@ -48,6 +48,16 @@ jobs:
           test -f FilzaMondBridge.m
           test -f FilzaMainToolbarGestalt.m
           test -f MondGestaltView.swift
+          test -f Filza3105Host.swift
+          test -f Filza3105Bridge.m
+          test -f Filza3105AppLauncher.m
+          test -f ThirdParty/3105/Sources/AppDataBrowserView.swift
+          test -f ThirdParty/3105/Sources/PatchProjectsView.swift
+          test -f ThirdParty/3105/Sources/PatchPackageCodec.swift
+          test -f ThirdParty/3105/Sources/PatchTransaction.swift
+          test -f ThirdParty/3105/Resources/Filza3105.bundle/Info.plist
+          test -f ThirdParty/3105/LICENSE
+          grep -Fq '1da66f733a7ad6bb5c9e1d078e89cfbb02faec72' ThirdParty/3105/UPSTREAM.md
           test -f ByeTunesFilzaLibraryEmbed.m
           test -f ByeTunesFullAppLauncher.m
           test -f ByeTunesFullAppLauncher.h
@@ -110,6 +120,9 @@ jobs:
           xcrun --sdk iphoneos clang "${COMMON[@]}" GestaltManager.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" FilzaMondBridge.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" FilzaMainToolbarGestalt.m
+          xcrun --sdk iphoneos clang "${COMMON[@]}" Filza3105Bridge.m
+          xcrun --sdk iphoneos clang "${COMMON[@]}" Filza3105AppLauncher.m
+          xcrun --sdk iphoneos clang "${COMMON[@]}" ThirdParty/3105/Sources/AppIconHelper.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" AppsMusicFix.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" AppsManagerPresentationFix.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" ByeTunesMusicBridge.m
@@ -181,7 +194,15 @@ jobs:
           test "$(lipo -archs "$DYLIB")" = "arm64"
           grep -aFq 'Gestalt Editor' "$DYLIB"
           grep -aFq 'MondGestaltHostFactory' "$DYLIB"
-          grep -aFq 'Gestalt Editor toolbar hooks installed' "$DYLIB"
+          grep -aFq 'TGMainView persistent Gestalt/Patches toolbar hooks installed' "$DYLIB"
+          grep -aFq 'ensured persistent Apps/Music/Gestalt/Patches bottom toolbar' "$DYLIB"
+          grep -aFq 'Filza3105HostFactory' "$DYLIB"
+          grep -aFq 'constructing complete 3105 Apps Manager' "$DYLIB"
+          grep -aFq 'constructing complete 3105 Patches' "$DYLIB"
+          grep -aFq 'TGMainView complete 3105 Apps route installed' "$DYLIB"
+          grep -aFq 'presented complete 3105 Apps Manager directly' "$DYLIB"
+          grep -aFq 'presented complete 3105 Patches directly' "$DYLIB"
+          grep -aFq '3105PATCH' "$DYLIB"
           grep -aFq 'presented complete Gestalt Editor directly' "$DYLIB"
           grep -aFq 'Device Spoofing Info' "$DYLIB"
           grep -aFq 'iPadOS UI Warning' "$DYLIB"
@@ -199,10 +220,11 @@ jobs:
           grep -aFq 'cmg' "$DYLIB"
           ! grep -aFq 'Loading MobileGestalt' "$DYLIB"
           ! grep -aFq 'Opening the complete Gestalt Editor' "$DYLIB"
-          grep -aFq 'inserted in-app Gestalt Editor row beside Apps/Music' "$DYLIB"
+          grep -aFq 'legacy manager-row insertion disabled; persistent bottom toolbar owns Gestalt' "$DYLIB"
           grep -aFq 'com.nightvibes33.filzaslop.gestalt-manager' "$DYLIB"
           grep -aFq 'com.nightvibes33.filzaslop.apps-manager' "$DYLIB"
           grep -aFq 'com.nightvibes33.filzaslop.music-library' "$DYLIB"
+          grep -aFq 'com.nightvibes33.filzaslop.patches' "$DYLIB"
           grep -aFq 'FilzaSlop Logs' "$DYLIB"
           grep -aFq 'LastSignal.txt' "$DYLIB"
           grep -aFq 'TGMusicLibraryViewController viewDidAppear intercepted' "$DYLIB"
@@ -273,13 +295,15 @@ jobs:
           cp .theos/byetunes-resources/yt_ejs_helper.js "$APP/yt_ejs_helper.js"
           cp .theos/byetunes-resources/AppIconImage.png "$APP/AppIconImage.png"
           cp .theos/byetunes-resources/ByeTunes-Info.plist "$APP/ByeTunes-Info.plist"
+          rm -rf "$APP/Filza3105.bundle"
+          cp -R ThirdParty/3105/Resources/Filza3105.bundle "$APP/Filza3105.bundle"
           if test -d .theos/byetunes-appintents/Metadata.appintents; then
             rm -rf "$APP/Metadata.appintents"
             cp -R .theos/byetunes-appintents/Metadata.appintents "$APP/Metadata.appintents"
           fi
 
-          plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemSubtitle":"Browse installed apps","UIApplicationShortcutItemIconSymbolName":"square.grid.2x2"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music Library","UIApplicationShortcutItemSubtitle":"Open Music Library","UIApplicationShortcutItemIconSymbolName":"music.note.list"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Editor","UIApplicationShortcutItemSubtitle":"Edit MobileGestalt","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"}]' "$APP/Info.plist"
-          plutil -replace CFBundleShortVersionString -string "4.6" "$APP/Info.plist"
+          plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemSubtitle":"Browse app data with 3105","UIApplicationShortcutItemIconSymbolName":"square.grid.2x2"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music Library","UIApplicationShortcutItemSubtitle":"Open Music Library","UIApplicationShortcutItemIconSymbolName":"music.note.list"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Editor","UIApplicationShortcutItemSubtitle":"Edit MobileGestalt","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.patches","UIApplicationShortcutItemTitle":"Patches","UIApplicationShortcutItemSubtitle":"Manage portable .3105 patches","UIApplicationShortcutItemIconSymbolName":"shippingbox"}]' "$APP/Info.plist"
+          plutil -replace CFBundleShortVersionString -string "4.7" "$APP/Info.plist"
           plutil -replace CFBundleVersion -string "${GITHUB_RUN_NUMBER}" "$APP/Info.plist"
           plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
           plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
@@ -291,20 +315,21 @@ jobs:
           with open(sys.argv[1], 'rb') as f:
               info = plistlib.load(f)
           actions = info.get('UIApplicationShortcutItems', [])
-          assert len(actions) == 3, actions
-          assert [a['UIApplicationShortcutItemTitle'] for a in actions] == ['Apps Manager', 'Music Library', 'Gestalt Editor'], actions
+          assert len(actions) == 4, actions
+          assert [a['UIApplicationShortcutItemTitle'] for a in actions] == ['Apps Manager', 'Music Library', 'Gestalt Editor', 'Patches'], actions
           assert [a['UIApplicationShortcutItemType'] for a in actions] == [
               'com.nightvibes33.filzaslop.apps-manager',
               'com.nightvibes33.filzaslop.music-library',
               'com.nightvibes33.filzaslop.gestalt-manager',
+              'com.nightvibes33.filzaslop.patches',
           ], actions
           assert info.get('UIFileSharingEnabled') is True
           assert info.get('LSSupportsOpeningDocumentsInPlace') is True
           assert info.get('NSLocalNetworkUsageDescription')
           assert info.get('NSBonjourServices') == ['_http._tcp']
-          assert info.get('CFBundleShortVersionString') == '4.6'
+          assert info.get('CFBundleShortVersionString') == '4.7'
           assert str(info.get('CFBundleVersion', '')).isdigit()
-          print('Verified exactly three quick actions and Files/Documents exposure flags')
+          print('Verified exactly four quick actions and Files/Documents exposure flags')
           PY
 
           otool -L "$APP/$EXECUTABLE" | grep -F 'FilzaApplySandboxExt.dylib'
@@ -313,6 +338,8 @@ jobs:
           test -s "$APP/astring.umd.js"
           test -s "$APP/yt_ejs_helper.js"
           test -s "$APP/AppIconImage.png"
+          test -s "$APP/Filza3105.bundle/Info.plist"
+          test -s "$APP/Filza3105.bundle/en.lproj/Localizable.strings"
           test -x "$APP/helpers/FilzaWebDAVServer"
           test -s "$APP/com.tigisoftware.filza.webdavserver.plist"
 
@@ -323,6 +350,7 @@ jobs:
           unzip -l "$OUTPUT" | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
           unzip -l "$OUTPUT" | grep -F 'meriyah.umd.js'
           unzip -l "$OUTPUT" | grep -F 'AppIconImage.png'
+          unzip -l "$OUTPUT" | grep -F 'Filza3105.bundle/en.lproj/Localizable.strings'
           shasum -a 256 "$OUTPUT" | tee .theos/IPA-SHA256.txt
 
       - name: Upload installable unsigned IPA and verification files
@@ -335,6 +363,8 @@ jobs:
             .theos/obj/FilzaApplySandboxExt.dylib
             .theos/byetunes-resources/**
             .theos/byetunes-appintents/Metadata.appintents/**
+            ThirdParty/3105/UPSTREAM.md
+            ThirdParty/3105/LICENSE
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 14

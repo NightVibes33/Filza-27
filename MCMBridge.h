@@ -31,5 +31,14 @@ FOUNDATION_EXPORT BOOL MCMBridgeAvailable(void);
 FOUNDATION_EXPORT NSArray<NSString *> *MCMEnumerateIdentifiersForClass(
     uint64_t containerClass, NSUInteger limit,
     NSString * _Nullable * _Nullable error);
+FOUNDATION_EXPORT NSString * _Nullable MCMContainerPathForIdentifier(
+    uint64_t containerClass, NSString *identifier, BOOL group,
+    NSString * _Nullable * _Nullable error);
+FOUNDATION_EXPORT NSString * _Nullable MCMActivateContainerPath(
+    uint64_t containerClass, NSString *identifier, BOOL group,
+    NSString * _Nullable * _Nullable error);
+FOUNDATION_EXPORT int64_t MCMActivateContainer(
+    uint64_t containerClass, NSString *identifier, BOOL group,
+    NSString * _Nullable * _Nullable error);
 
 NS_ASSUME_NONNULL_END

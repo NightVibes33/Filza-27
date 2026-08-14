@@ -126,6 +126,30 @@ static NSString *MCMActivate(uint64_t containerClass, NSString *identifier,
     }
 }
 
+NSString *MCMContainerPathForIdentifier(uint64_t containerClass,
+                                        NSString *identifier,
+                                        BOOL group,
+                                        NSString **error)
+{
+    return MCMActivate(containerClass, identifier, group, error);
+}
+
+NSString *MCMActivateContainerPath(uint64_t containerClass,
+                                   NSString *identifier,
+                                   BOOL group,
+                                   NSString **error)
+{
+    return MCMActivate(containerClass, identifier, group, error);
+}
+
+int64_t MCMActivateContainer(uint64_t containerClass,
+                             NSString *identifier,
+                             BOOL group,
+                             NSString **error)
+{
+    return MCMActivate(containerClass, identifier, group, error) ? 1 : -1;
+}
+
 static NSString *MCMActivateScoped(uint64_t containerClass, NSString *identifier,
                                    BOOL group, uint64_t part,
                                    NSString *partDomain, uint64_t flags,
