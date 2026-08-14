@@ -28,10 +28,8 @@ This fork currently targets the iOS 18 / iOS 26 / early iOS 27 behavior exposed 
 
 ### Apps Manager
 
-Filza's bottom **Apps Manager** button continues to use the original
-`TGApplicationsViewController`, retaining its existing controls and the
-FilzaSlop container/selection fixes. The Home Screen **Apps Manager** action
-opens the Files tab in the complete native workspace from `NightVibes33/3105` commit
+Filza's bottom **Apps Manager** button and the Home Screen **Apps Manager** action
+both open the Files tab in the complete native workspace from `NightVibes33/3105` commit
 `1da66f733a7ad6bb5c9e1d078e89cfbb02faec72`. This is the real 3105 browser,
 adapted to reuse FilzaSlop's retained ContainerManager leases and `bad_query`
 runtime rather than a look-alike screen. The original five-tab navigation is
@@ -123,12 +121,9 @@ Library buttons in the bottom `TGMainView` toolbar. The toolbar is restored afte
 Filza rebuilds it, when a browser page/window appears, and when the app becomes active;
 the old manager-table-row insertion is disabled.
 
-It is also exposed as a static Home Screen quick action:
-
-```text
-Gestalt Editor
-Edit MobileGestalt
-```
+It is also exposed as a static Home Screen quick action named **Gestalt Editor**.
+All four quick actions use only their feature names—Apps Manager, Music Library,
+Gestalt Editor, and Patches—with no redundant subtitle text.
 
 Both the in-app button and Home Screen quick action open the same editor directly with
 no intermediate loading controller. MobileGestalt access is prewarmed after launch;

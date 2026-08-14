@@ -29,6 +29,8 @@ static NSString *const FMTGestaltIdentifier =
     @"com.nightvibes33.filzaslop.toolbar.gestalt";
 static NSString *const FMTPatchesIdentifier =
     @"com.nightvibes33.filzaslop.toolbar.patches";
+static NSString *const FMTAppsIdentifier =
+    @"com.nightvibes33.filzaslop.toolbar.apps";
 
 static UIToolbar *FMTToolbar(id mainView)
 {
@@ -57,6 +59,14 @@ static BOOL FMTItemMatches(UIBarButtonItem *item, NSString *actionName,
         [title containsString:word] || [label containsString:word];
 }
 
+static BOOL FMTIsAppsItem(UIBarButtonItem *item)
+{
+    NSString *identifier = item.accessibilityIdentifier ?: @"";
+    return [identifier isEqualToString:FMTAppsIdentifier] ||
+        FMTItemMatches(item, @"openApps", @"apps") ||
+        FMTItemMatches(item, @"fz_open3105Apps", @"apps");
+}
+
 static UIBarButtonItem *FMTImageItem(NSString *symbol, NSString *fallbackTitle,
                                      NSString *identifier, id target, SEL action)
 {
@@ -77,6 +87,14 @@ static void FMTOpenMond(id self, SEL _cmd)
         ? self : nil;
     FilzaDiagnosticsAppend(@"Toolbar", @"persistent Gestalt button tapped");
     FilzaMondPresentFromController(controller);
+}
+
+static void FMTOpenApps(id self, SEL _cmd)
+{
+    UIViewController *controller = [self isKindOfClass:UIViewController.class]
+        ? self : nil;
+    FilzaDiagnosticsAppend(@"Toolbar", @"persistent Apps button tapped; opening complete 3105 Apps Manager");
+    Filza3105PresentAppsFromController(controller);
 }
 
 static void FMTOpenPatches(id self, SEL _cmd)
@@ -111,7 +129,13 @@ static void FMTEnsureUtilityItems(id mainView)
     NSInteger musicIndex = NSNotFound;
     for (NSInteger index = 0; index < (NSInteger)items.count; index++) {
         UIBarButtonItem *item = items[(NSUInteger)index];
-        if (FMTItemMatches(item, @"openApps", @"apps")) appsIndex = index;
+        if (FMTIsAppsItem(item)) {
+            appsIndex = index;
+            item.target = mainView;
+            item.action = NSSelectorFromString(@"fz_open3105Apps");
+            item.accessibilityIdentifier = FMTAppsIdentifier;
+            item.accessibilityLabel = @"Apps Manager";
+        }
         if (FMTItemMatches(item, @"openMusicLib", @"music")) musicIndex = index;
     }
 
@@ -231,6 +255,8 @@ static void FMTInstallHooks(void)
 
     class_addMethod(cls, NSSelectorFromString(@"fz_openMondGestalt"),
                     (IMP)FMTOpenMond, "v@:");
+    class_addMethod(cls, NSSelectorFromString(@"fz_open3105Apps"),
+                    (IMP)FMTOpenApps, "v@:");
     class_addMethod(cls, NSSelectorFromString(@"fz_open3105Patches"),
                     (IMP)FMTOpenPatches, "v@:");
     gFMTOriginalCreateMainToolBar = FMTHook(cls,
@@ -247,7 +273,7 @@ static void FMTInstallHooks(void)
 
     if (gFMTMainHooksInstalled)
         FilzaDiagnosticsAppend(@"Toolbar",
-            @"TGMainView persistent Gestalt/Patches toolbar hooks installed");
+            @"TGMainView persistent 3105 Apps/Gestalt/Patches toolbar hooks installed");
 }
 
 static void FMTRefreshKnownMainViews(void)

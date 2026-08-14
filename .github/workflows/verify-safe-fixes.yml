@@ -109,6 +109,11 @@ jobs:
           assert "TGApplicationsViewController" not in bridge
           assert "Filza3105PresentOriginalAppsFromController" not in bridge
 
+          toolbar = Path("FilzaMainToolbarGestalt.m").read_text()
+          assert 'NSSelectorFromString(@"fz_open3105Apps")' in toolbar
+          assert "Filza3105PresentAppsFromController(controller)" in toolbar
+          assert "opening complete 3105 Apps Manager" in toolbar
+
           makefile = Path("Makefile").read_text()
           assert "Filza3105AppLauncher.m" not in makefile
 
@@ -261,7 +266,8 @@ jobs:
           test "$(lipo -archs "$DYLIB")" = "arm64"
           grep -aFq 'Gestalt Editor' "$DYLIB"
           grep -aFq 'MondGestaltHostFactory' "$DYLIB"
-          grep -aFq 'TGMainView persistent Gestalt/Patches toolbar hooks installed' "$DYLIB"
+          grep -aFq 'TGMainView persistent 3105 Apps/Gestalt/Patches toolbar hooks installed' "$DYLIB"
+          grep -aFq 'persistent Apps button tapped; opening complete 3105 Apps Manager' "$DYLIB"
           grep -aFq 'ensured persistent Apps/Music/Gestalt/Patches bottom toolbar' "$DYLIB"
           grep -aFq 'Filza3105HostFactory' "$DYLIB"
           grep -aFq 'constructing complete 3105 Apps Manager' "$DYLIB"
@@ -378,7 +384,7 @@ jobs:
             cp -R .theos/byetunes-appintents/Metadata.appintents "$APP/Metadata.appintents"
           fi
 
-          plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemSubtitle":"Browse app data with 3105","UIApplicationShortcutItemIconSymbolName":"square.grid.2x2"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music Library","UIApplicationShortcutItemSubtitle":"Open Music Library","UIApplicationShortcutItemIconSymbolName":"music.note.list"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Editor","UIApplicationShortcutItemSubtitle":"Edit MobileGestalt","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.patches","UIApplicationShortcutItemTitle":"Patches","UIApplicationShortcutItemSubtitle":"Manage portable .3105 patches","UIApplicationShortcutItemIconSymbolName":"shippingbox"}]' "$APP/Info.plist"
+          plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemIconSymbolName":"square.grid.2x2"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music Library","UIApplicationShortcutItemIconSymbolName":"music.note.list"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Editor","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.patches","UIApplicationShortcutItemTitle":"Patches","UIApplicationShortcutItemIconSymbolName":"shippingbox"}]' "$APP/Info.plist"
           plutil -replace CFBundleShortVersionString -string "4.10" "$APP/Info.plist"
           plutil -replace CFBundleVersion -string "${GITHUB_RUN_NUMBER}" "$APP/Info.plist"
           plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
@@ -395,6 +401,7 @@ jobs:
           actions = info.get('UIApplicationShortcutItems', [])
           assert len(actions) == 4, actions
           assert [a['UIApplicationShortcutItemTitle'] for a in actions] == ['Apps Manager', 'Music Library', 'Gestalt Editor', 'Patches'], actions
+          assert all('UIApplicationShortcutItemSubtitle' not in a for a in actions), actions
           assert [a['UIApplicationShortcutItemType'] for a in actions] == [
               'com.nightvibes33.filzaslop.apps-manager',
               'com.nightvibes33.filzaslop.music-library',
