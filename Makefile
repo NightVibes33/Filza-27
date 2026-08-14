@@ -75,7 +75,7 @@ FilzaApplySandboxExt_LDFLAGS += $(IDEVICE_STATIC)
 # old reduced music-library bridge.
 FilzaApplySandboxExt_FRAMEWORKS = UIKit Foundation SwiftUI Combine AVFoundation CoreMedia AudioToolbox CryptoKit Security UniformTypeIdentifiers PhotosUI JavaScriptCore AppIntents CFNetwork MobileCoreServices WebKit
 FilzaApplySandboxExt_PRIVATE_FRAMEWORKS = IOSurface
-FilzaApplySandboxExt_LIBRARIES = z xml2 sandbox sqlite3 commonCrypto
+FilzaApplySandboxExt_LIBRARIES = z xml2 sandbox sqlite3
 
 FilzaApplySandboxExt_INSTALL_TARGET_PROCESSES = Filza
 
