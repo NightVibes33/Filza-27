@@ -12,8 +12,8 @@ secure wallpaper-package extraction, and native app metadata helpers.
 The standalone upstream `@main` declaration is intentionally not compiled
 because Filza owns the UIApplication lifecycle. `AppState.swift` preserves its
 state object, `ThreeOneOSFiveContentView(initialTab:)` adds only an embed
-entry-tab parameter, and the upstream root/Settings type names are namespaced
-to coexist with ByeTunes in the same Swift module. Resource lookup targets
+entry-tab parameter, and the upstream root/Settings types and source filenames
+are namespaced to coexist with ByeTunes in the same Swift module. Resource lookup targets
 `Filza3105.bundle`, and diagnostics are also copied to FilzaSlop's log.
 ContainerManager access reuses FilzaSlop's retained leases.
 The upstream GPLv3 license and third-party notices are preserved here.

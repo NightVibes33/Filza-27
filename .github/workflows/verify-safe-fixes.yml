@@ -53,11 +53,11 @@ jobs:
           test -f Filza3105AppLauncher.m
           test -f ThirdParty/3105/Sources/AppDataBrowserView.swift
           test -f ThirdParty/3105/Sources/PatchProjectsView.swift
-          test -f ThirdParty/3105/Sources/ContentView.swift
+          test -f ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
           test -f ThirdParty/3105/Sources/AppState.swift
           test -f ThirdParty/3105/Sources/CleanerView.swift
           test -f ThirdParty/3105/Sources/WallpaperLabView.swift
-          test -f ThirdParty/3105/Sources/SettingsView.swift
+          test -f ThirdParty/3105/Sources/ThreeOneOSFiveSettingsView.swift
           test -f ThirdParty/3105/Sources/LogView.swift
           test -f ThirdParty/3105/Sources/LimitedCleanerService.swift
           test -f ThirdParty/3105/Sources/CleanerCatalog.swift
@@ -78,7 +78,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          root = Path("ThirdParty/3105/Sources/ContentView.swift").read_text()
+          root = Path("ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift").read_text()
           for required in (
               "DashboardView()",
               "AppDataBrowserView()",
