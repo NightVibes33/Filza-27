@@ -336,7 +336,7 @@ now performs the complete installable build:
 4. stages ByeTunes runtime resources;
 5. downloads and hash-verifies the pinned unsigned Filza base IPA;
 6. injects the current runtime dylib and resources;
-7. writes exactly four Home Screen shortcuts plus Local Network/Bonjour and Live Activity declarations into `Info.plist` and assigns build version `4.10`;
+7. writes exactly four Home Screen shortcuts plus Local Network/Bonjour and Live Activity declarations into `Info.plist` and assigns build version `4.11`;
 8. verifies the base executable actually loads `FilzaApplySandboxExt.dylib`;
 9. repacks a real unsigned IPA;
 10. uploads the IPA as a GitHub Actions artifact.
@@ -357,6 +357,11 @@ Open **Actions → Verify Filza installable IPA** to download the latest build a
 - Apps Manager, Patches, Music Library, Gestalt Editor, and WebDAV should be revalidated on-device after each new IPA build.
 - The existing container-access primitives do not establish unrestricted `/`, `/System`, `/Library`, `/Applications`, or arbitrary `/private` traversal.
 - No kernel read/write or full jailbreak primitive is claimed by this README.
+- A verified `bad_query` root proves only the access recorded in its generated
+  `Probe Results.plist` and `Access Status.txt`. In particular,
+  `/System/Library` can be enumerated while remaining on iOS's read-only signed
+  system volume; the sandbox extension does not remount it or grant system-volume
+  writes. App Groups are on the separate Data volume and may be writable.
 
 ## PoCs / upstream research
 

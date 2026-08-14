@@ -614,10 +614,31 @@ static void hook_activationViewDidLoad(id self, SEL _cmd) {
 static void setPastePOSIXError(NSError **error, int code,
                                NSString *operation, NSString *path) {
     if (!error) return;
-    NSString *description = [NSString stringWithFormat:@"%@ failed for %@: %s",
-        operation, path, strerror(code)];
+    NSString *resolvedPath = [path stringByResolvingSymlinksInPath];
+    BOOL systemLibrary = [resolvedPath isEqualToString:@"/System/Library"] ||
+        [resolvedPath hasPrefix:@"/System/Library/"];
+    NSString *description = nil;
+    NSString *recovery = nil;
+    if (code == EROFS) {
+        description = [NSString stringWithFormat:
+            @"%@ failed for %@: the destination filesystem is mounted read-only.",
+            operation, path];
+        recovery = @"A retained sandbox extension can expose a directory for browsing, but it cannot remount a filesystem read-write. Use a writable Data-volume path such as an authorized App Group.";
+    } else if (systemLibrary && (code == EACCES || code == EPERM)) {
+        description = [NSString stringWithFormat:
+            @"%@ failed for %@: System Library is readable, but this process has no write authority.",
+            operation, path];
+        recovery = @"/System/Library is on the signed system volume. bad_query directory access does not make that volume writable.";
+    } else {
+        description = [NSString stringWithFormat:@"%@ failed for %@: %s",
+            operation, path, strerror(code)];
+    }
+    NSMutableDictionary *userInfo = [@{
+        NSLocalizedDescriptionKey: description
+    } mutableCopy];
+    if (recovery.length) userInfo[NSLocalizedRecoverySuggestionErrorKey] = recovery;
     *error = [NSError errorWithDomain:NSPOSIXErrorDomain code:code
-        userInfo:@{NSLocalizedDescriptionKey: description}];
+        userInfo:userInfo];
 }
 
 static BOOL directCopyItem(NSString *source, NSString *destination, NSError **error);

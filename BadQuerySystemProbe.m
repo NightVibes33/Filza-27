@@ -4,6 +4,7 @@
 #import <errno.h>
 #import <limits.h>
 #import <string.h>
+#import <sys/mount.h>
 #import <sys/stat.h>
 #import <unistd.h>
 
@@ -40,6 +41,60 @@ static NSString *BQErrorString(int error)
     if (error == 0) return @"none";
     const char *text = strerror(error);
     return text ? [NSString stringWithUTF8String:text] : @"unknown";
+}
+
+static NSDictionary *BQAccessDiagnostics(NSString *path)
+{
+    NSMutableDictionary *result = [NSMutableDictionary dictionary];
+
+    errno = 0;
+    BOOL permissionWritable = access(path.fileSystemRepresentation, W_OK) == 0;
+    int permissionErrno = permissionWritable ? 0 : errno;
+    result[@"WritePermissionCheck"] = @(permissionWritable);
+    result[@"WritePermissionErrno"] = @(permissionErrno);
+    result[@"WritePermissionError"] = BQErrorString(permissionErrno);
+
+    struct statfs filesystem = {0};
+    errno = 0;
+    BOOL mountInspected = statfs(path.fileSystemRepresentation, &filesystem) == 0;
+    int mountErrno = mountInspected ? 0 : errno;
+    BOOL readOnlyFilesystem = mountInspected &&
+        (filesystem.f_flags & MNT_RDONLY) != 0;
+    result[@"MountInspectionSucceeded"] = @(mountInspected);
+    result[@"MountInspectionErrno"] = @(mountErrno);
+    result[@"MountInspectionError"] = BQErrorString(mountErrno);
+    result[@"FilesystemReadOnly"] = @(readOnlyFilesystem);
+    if (mountInspected) {
+        result[@"FilesystemType"] = [NSString stringWithUTF8String:
+            filesystem.f_fstypename] ?: @"unknown";
+        result[@"MountPoint"] = [NSString stringWithUTF8String:
+            filesystem.f_mntonname] ?: @"unknown";
+        result[@"MountedFrom"] = [NSString stringWithUTF8String:
+            filesystem.f_mntfromname] ?: @"unknown";
+        result[@"MountFlags"] = @((unsigned long long)filesystem.f_flags);
+    }
+
+    BOOL effectiveWritable = permissionWritable && mountInspected &&
+        !readOnlyFilesystem;
+    result[@"EffectiveWritable"] = @(effectiveWritable);
+    if (readOnlyFilesystem) {
+        result[@"AccessMode"] = @"readable-read-only-filesystem";
+        result[@"WriteBoundary"] =
+            @"The filesystem is mounted read-only. A sandbox extension can grant traversal/read access but cannot change the mount policy.";
+    } else if (effectiveWritable) {
+        result[@"AccessMode"] = @"readable-write-permission-present";
+        result[@"WriteBoundary"] =
+            @"The current process passes the directory write-permission check; individual descendants can still enforce stricter policy.";
+    } else if (mountInspected) {
+        result[@"AccessMode"] = @"readable-no-write-permission";
+        result[@"WriteBoundary"] =
+            @"Enumeration succeeded, but the current process has no verified write authority for this directory.";
+    } else {
+        result[@"AccessMode"] = @"readable-write-status-unknown";
+        result[@"WriteBoundary"] =
+            @"Enumeration succeeded, but the filesystem mount could not be inspected.";
+    }
+    return result;
 }
 
 static BOOL BQInstallLink(NSString *directory, NSString *name, NSString *target,
@@ -119,14 +174,17 @@ static NSDictionary *BQProbe(NSString *directory, NSDictionary *candidate)
         result[@"HandleRetained"] = @NO;
     }
 
+    [result addEntriesFromDictionary:BQAccessDiagnostics(path)];
+
     NSString *linkError = nil;
     BOOL linked = BQInstallLink(directory, name, path, &linkError);
     result[@"Status"] = linked ? @"verified" : @"verified-link-failed";
     result[@"LinkCreated"] = @(linked);
     if (linkError.length) result[@"LinkError"] = linkError;
 
-    NSLog(@"[BadQuerySystemProbe] VERIFIED scope=%@ path=%@ handle=%lld link=%d",
-          scope, path, handle, linked);
+    NSLog(@"[BadQuerySystemProbe] VERIFIED scope=%@ path=%@ handle=%lld link=%d access=%@ readonly=%@ writable=%@",
+          scope, path, handle, linked, result[@"AccessMode"],
+          result[@"FilesystemReadOnly"], result[@"EffectiveWritable"]);
     return result;
 }
 
@@ -138,8 +196,32 @@ static void BQWriteReadme(NSString *directory)
          "A bad_query return value alone is not treated as access. Every link requires a successful opendir/readdir check.\n\n"
          "Upstream-documented iOS 27 roots are tested first. Broader roots requested for full filesystem research are experimental and may remain denied.\n"
          "Denied candidates are recorded in Probe Results.plist and are intentionally not linked.\n"
-         "Read-only system-volume policy, Data Protection, POSIX permissions, and sandbox policy can still restrict descendants even when a parent root is visible.\n";
+         "Read-only system-volume policy, Data Protection, POSIX permissions, and sandbox policy can still restrict descendants even when a parent root is visible.\n\n"
+         "Important: /System/Library is part of the signed system volume on current iOS and is expected to report readable-read-only-filesystem. The bad_query token can expose directory contents, but it cannot remount that filesystem or turn read access into write access. App Groups live on the separate Data volume and can therefore be writable when the returned extension includes write authority.\n"
+         "See Access Status.txt for the observed mode of every visible root. Broad read access is not a jailbreak and does not imply kernel read/write, AMFI bypass, trust-cache control, root execution, or a writable system volume.\n";
     [text writeToFile:[directory stringByAppendingPathComponent:@"README.txt"]
+              atomically:YES encoding:NSUTF8StringEncoding error:nil];
+}
+
+static void BQWriteAccessStatus(NSString *directory, NSArray<NSDictionary *> *results)
+{
+    NSMutableString *text = [NSMutableString stringWithString:
+        @"bad_query observed access status\n\n"
+         "This report distinguishes directory enumeration from write authority. No files are created in the probed roots.\n\n"];
+    for (NSDictionary *result in results) {
+        if (![result[@"EnumerateAfter"] boolValue]) continue;
+        [text appendFormat:@"%@\n  Path: %@\n  Access: %@\n  Mount: %@ (%@)\n  Write check: %@ (errno=%@ %@)\n  Boundary: %@\n\n",
+            result[@"Name"] ?: @"Unnamed root",
+            result[@"Path"] ?: @"unknown",
+            result[@"AccessMode"] ?: @"unknown",
+            result[@"MountPoint"] ?: @"unknown",
+            [result[@"FilesystemReadOnly"] boolValue] ? @"read-only" : @"not reported read-only",
+            [result[@"WritePermissionCheck"] boolValue] ? @"passed" : @"failed",
+            result[@"WritePermissionErrno"] ?: @0,
+            result[@"WritePermissionError"] ?: @"unknown",
+            result[@"WriteBoundary"] ?: @"unknown"];
+    }
+    [text writeToFile:[directory stringByAppendingPathComponent:@"Access Status.txt"]
               atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
 
@@ -193,6 +275,7 @@ static void BQRunSystemProbe(void)
 
     [results writeToFile:[directory stringByAppendingPathComponent:@"Probe Results.plist"]
               atomically:YES];
+    BQWriteAccessStatus(directory, results);
     BQWriteReadme(directory);
 }
 
