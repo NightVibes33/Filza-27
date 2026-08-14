@@ -14,28 +14,14 @@ BAD_QUERY_ROOT := ThirdParty/bad_query
 GCDWEBSERVER_ROOT := ThirdParty/GCDWebServer
 THREEONE_ROOT := ThirdParty/3105
 
-# Runtime/file-operation correctness layers that must actually ship with the
-# real tweak target. The direct launcher intercepts TGMainView.openMusicLib and
-# presents the full ByeTunes SwiftUI root; the legacy controller embed remains
-# linked only as a compatibility fallback.
 FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataRetryFix.m AppIconResourceProxyFix.m VirtualBackendFix.m SystemPathDiagnostics.m BadQuerySystemProbe.m GestaltManager.m FilzaMondBridge.m FilzaMainToolbarGestalt.m Filza3105Bridge.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ByeTunesFullAppLauncher.m FilzaDiagnostics.m FilzaQuickActions.m WebDAVRuntimeFix.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m CVE43724RieCompatibility.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
 FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/AppIconHelper.m
 FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/wallpaper_zip.c
-
-# Pinned bad_query backs the verified foreign-container, system-root, and
-# MobileGestalt access paths. A returned handle is not treated as proof of
-# access; callers verify the requested file/directory operation in-process.
 FilzaApplySandboxExt_FILES += $(BAD_QUERY_ROOT)/bad_query/bad_query.c
 
-# Filza's binary still references GCDWebDAVServer for its foreground server,
-# but the jailed base only ships the separate jailbreak-era launchd helper.
-# Link the complete pinned class-1 / partial class-2 WebDAV implementation so
-# TGPreferences.createHttpServer has a real in-process class to instantiate.
 GCDWEBSERVER_OBJC_FILES := $(shell find $(GCDWEBSERVER_ROOT)/GCDWebServer $(GCDWEBSERVER_ROOT)/GCDWebDAVServer -type f -name '*.m' -print)
 FilzaApplySandboxExt_FILES += $(GCDWEBSERVER_OBJC_FILES)
 
-# The original jailed Filza kernel path is used only by the exact iOS 18.5
-# target gate in Tweak.m. Newer systems continue to use the MCM path.
 FilzaApplySandboxExt_FILES += sandbox_escape.m apfs_own.m
 FilzaApplySandboxExt_FILES += kexploit/kexploit_opa334.m kexploit/krw.m kexploit/kutils.m kexploit/offsets.m kexploit/vnode.m
 FilzaApplySandboxExt_FILES += utils/file.c utils/hexdump.c utils/process.c
@@ -43,17 +29,13 @@ FilzaApplySandboxExt_FILES += kpf/patchfinder.m
 FilzaApplySandboxExt_FILES += XPF/src/xpf.c XPF/src/common.c XPF/src/decompress.c XPF/src/bad_recovery.c XPF/src/non_ppl.c XPF/src/ppl.c
 FilzaApplySandboxExt_FILES += XPF/external/ChOma/src/arm64.c XPF/external/ChOma/src/Base64.c XPF/external/ChOma/src/BufferedStream.c XPF/external/ChOma/src/CodeDirectory.c XPF/external/ChOma/src/CSBlob.c XPF/external/ChOma/src/DER.c XPF/external/ChOma/src/DyldSharedCache.c XPF/external/ChOma/src/Entitlements.c XPF/external/ChOma/src/Fat.c XPF/external/ChOma/src/FileStream.c XPF/external/ChOma/src/Host.c XPF/external/ChOma/src/MachO.c XPF/external/ChOma/src/MachOLoadCommand.c XPF/external/ChOma/src/MemoryStream.c XPF/external/ChOma/src/PatchFinder.c XPF/external/ChOma/src/Util.c
 
-# Full ByeTunes embedding. Compile every Swift source from the pinned ByeTunes
-# app, including all screens, downloader, ringtones, settings and metadata
-# tools. The compatibility layer restores the exact pre-v2.4 multi-source and
-# YouTube metadata state semantics while retaining v2.4 features. Only
-# MusicManagerApp.swift is omitted because its @main owns a standalone
-# UIApplication lifecycle; Filza already owns that lifecycle.
+# Full ByeTunes v2.4 source tree, with the old provider state machine restored
+# by explicit build-time parity patches. MusicManagerApp.swift is omitted
+# because Filza already owns UIApplication lifecycle.
 BYETUNES_SWIFT_FILES := $(shell find $(BYETUNES_ROOT) -type f -name '*.swift' ! -name 'MusicManagerApp.swift' ! -name 'SplashView.swift' -print)
 THREEONE_SWIFT_FILES := $(shell find $(THREEONE_ROOT)/Sources -type f -name '*.swift' -print)
 FilzaApplySandboxExt_SWIFT_FILES = ByeTunesEmbeddedHost.swift ByeTunesMetadataCompat.swift MondGestaltView.swift Filza3105Host.swift $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
 
-# --- Flags ---
 FilzaApplySandboxExt_CFLAGS = -I$(PWD)/compat -I$(PWD) -I$(PWD)/XPF/src -I$(PWD)/XPF/external/ChOma/include -I$(IDEVICE_VENDOR)/include -I$(PWD)/$(BAD_QUERY_ROOT)/bad_query -I$(PWD)/$(THREEONE_ROOT)/Sources \
     -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Core -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Requests -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Responses -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebDAVServer \
     -I$(shell xcrun --sdk iphoneos --show-sdk-path 2>/dev/null)/usr/include/libxml2 \
@@ -62,26 +44,22 @@ FilzaApplySandboxExt_CFLAGS = -I$(PWD)/compat -I$(PWD) -I$(PWD)/XPF/src -I$(PWD)
     -Wno-incompatible-pointer-types -Wno-incompatible-pointer-types-discards-qualifiers \
     -Wno-deprecated-declarations -Wno-nonportable-include-path -Wno-format
 FilzaApplySandboxExt_CFLAGS += -Wno-arc-performSelector-leaks
-
 FilzaApplySandboxExt_CCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 FilzaApplySandboxExt_OBJCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 FilzaApplySandboxExt_OBJCCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 FilzaApplySandboxExt_SWIFTFLAGS += -swift-version 5 -default-isolation MainActor -Xcc -I$(IDEVICE_VENDOR)/include
 FilzaApplySandboxExt_LDFLAGS += $(IDEVICE_STATIC)
 
-# Framework coverage matches the complete ByeTunes source tree rather than the
-# old reduced music-library bridge.
 FilzaApplySandboxExt_FRAMEWORKS = UIKit Foundation SwiftUI Combine AVFoundation CoreMedia AudioToolbox CryptoKit Security UniformTypeIdentifiers PhotosUI JavaScriptCore AppIntents ActivityKit SafariServices CFNetwork MobileCoreServices WebKit
 FilzaApplySandboxExt_PRIVATE_FRAMEWORKS = IOSurface
 FilzaApplySandboxExt_LIBRARIES = z xml2 sandbox sqlite3
-
 FilzaApplySandboxExt_INSTALL_TARGET_PROCESSES = Filza
 
-# Keep each build-time transformation explicit. No patch script is allowed to
-# invoke an unrelated patch as a hidden side effect.
+# Every transformation is explicit and ordered. No script may invoke another
+# unrelated patch as a hidden side effect.
 before-FilzaApplySandboxExt-all::
 	@bash scripts/patch-access-map-provenance.sh
-	@bash scripts/patch-byetunes-upstream-parity.sh
+	@bash scripts/patch-byetunes-upstream-parity-v2.sh
 	@bash scripts/restore-byetunes-v24-metadata-compat.sh
 	@bash scripts/patch-byetunes-metadata-parity-post.sh
 	@bash scripts/patch-byetunes-device-library-save.sh
@@ -91,10 +69,10 @@ before-FilzaApplySandboxExt-all::
 	@test -f "$(BYETUNES_ROOT)/BackgroundAudioDownloadManager.swift" || (echo "Incomplete ByeTunes 2.4 sources" >&2; exit 1)
 	@test -f "$(BYETUNES_ACTIVITY_SHARED)" || (echo "Missing ByeTunes 2.4 shared Live Activity model" >&2; exit 1)
 	@test -f "ByeTunesMetadataCompat.swift" || (echo "Missing ByeTunes metadata compatibility layer" >&2; exit 1)
-	@test -f "scripts/patch-byetunes-upstream-parity.sh" || (echo "Missing ByeTunes upstream-parity patch" >&2; exit 1)
+	@test -f "scripts/patch-byetunes-upstream-parity-v2.sh" || (echo "Missing structural ByeTunes upstream-parity patch" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-metadata-parity-post.sh" || (echo "Missing ByeTunes metadata-parity post-patch" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-device-library-save.sh" || (echo "Missing ByeTunes device-library save verifier" >&2; exit 1)
-	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.c" || (echo "Missing pinned bad_query submodule. Run: git submodule update --init --recursive" >&2; exit 1)
+	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.c" || (echo "Missing pinned bad_query submodule" >&2; exit 1)
 	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.h" || (echo "Incomplete bad_query submodule" >&2; exit 1)
 	@test -f "AppProxyMetadataFix.m" || (echo "Missing AppProxyMetadataFix.m" >&2; exit 1)
 	@test -f "AppMetadataRetryFix.m" || (echo "Missing AppMetadataRetryFix.m" >&2; exit 1)
