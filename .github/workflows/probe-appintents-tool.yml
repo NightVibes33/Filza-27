@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - '.github/workflows/probe-appintents-tool.yml'
+      - 'scripts/emit-byetunes-appintents-const-values.sh'
+      - 'scripts/generate-appintents-metadata.sh'
   workflow_dispatch:
 
 concurrency:
@@ -74,6 +76,9 @@ jobs:
           META=.theos/byetunes-appintents/Metadata.appintents
           test -d "$META"
           test -s .theos/byetunes-appintents/FilzaApplySandboxExt.swiftconstvalues
+          test -s .theos/byetunes-appintents/FilzaApplySandboxExt_const_extract_protocols.json
+          grep -Fq 'AppIntents.AppIntent' .theos/byetunes-appintents/FilzaApplySandboxExt_const_extract_protocols.json
+          grep -Fq 'AppIntents.AppShortcutsProvider' .theos/byetunes-appintents/FilzaApplySandboxExt_const_extract_protocols.json
           find "$META" -type f -print
           test "$(find "$META" -type f | wc -l | tr -d ' ')" -gt 0
           grep -aR -q 'InjectMusicIntent' "$META"

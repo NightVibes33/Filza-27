@@ -6,6 +6,7 @@ SOURCE_LIST="$OUTPUT_ROOT/source-files.txt"
 CONST_VALUES="$OUTPUT_ROOT/FilzaApplySandboxExt.swiftconstvalues"
 MODULE_OUT="$OUTPUT_ROOT/FilzaApplySandboxExt.swiftmodule"
 MODULE_CACHE="$OUTPUT_ROOT/module-cache"
+PROTOCOL_LIST="$OUTPUT_ROOT/FilzaApplySandboxExt_const_extract_protocols.json"
 ROOT="$(pwd)"
 
 mkdir -p "$OUTPUT_ROOT" "$MODULE_CACHE"
@@ -32,6 +33,14 @@ grep -Fq '/DownloadLiveActivityAttributes.swift' "$SOURCE_LIST"
 ! grep -Fq '/MusicManagerApp.swift' "$SOURCE_LIST"
 ! grep -Fq '/SplashView.swift' "$SOURCE_LIST"
 
+# Swift only emits the supplementary constant-value sidecar for conformances
+# named in this JSON array. These are the two AppIntents protocols implemented
+# by the complete ByeTunes 2.4 source graph in MusicManagerIntents.swift.
+printf '%s\n' '["AppIntents.AppIntent", "AppIntents.AppShortcutsProvider"]' > "$PROTOCOL_LIST"
+test -s "$PROTOCOL_LIST"
+grep -Fq 'AppIntents.AppIntent' "$PROTOCOL_LIST"
+grep -Fq 'AppIntents.AppShortcutsProvider' "$PROTOCOL_LIST"
+
 SOURCES=()
 while IFS= read -r file; do
   test -s "$file"
@@ -49,6 +58,8 @@ xcrun --sdk iphoneos swiftc \
   -emit-module-path "$MODULE_OUT" \
   -emit-const-values \
   -emit-const-values-path "$CONST_VALUES" \
+  -Xfrontend -const-gather-protocols-file \
+  -Xfrontend "$PROTOCOL_LIST" \
   -module-name FilzaApplySandboxExt \
   -parse-as-library \
   -swift-version 5 \
@@ -72,4 +83,4 @@ xcrun --sdk iphoneos swiftc \
 
 test -s "$MODULE_OUT"
 test -s "$CONST_VALUES"
-echo "Emitted $CONST_VALUES from ${#SOURCES[@]} embedded Swift sources"
+echo "Emitted $CONST_VALUES from ${#SOURCES[@]} embedded Swift sources using $PROTOCOL_LIST"
