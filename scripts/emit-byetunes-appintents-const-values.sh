@@ -4,10 +4,11 @@ set -euxo pipefail
 OUTPUT_ROOT="${1:-.theos/byetunes-appintents}"
 SOURCE_LIST="$OUTPUT_ROOT/source-files.txt"
 CONST_VALUES="$OUTPUT_ROOT/FilzaApplySandboxExt.swiftconstvalues"
-MODULE_OUT="$OUTPUT_ROOT/FilzaApplySandboxExt.swiftmodule"
+OBJECT_OUT="$OUTPUT_ROOT/MusicManagerIntents.o"
 MODULE_CACHE="$OUTPUT_ROOT/module-cache"
 PROTOCOL_LIST="$OUTPUT_ROOT/FilzaApplySandboxExt_const_extract_protocols.json"
 ROOT="$(pwd)"
+INTENTS_SOURCE="$(python3 -c 'import os; print(os.path.realpath("ByeTunes/MusicManager/MusicManagerIntents.swift"))')"
 
 mkdir -p "$OUTPUT_ROOT" "$MODULE_CACHE"
 
@@ -42,24 +43,31 @@ grep -Fq '"AppIntent"' "$PROTOCOL_LIST"
 grep -Fq '"AppShortcutsProvider"' "$PROTOCOL_LIST"
 
 SOURCES=()
+FRONTEND_SOURCES=()
 while IFS= read -r file; do
   test -s "$file"
   SOURCES+=("$file")
+  if test "$file" = "$INTENTS_SOURCE"; then
+    FRONTEND_SOURCES+=(-primary-file "$file")
+  else
+    FRONTEND_SOURCES+=("$file")
+  fi
 done < "$SOURCE_LIST"
+test "$(printf '%s\n' "${FRONTEND_SOURCES[@]}" | grep -Fc -- '-primary-file')" = 1
 
 DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
 SDK_ROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
 
-# Theos compiles the real module successfully but does not retain Xcode's
-# supplementary constant-value output. Re-run the same source graph as a
-# module-only compile so appintentsmetadataprocessor receives a real sidecar.
-xcrun --sdk iphoneos swiftc \
-  -emit-module \
-  -emit-module-path "$MODULE_OUT" \
-  -emit-const-values \
+# Match Xcode's per-primary Swift frontend job: compile the intents source as
+# the primary file while making the complete embedded module graph visible.
+# Calling swift-frontend directly prevents swiftc's module-only driver action
+# from discarding the supplementary constant-values output.
+xcrun --sdk iphoneos swift-frontend \
+  -frontend \
+  -c \
+  "${FRONTEND_SOURCES[@]}" \
   -emit-const-values-path "$CONST_VALUES" \
-  -Xfrontend -const-gather-protocols-file \
-  -Xfrontend "$PROTOCOL_LIST" \
+  -const-gather-protocols-file "$PROTOCOL_LIST" \
   -module-name FilzaApplySandboxExt \
   -parse-as-library \
   -swift-version 5 \
@@ -79,8 +87,8 @@ xcrun --sdk iphoneos swiftc \
   -Xcc -I"$ROOT/ThirdParty/bad_query/bad_query" \
   -Xcc -I"$ROOT/ThirdParty/3105/Sources" \
   -Xcc -I"$SDK_ROOT/usr/include/libxml2" \
-  "${SOURCES[@]}"
+  -o "$OBJECT_OUT"
 
-test -s "$MODULE_OUT"
+test -s "$OBJECT_OUT"
 test -s "$CONST_VALUES"
 echo "Emitted $CONST_VALUES from ${#SOURCES[@]} embedded Swift sources using $PROTOCOL_LIST"
