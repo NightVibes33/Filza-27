@@ -11,8 +11,8 @@ This fork currently targets the iOS 18 / iOS 26 / early iOS 27 behavior exposed 
 | Area | Status |
 | --- | --- |
 | Real unsigned arm64 IPA build | ✅ CI builds and uploads a real IPA |
-| 3105 Apps Manager | ✅ Full native app-data browser integrated |
-| Portable Patches | ✅ Full `.3105` project/import/apply/restore flow integrated |
+| 3105 workspace | ✅ Complete Home/Files/Patches/Cleaner/Wallpapers/Settings/Logs graph integrated |
+| Portable Patches | ✅ Full `.3105` project/import/apply/restore flow connected to Files |
 | Foreign app data-container fallback | ✅ Integrated |
 | App size metadata retry | ✅ Integrated |
 | App icon fallback | ✅ Integrated |
@@ -28,11 +28,13 @@ This fork currently targets the iOS 18 / iOS 26 / early iOS 27 behavior exposed 
 
 ### Apps Manager
 
-Filza's `openApps` route and Home Screen action now open the native App Data
-Browser from `NightVibes33/3105` commit
+Filza's `openApps` route and Home Screen action now open the Files tab in the
+complete native workspace from `NightVibes33/3105` commit
 `1da66f733a7ad6bb5c9e1d078e89cfbb02faec72`. This is the real 3105 browser,
 adapted to reuse FilzaSlop's retained ContainerManager leases and `bad_query`
-runtime rather than a look-alike screen.
+runtime rather than a look-alike screen. The original five-tab navigation is
+present: Home, Files, Patches, Cleaner, and Wallpapers. Home also exposes the
+original Settings and Logs sheets.
 
 Current behavior includes:
 
@@ -44,12 +46,17 @@ Current behavior includes:
 - App icon lookup includes a MobileIcons resource-proxy fallback and format `10` before older formats.
 - Native app search, container browsing, file preview, multi-file import, create,
   rename, replace, and delete operations are included.
-- Files and folders can be turned directly into portable patch drafts.
+- Files and folders can be turned directly into portable patch drafts; the
+  upstream coordinator switches to Patches and opens the real editor.
+- Limited Cleaner scans only app Caches/tmp paths and requires confirmation.
+- Wallpaper Lab includes safe `.tendies` import, validation, receipts, install,
+  and restore.
 
 ### Patches
 
 **Patches** is a fourth static Home Screen quick action and a persistent bottom
-toolbar button. It opens the complete selected 3105 patch implementation:
+toolbar button. It opens the Patches tab inside the same complete 3105
+workspace, so Files/App Manager and Patches remain connected:
 
 - create and edit portable `.3105` projects;
 - import and export packages;
@@ -323,7 +330,7 @@ now performs the complete installable build:
 4. stages ByeTunes runtime resources;
 5. downloads and hash-verifies the pinned unsigned Filza base IPA;
 6. injects the current runtime dylib and resources;
-7. writes exactly four Home Screen shortcuts plus Local Network/Bonjour declarations into `Info.plist` and assigns build version `4.7`;
+7. writes exactly four Home Screen shortcuts plus Local Network/Bonjour declarations into `Info.plist` and assigns build version `4.8`;
 8. verifies the base executable actually loads `FilzaApplySandboxExt.dylib`;
 9. repacks a real unsigned IPA;
 10. uploads the IPA as a GitHub Actions artifact.

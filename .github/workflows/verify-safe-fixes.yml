@@ -53,11 +53,65 @@ jobs:
           test -f Filza3105AppLauncher.m
           test -f ThirdParty/3105/Sources/AppDataBrowserView.swift
           test -f ThirdParty/3105/Sources/PatchProjectsView.swift
+          test -f ThirdParty/3105/Sources/ContentView.swift
+          test -f ThirdParty/3105/Sources/AppState.swift
+          test -f ThirdParty/3105/Sources/CleanerView.swift
+          test -f ThirdParty/3105/Sources/WallpaperLabView.swift
+          test -f ThirdParty/3105/Sources/SettingsView.swift
+          test -f ThirdParty/3105/Sources/LogView.swift
+          test -f ThirdParty/3105/Sources/LimitedCleanerService.swift
+          test -f ThirdParty/3105/Sources/CleanerCatalog.swift
+          test -f ThirdParty/3105/Sources/MG.swift
+          test -f ThirdParty/3105/Sources/SBX.swift
+          test -f ThirdParty/3105/Sources/SecureZIPArchive.swift
+          test -f ThirdParty/3105/Sources/SupportPolicy.swift
+          test -f ThirdParty/3105/Sources/WallpaperInstaller.swift
+          test -f ThirdParty/3105/Sources/WallpaperLabModels.swift
+          test -f ThirdParty/3105/Sources/WallpaperLabService.swift
+          test -f ThirdParty/3105/Sources/wallpaper_zip.c
           test -f ThirdParty/3105/Sources/PatchPackageCodec.swift
           test -f ThirdParty/3105/Sources/PatchTransaction.swift
           test -f ThirdParty/3105/Resources/Filza3105.bundle/Info.plist
+          test -f ThirdParty/3105/Resources/Filza3105.bundle/AppIcon3105.png
           test -f ThirdParty/3105/LICENSE
           grep -Fq '1da66f733a7ad6bb5c9e1d078e89cfbb02faec72' ThirdParty/3105/UPSTREAM.md
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path("ThirdParty/3105/Sources/ContentView.swift").read_text()
+          for required in (
+              "DashboardView()",
+              "AppDataBrowserView()",
+              "PatchProjectsView()",
+              "CleanerView()",
+              "WallpaperLabView()",
+              "ThreeOneOSFiveSettingsView()",
+              "LogView()",
+              "selectedTab = 2",
+          ):
+              assert required in root, required
+
+          host = Path("Filza3105Host.swift").read_text()
+          assert "ThreeOneOSFiveContentView(initialTab: initialTab)" in host
+          assert "initialTab: 1" in host
+          assert "initialTab: 2" in host
+          assert "AppDataBrowserView()" not in host
+          assert "PatchProjectsView()" not in host
+
+          browser = Path("ThirdParty/3105/Sources/FileBrowserView.swift").read_text()
+          for required in (
+              ".contextMenu",
+              "requestPatchCreation(for:",
+              "preparePatchDraft(",
+              "patchDraftCoordinator.present(draft)",
+          ):
+              assert required in browser, required
+
+          patches = Path("ThirdParty/3105/Sources/PatchProjectsView.swift").read_text()
+          assert ".sheet(item: $draftCoordinator.request)" in patches
+          assert "initialDraft: request.draft" in patches
+          print("Verified the complete connected 3105 root instead of standalone partial hosts")
+          PY
           test -f ByeTunesFilzaLibraryEmbed.m
           test -f ByeTunesFullAppLauncher.m
           test -f ByeTunesFullAppLauncher.h
@@ -199,6 +253,17 @@ jobs:
           grep -aFq 'Filza3105HostFactory' "$DYLIB"
           grep -aFq 'constructing complete 3105 Apps Manager' "$DYLIB"
           grep -aFq 'constructing complete 3105 Patches' "$DYLIB"
+          grep -aFq 'constructing full upstream 3105 workspace' "$DYLIB"
+          grep -aFq 'full upstream workspace appeared initialTab=' "$DYLIB"
+          grep -aFq 'tab.home' "$DYLIB"
+          grep -aFq 'tab.files' "$DYLIB"
+          grep -aFq 'tab.patches' "$DYLIB"
+          grep -aFq 'tab.cleaner' "$DYLIB"
+          grep -aFq 'tab.wallpapers' "$DYLIB"
+          grep -aFq 'cleaner.scan_again' "$DYLIB"
+          grep -aFq 'wallpaper.checking' "$DYLIB"
+          grep -aFq 'settings.verified_versions' "$DYLIB"
+          grep -aFq 'logs.empty_title' "$DYLIB"
           grep -aFq 'TGMainView complete 3105 Apps route installed' "$DYLIB"
           grep -aFq 'presented complete %@ directly' "$DYLIB"
           grep -aFq '3105 Apps Manager' "$DYLIB"
@@ -304,7 +369,7 @@ jobs:
           fi
 
           plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemSubtitle":"Browse app data with 3105","UIApplicationShortcutItemIconSymbolName":"square.grid.2x2"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music Library","UIApplicationShortcutItemSubtitle":"Open Music Library","UIApplicationShortcutItemIconSymbolName":"music.note.list"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Editor","UIApplicationShortcutItemSubtitle":"Edit MobileGestalt","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.patches","UIApplicationShortcutItemTitle":"Patches","UIApplicationShortcutItemSubtitle":"Manage portable .3105 patches","UIApplicationShortcutItemIconSymbolName":"shippingbox"}]' "$APP/Info.plist"
-          plutil -replace CFBundleShortVersionString -string "4.7" "$APP/Info.plist"
+          plutil -replace CFBundleShortVersionString -string "4.8" "$APP/Info.plist"
           plutil -replace CFBundleVersion -string "${GITHUB_RUN_NUMBER}" "$APP/Info.plist"
           plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
           plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
@@ -328,7 +393,7 @@ jobs:
           assert info.get('LSSupportsOpeningDocumentsInPlace') is True
           assert info.get('NSLocalNetworkUsageDescription')
           assert info.get('NSBonjourServices') == ['_http._tcp']
-          assert info.get('CFBundleShortVersionString') == '4.7'
+          assert info.get('CFBundleShortVersionString') == '4.8'
           assert str(info.get('CFBundleVersion', '')).isdigit()
           print('Verified exactly four quick actions and Files/Documents exposure flags')
           PY
@@ -340,6 +405,7 @@ jobs:
           test -s "$APP/yt_ejs_helper.js"
           test -s "$APP/AppIconImage.png"
           test -s "$APP/Filza3105.bundle/Info.plist"
+          test -s "$APP/Filza3105.bundle/AppIcon3105.png"
           test -s "$APP/Filza3105.bundle/en.lproj/Localizable.strings"
           test -x "$APP/helpers/FilzaWebDAVServer"
           test -s "$APP/com.tigisoftware.filza.webdavserver.plist"
@@ -352,6 +418,7 @@ jobs:
           unzip -l "$OUTPUT" | grep -F 'meriyah.umd.js'
           unzip -l "$OUTPUT" | grep -F 'AppIconImage.png'
           unzip -l "$OUTPUT" | grep -F 'Filza3105.bundle/en.lproj/Localizable.strings'
+          unzip -l "$OUTPUT" | grep -F 'Filza3105.bundle/AppIcon3105.png'
           shasum -a 256 "$OUTPUT" | tee .theos/IPA-SHA256.txt
 
       - name: Upload installable unsigned IPA and verification files

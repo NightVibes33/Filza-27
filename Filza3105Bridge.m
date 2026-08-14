@@ -72,7 +72,6 @@ static BOOL F3105Present(UIViewController *source, SEL selector, NSString *label
         UIViewController *target = presenter;
         while (target.presentedViewController)
             target = target.presentedViewController;
-        controller.modalPresentationStyle = UIModalPresentationFullScreen;
         [target presentViewController:controller animated:YES completion:^{
             FilzaDiagnosticsAppend(@"3105",
                 [NSString stringWithFormat:@"presented complete %@ directly", label]);

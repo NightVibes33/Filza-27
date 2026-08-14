@@ -18,7 +18,8 @@ struct AppLogo: View {
 
     var body: some View {
         Group {
-            if let icon = UIImage(named: "AppIcon60x60")
+            if let icon = embedded3105Icon
+                ?? UIImage(named: "AppIcon60x60")
                 ?? Bundle.main.path(forResource: "AppIcon60x60@2x", ofType: "png").flatMap(UIImage.init(contentsOfFile:))
                 ?? UIImage(named: "AppIcon") {
                 Image(uiImage: icon)
@@ -35,5 +36,16 @@ struct AppLogo: View {
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
         .accessibilityHidden(true)
+    }
+
+    private var embedded3105Icon: UIImage? {
+        guard let bundleURL = Bundle.main.url(
+            forResource: "Filza3105",
+            withExtension: "bundle"
+        ),
+        let bundle = Bundle(url: bundleURL),
+        let iconURL = bundle.url(forResource: "AppIcon3105", withExtension: "png")
+        else { return nil }
+        return UIImage(contentsOfFile: iconURL.path)
     }
 }
