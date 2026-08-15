@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="${BYETUNES_ROOT:-ByeTunes/MusicManager}"
 DEST="${1:-.theos/byetunes-resources}"
+YTK_ROOT="${BYETUNES_YTK_ROOT:-ThirdParty/byetunes-youtubekit/Generated}"
 BYETUNES_RELEASE_IPA_URL="${BYETUNES_RELEASE_IPA_URL:-https://github.com/EduAlexxis/ByeTunes/releases/download/v2.4/ByeTunes.ipa}"
 BYETUNES_RELEASE_IPA_SHA256="${BYETUNES_RELEASE_IPA_SHA256:-bd84ce18fbd80a4c738abff8e533c849ebb51d1cfe3248640c033e499681fca6}"
 
@@ -15,6 +16,18 @@ cp "$ROOT/Assets.xcassets/AppIconImage.imageset/AppIconImage.png" "$DEST/AppIcon
 # Keep the original app plist available to the repackaging workflow so it can
 # merge ByeTunes' document-import and file-sharing declarations into Filza.
 cp "$ROOT/Info.plist" "$DEST/ByeTunes-Info.plist"
+
+# The exact pre-v2.4 YouTubeKit SignatureSolver loads these by name from
+# Bundle.main. They came from NightVibes33/ByeTunes commit 1a90f9e0 and must be
+# present at the root of the final Filza app bundle for that upstream code path
+# to work. Do not substitute generated or newer copies.
+for resource in meriyah.umd.js astring.umd.js yt_ejs_helper.js; do
+  test -s "$YTK_ROOT/Resources/$resource" || {
+    echo "Missing pinned pre-v2.4 YouTubeKit resource: $YTK_ROOT/Resources/$resource" >&2
+    exit 1
+  }
+  cp "$YTK_ROOT/Resources/$resource" "$DEST/$resource"
+done
 
 # Config.plist is intentionally absent from the source checkout, but upstream
 # Config.swift resolves it from Bundle.main and otherwise falls back to
@@ -58,7 +71,8 @@ cp "$BYETUNES_APP/Config.plist" "$DEST/Config.plist"
 
 (
   cd "$DEST"
-  shasum -a 256 AppIconImage.png ByeTunes-Info.plist Config.plist > SHA256SUMS
+  shasum -a 256 AppIconImage.png ByeTunes-Info.plist Config.plist \
+    meriyah.umd.js astring.umd.js yt_ejs_helper.js > SHA256SUMS
 )
 
 echo "Staged complete ByeTunes runtime resources in $DEST"
