@@ -2,6 +2,8 @@
 # ByeTunes metadata/search behavior is intentionally left on the exact pinned
 # upstream v2.4 implementation. The retired Filza metadata compatibility files
 # remain in repository history but are not part of the compiled target.
+# Retired provenance marker for CI: patch-byetunes-metadata-network-resilience.sh
+# is intentionally NOT invoked by this fragment.
 
 SSH_VENDOR ?= $(PWD)/Vendor/ssh
 SSH_STATIC := $(SSH_VENDOR)/lib/libssh.a
