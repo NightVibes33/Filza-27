@@ -4,7 +4,6 @@
 
 #import "FilzaDiagnostics.h"
 #import "FilzaMondBridge.h"
-#import "GestaltManager.h"
 
 static UIViewController *FMActiveController(void)
 {
@@ -42,7 +41,7 @@ static UIViewController *FMActiveController(void)
 static void FMShowUnavailable(UIViewController *source, NSString *message)
 {
     UIAlertController *alert = [UIAlertController
-        alertControllerWithTitle:@"Gestalt Editor unavailable"
+        alertControllerWithTitle:@"mond unavailable"
         message:message
         preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"OK"
@@ -50,56 +49,48 @@ static void FMShowUnavailable(UIViewController *source, NSString *message)
     [source presentViewController:alert animated:YES completion:nil];
 }
 
-static UIViewController *FMCreateHost(NSString *path)
+static UIViewController *FMCreateHost(void)
 {
-    Class factory = NSClassFromString(@"MondGestaltHostFactory");
-    SEL selector = NSSelectorFromString(@"makeViewControllerWithPath:");
+    Class factory = NSClassFromString(@"MondEmbeddedHostFactory");
+    SEL selector = NSSelectorFromString(@"makeViewController");
     if (!factory || ![factory respondsToSelector:selector]) {
-        FilzaDiagnosticsAppend(@"Gestalt", @"complete embedded Gestalt host factory unavailable");
+        FilzaDiagnosticsAppend(@"mond", @"current embedded mond host factory unavailable");
         return nil;
     }
 
-    UIViewController *controller =
-        ((id (*)(id, SEL, id))objc_msgSend)(factory, selector, path);
-    if (![controller isKindOfClass:UIViewController.class]) {
-        FilzaDiagnosticsAppend(@"Gestalt", @"complete embedded Gestalt host returned no controller");
+    @try {
+        UIViewController *controller =
+            ((UIViewController *(*)(id, SEL))objc_msgSend)(factory, selector);
+        if (![controller isKindOfClass:UIViewController.class]) {
+            FilzaDiagnosticsAppend(@"mond", @"current embedded mond host returned no controller");
+            return nil;
+        }
+        return controller;
+    } @catch (NSException *exception) {
+        FilzaDiagnosticsAppend(@"mond", [NSString stringWithFormat:
+            @"current embedded mond host exception: %@",
+            exception.reason ?: exception.name]);
         return nil;
     }
-    return controller;
 }
 
-@interface FMGestaltNavigationController : UINavigationController
-@end
-
-@implementation FMGestaltNavigationController
-- (void)fm_close
+static BOOL FMPresentHost(UIViewController *source)
 {
-    [self dismissViewControllerAnimated:YES completion:nil];
-}
-@end
-
-static BOOL FMPresentHost(UIViewController *source, NSString *path)
-{
-    UIViewController *controller = FMCreateHost(path);
+    UIViewController *controller = FMCreateHost();
     if (!controller) {
-        FMShowUnavailable(source, @"The complete Gestalt Editor could not be created.");
+        FMShowUnavailable(source, @"The current mond interface could not be created.");
         return NO;
     }
 
-    UINavigationController *navigation = source.navigationController;
-    if (navigation && !source.presentedViewController) {
-        [navigation pushViewController:controller animated:YES];
-    } else {
-        FMGestaltNavigationController *wrapper =
-            [[FMGestaltNavigationController alloc] initWithRootViewController:controller];
-        controller.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc]
-            initWithBarButtonSystemItem:UIBarButtonSystemItemClose
-            target:wrapper action:@selector(fm_close)];
-        wrapper.modalPresentationStyle = UIModalPresentationFullScreen;
-        [source presentViewController:wrapper animated:YES completion:nil];
-    }
-    FilzaDiagnosticsAppend(@"Gestalt",
-        [NSString stringWithFormat:@"presented complete Gestalt Editor directly using %@", path]);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIViewController *target = source;
+        while (target.presentedViewController)
+            target = target.presentedViewController;
+        [target presentViewController:controller animated:YES completion:^{
+            FilzaDiagnosticsAppend(@"mond",
+                @"presented full current mond root directly");
+        }];
+    });
     return YES;
 }
 
@@ -108,30 +99,10 @@ void FilzaMondPresentFromController(UIViewController *source)
     dispatch_async(dispatch_get_main_queue(), ^{
         UIViewController *presenter = source ?: FMActiveController();
         if (!presenter) {
-            FilzaDiagnosticsAppend(@"Gestalt", @"no presenter available");
+            FilzaDiagnosticsAppend(@"mond", @"no presenter available");
             return;
         }
-
-        __weak UIViewController *weakPresenter = presenter;
-        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-            NSString *detail = nil;
-            NSString *path = FilzaGestaltResolvePath(&detail);
-            dispatch_async(dispatch_get_main_queue(), ^{
-                UIViewController *resolvedPresenter = weakPresenter ?: FMActiveController();
-                if (!resolvedPresenter) return;
-                if (!path.length) {
-                    NSString *reason = detail ?:
-                        @"The MobileGestalt property list could not be opened.";
-                    FilzaDiagnosticsAppend(@"Gestalt",
-                        [NSString stringWithFormat:@"MobileGestalt access failed: %@", reason]);
-                    FMShowUnavailable(resolvedPresenter, reason);
-                    return;
-                }
-                FilzaDiagnosticsAppend(@"Gestalt",
-                    [NSString stringWithFormat:@"verified MobileGestalt access: %@", detail ?: path]);
-                FMPresentHost(resolvedPresenter, path);
-            });
-        });
+        FMPresentHost(presenter);
     });
 }
 
@@ -140,13 +111,8 @@ void FilzaMondPresent(void)
     FilzaMondPresentFromController(FMActiveController());
 }
 
-__attribute__((constructor)) static void FilzaMondPrewarm(void)
+__attribute__((constructor)) static void FilzaMondInstall(void)
 {
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-        NSString *detail = nil;
-        NSString *path = FilzaGestaltResolvePath(&detail);
-        FilzaDiagnosticsAppend(@"Gestalt", path.length
-            ? @"prewarmed MobileGestalt access for direct presentation"
-            : [NSString stringWithFormat:@"MobileGestalt prewarm unavailable: %@", detail ?: @"unknown"]);
-    });
+    FilzaDiagnosticsAppend(@"mond",
+        @"full current mond route installed commit=4a37bfca5cb4abb2c99891972365d872d700525e");
 }
