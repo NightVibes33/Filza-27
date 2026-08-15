@@ -2,13 +2,20 @@
 set -euo pipefail
 
 TARGET="ByeTunesMetadataCompat.swift"
-test -f "$TARGET"
+MUSIC="ByeTunes/MusicManager/MusicView.swift"
+BACKGROUND="ByeTunes/MusicManager/BackgroundMetadataFetchManager.swift"
 
-python3 - "$TARGET" <<'PY'
+for path in "$TARGET" "$MUSIC" "$BACKGROUND"; do
+    test -f "$path"
+done
+
+python3 - "$TARGET" "$MUSIC" "$BACKGROUND" <<'PY'
 from pathlib import Path
 import sys
 
 path = Path(sys.argv[1])
+music = Path(sys.argv[2])
+background = Path(sys.argv[3])
 text = path.read_text()
 
 signature = "    static func enrichSongMetadata(_ song: SongMetadata) async -> SongMetadata {"
@@ -91,11 +98,65 @@ replacement = '''    static func enrichSongMetadata(_ song: SongMetadata) async 
 
 text = text[:start] + replacement + text[end:]
 path.write_text(text)
+
+
+def enforce_strict_local_source(source_path: Path, label: str) -> None:
+    source = source_path.read_text()
+
+    # Patch the provider loop, not unrelated local-file switches. The picker
+    # state has already been resolved by MetadataProviderSettings here.
+    selection_anchor = "MetadataProviderSettings.selectedSources()"
+    selection = source.find(selection_anchor)
+    if selection < 0:
+        raise SystemExit(f"{label}: selectedSources provider loop not found")
+
+    local_token = "case .local:"
+    youtube_token = "case .youtube:"
+    local = source.find(local_token, selection)
+    youtube = source.find(youtube_token, local + len(local_token)) if local >= 0 else -1
+    if local < 0 or youtube < 0:
+        raise SystemExit(f"{label}: local/youtube provider cases not found")
+
+    line_start = source.rfind("\n", 0, local) + 1
+    indent = source[line_start:local]
+    local_block = source[local:youtube]
+
+    # Local metadata is already parsed by SongMetadata.fromURL before this
+    # provider loop. It must never become an implicit Apple Music provider.
+    # In v2.4 that happened through appleRichMetadata ->
+    # matchAppleMusicMetadata(), producing the "Shadow-searching Apple Music"
+    # log even when the picker said Local Files or YouTube.
+    strict_block = (
+        "case .local:\n"
+        f"{indent}    // Strict metadata selector gate: local means embedded/file metadata only.\n"
+        f"{indent}    // Apple Music lookup is allowed only by the explicit .apple provider case.\n"
+        f"{indent}    break\n"
+        f"{indent}"
+    )
+
+    source = source[:local] + strict_block + source[youtube:]
+    source_path.write_text(source)
+
+    verified = source_path.read_text()
+    selection = verified.find(selection_anchor)
+    local = verified.find(local_token, selection)
+    youtube = verified.find(youtube_token, local + len(local_token))
+    local_block = verified[local:youtube]
+    if "matchAppleMusicMetadata" in local_block or "enrichWithAppleMusicMetadata" in local_block:
+        raise SystemExit(f"{label}: Apple Music call still reachable from local provider")
+    if "Strict metadata selector gate" not in local_block:
+        raise SystemExit(f"{label}: strict local-source marker missing")
+
+
+enforce_strict_local_source(music, "foreground import")
+enforce_strict_local_source(background, "background import")
 PY
 
 grep -Fq 'Match the original foreground import policy exactly' "$TARGET"
 grep -Fq 'candidate = await searchYouTubeForMetadata(query: query, limit: 3).first' "$TARGET"
 grep -Fq 'updated.youtubeVideoID = candidate.videoID' "$TARGET"
 ! grep -A40 -F 'static func enrichSongMetadata(_ song: SongMetadata)' "$TARGET" | grep -Fq 'matchScore('
+grep -Fq 'Strict metadata selector gate: local means embedded/file metadata only.' "$MUSIC"
+grep -Fq 'Strict metadata selector gate: local means embedded/file metadata only.' "$BACKGROUND"
 
-echo "Verified foreground/background YouTube provider parity"
+echo "Verified foreground/background provider parity and strict metadata-source routing"
