@@ -52,6 +52,10 @@ fi
 cp "$DYLIB" "$APP/Frameworks/FilzaApplySandboxExt.dylib"
 codesign --remove-signature "$APP/Frameworks/FilzaApplySandboxExt.dylib"
 
+rm -rf "$APP/Filza3105.bundle"
+cp -R "$REPO_ROOT/ThirdParty/3105/Resources/Filza3105.bundle" "$APP/Filza3105.bundle"
+bash "$REPO_ROOT/scripts/merge-3105-app-metadata.sh" "$APP/Info.plist"
+
 if [[ -n "$CATALOG" ]]; then
   cp "$CATALOG" "$APP/MCMIdentifiers.plist"
 elif [[ -e "$APP/MCMIdentifiers.plist" ]]; then
