@@ -14,7 +14,7 @@ BAD_QUERY_ROOT := ThirdParty/bad_query
 GCDWEBSERVER_ROOT := ThirdParty/GCDWebServer
 THREEONE_ROOT := ThirdParty/3105
 
-FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataRetryFix.m AppIconResourceProxyFix.m VirtualBackendFix.m SystemPathDiagnostics.m BadQuerySystemProbe.m GestaltManager.m FilzaMondBridge.m FilzaMainToolbarGestalt.m Filza3105Bridge.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ByeTunesFullAppLauncher.m FilzaDiagnostics.m FilzaQuickActions.m WebDAVRuntimeFix.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m CVE43724RieCompatibility.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
+FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataRetryFix.m AppIconResourceProxyFix.m VirtualBackendFix.m SystemPathDiagnostics.m BadQuerySystemProbe.m GestaltManager.m FilzaMondBridge.m FilzaMainToolbarGestalt.m Filza3105Bridge.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ByeTunesFullAppLauncher.m FilzaDiagnostics.m FilzaQuickActions.m WebDAVRuntimeFix.m WebDAVToggleStateFix.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m CVE43724RieCompatibility.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
 FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/AppIconHelper.m
 FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/wallpaper_zip.c
 FilzaApplySandboxExt_FILES += $(BAD_QUERY_ROOT)/bad_query/bad_query.c
@@ -33,6 +33,9 @@ FilzaApplySandboxExt_FILES += XPF/external/ChOma/src/arm64.c XPF/external/ChOma/
 # by explicit build-time parity patches. MusicManagerApp.swift is omitted
 # because Filza already owns UIApplication lifecycle.
 BYETUNES_SWIFT_FILES := $(shell find $(BYETUNES_ROOT) -type f -name '*.swift' ! -name 'MusicManagerApp.swift' ! -name 'SplashView.swift' -print)
+# The vendored 3105 tree is a rollback baseline. stage-3105-v1.sh overlays the
+# exact immutable 1.0 upstream files before compilation while preserving the
+# Filza-only root/settings namespace and host glue.
 THREEONE_SWIFT_FILES := $(shell find $(THREEONE_ROOT)/Sources -type f -name '*.swift' -print)
 FilzaApplySandboxExt_SWIFT_FILES = ByeTunesEmbeddedHost.swift ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift MondGestaltView.swift Filza3105Host.swift $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
 
@@ -50,7 +53,7 @@ FilzaApplySandboxExt_OBJCCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 FilzaApplySandboxExt_SWIFTFLAGS += -swift-version 5 -default-isolation MainActor -Xcc -I$(IDEVICE_VENDOR)/include
 FilzaApplySandboxExt_LDFLAGS += $(IDEVICE_STATIC)
 
-FilzaApplySandboxExt_FRAMEWORKS = UIKit Foundation SwiftUI Combine AVFoundation CoreMedia AudioToolbox CryptoKit Security UniformTypeIdentifiers PhotosUI JavaScriptCore AppIntents ActivityKit SafariServices CFNetwork MobileCoreServices WebKit
+FilzaApplySandboxExt_FRAMEWORKS = UIKit Foundation SwiftUI Combine AVFoundation CoreMedia AudioToolbox CryptoKit Security UniformTypeIdentifiers PhotosUI JavaScriptCore AppIntents ActivityKit SafariServices CFNetwork MobileCoreServices WebKit QuickLook
 FilzaApplySandboxExt_PRIVATE_FRAMEWORKS = IOSurface
 FilzaApplySandboxExt_LIBRARIES = z xml2 sandbox sqlite3
 FilzaApplySandboxExt_INSTALL_TARGET_PROCESSES = Filza
@@ -58,6 +61,7 @@ FilzaApplySandboxExt_INSTALL_TARGET_PROCESSES = Filza
 # Every transformation is explicit and ordered. No script may invoke another
 # unrelated patch as a hidden side effect.
 before-FilzaApplySandboxExt-all::
+	@bash scripts/stage-3105-v1.sh
 	@bash scripts/patch-access-map-provenance.sh
 	@bash scripts/patch-byetunes-upstream-parity-v2.sh
 	@bash scripts/restore-byetunes-v24-metadata-compat.sh
@@ -92,6 +96,7 @@ before-FilzaApplySandboxExt-all::
 	@test -f "MondGestaltView.swift" || (echo "Missing MondGestaltView.swift" >&2; exit 1)
 	@test -f "Filza3105Host.swift" || (echo "Missing Filza3105Host.swift" >&2; exit 1)
 	@test -f "Filza3105Bridge.m" || (echo "Missing Filza3105Bridge.m" >&2; exit 1)
+	@test -f "scripts/stage-3105-v1.sh" || (echo "Missing pinned 3105 1.0 staging script" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/Sources/AppDataBrowserView.swift" || (echo "Missing 3105 Apps Manager" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/Sources/PatchProjectsView.swift" || (echo "Missing 3105 Patches" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/Sources/ThreeOneOSFiveContentView.swift" || (echo "Missing complete 3105 root navigation" >&2; exit 1)
@@ -99,14 +104,18 @@ before-FilzaApplySandboxExt-all::
 	@test -f "$(THREEONE_ROOT)/Sources/WallpaperLabView.swift" || (echo "Missing 3105 Wallpaper Lab" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/Sources/ThreeOneOSFiveSettingsView.swift" || (echo "Missing 3105 Settings" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/Sources/LogView.swift" || (echo "Missing 3105 Logs" >&2; exit 1)
+	@test -f "$(THREEONE_ROOT)/Sources/FileOperationCoordinator.swift" || (echo "Missing 3105 1.0 file-operation coordinator" >&2; exit 1)
+	@test -f "$(THREEONE_ROOT)/Sources/ZIPArchiveWriter.swift" || (echo "Missing 3105 1.0 ZIP writer" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/Sources/wallpaper_zip.c" || (echo "Missing 3105 secure wallpaper ZIP extractor" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/Resources/Filza3105.bundle/en.lproj/Localizable.strings" || (echo "Missing 3105 resources" >&2; exit 1)
+	@test -f "$(THREEONE_ROOT)/Resources/Filza3105.bundle/UpstreamAppInfo.plist" || (echo "Missing staged 3105 1.0 app metadata" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/Resources/Filza3105.bundle/AppIcon3105.png" || (echo "Missing 3105 app icon resource" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/LICENSE" || (echo "Missing 3105 license" >&2; exit 1)
 	@test -f "ByeTunesFullAppLauncher.m" || (echo "Missing ByeTunesFullAppLauncher.m" >&2; exit 1)
 	@test -f "FilzaDiagnostics.m" || (echo "Missing FilzaDiagnostics.m" >&2; exit 1)
 	@test -f "FilzaQuickActions.m" || (echo "Missing FilzaQuickActions.m" >&2; exit 1)
 	@test -f "WebDAVRuntimeFix.m" || (echo "Missing WebDAVRuntimeFix.m" >&2; exit 1)
+	@test -f "WebDAVToggleStateFix.m" || (echo "Missing WebDAVToggleStateFix.m" >&2; exit 1)
 	@test -f "$(GCDWEBSERVER_ROOT)/GCDWebDAVServer/GCDWebDAVServer.m" || (echo "Missing pinned GCDWebDAVServer" >&2; exit 1)
 	@test -f "$(GCDWEBSERVER_ROOT)/LICENSE" || (echo "Missing GCDWebServer license" >&2; exit 1)
 
