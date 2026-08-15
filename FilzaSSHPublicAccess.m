@@ -2,10 +2,13 @@
 @import UIKit;
 
 #import <arpa/inet.h>
+#import <errno.h>
 #import <net/route.h>
 #import <netinet/in.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
+#import <string.h>
+#import <sys/select.h>
 #import <sys/socket.h>
 #import <sys/sysctl.h>
 #import <unistd.h>
@@ -159,7 +162,7 @@ static BOOL FilzaSSHPublicIPv4IsGlobal(NSString *address)
     uint8_t b = (value >> 16) & 0xff;
 
     if (a == 0 || a == 10 || a == 127 || a >= 224) return NO;
-    if (a == 100 && b >= 64 && b <= 127) return NO;       // RFC 6598 CGNAT
+    if (a == 100 && b >= 64 && b <= 127) return NO;
     if (a == 169 && b == 254) return NO;
     if (a == 172 && b >= 16 && b <= 31) return NO;
     if (a == 192 && b == 168) return NO;
@@ -283,7 +286,7 @@ static BOOL FilzaSSHPublicTryNATPMP(NSInteger internalPort, NSInteger suggestedE
 
     uint8_t mappingBytes[12] = {0};
     mappingBytes[0] = 0;
-    mappingBytes[1] = 2; // TCP
+    mappingBytes[1] = 2;
     FilzaWriteBE16(mappingBytes + 4, (uint16_t)internalPort);
     FilzaWriteBE16(mappingBytes + 6, (uint16_t)suggestedExternalPort);
     FilzaWriteBE32(mappingBytes + 8, FilzaSSHPublicLeaseSeconds);
@@ -518,10 +521,7 @@ static BOOL FilzaSSHPublicTryUPnP(NSInteger internalPort, NSString **publicAddre
         for (NSUInteger index = 0; index < 2; index++) {
             NSInteger candidate = candidates[index];
             BOOL added = FilzaSSHPublicUPnPAddMapping(controlURL, serviceType, localAddress, internalPort, candidate, FilzaSSHPublicLeaseSeconds);
-            if (!added) {
-                // A small number of IGDv1 routers only accept lease 0.
-                added = FilzaSSHPublicUPnPAddMapping(controlURL, serviceType, localAddress, internalPort, candidate, 0);
-            }
+            if (!added) added = FilzaSSHPublicUPnPAddMapping(controlURL, serviceType, localAddress, internalPort, candidate, 0);
             if (!added) continue;
 
             NSString *address = FilzaSSHPublicUPnPExternalAddress(controlURL, serviceType);
@@ -603,8 +603,6 @@ static void FilzaSSHPublicScheduleRenewal(void)
             FilzaSSHPublicRemoveMapping();
             return;
         }
-        // Re-request the mapping. Router protocols treat the same mapping as
-        // a lease renewal; this also repairs mappings after a gateway reboot.
         FilzaSSHPublicMappingActive = NO;
         FilzaSSHPublicAttemptMapping();
     });
@@ -626,7 +624,7 @@ static void FilzaSSHPublicAttemptMapping(void)
 
     NSInteger internalPort = FilzaSSHConfiguredPort();
     if (FilzaSSHPublicMappingActive && FilzaSSHPublicInternalPort == internalPort &&
-        FilzaSSHPublicLastSuccess && -[FilzaSSHPublicLastSuccess timeIntervalSinceNow] < 20 * 60) {
+        FilzaSSHPublicLastSuccess && (-[FilzaSSHPublicLastSuccess timeIntervalSinceNow]) < 20 * 60) {
         FilzaSSHPublicAttemptRunning = NO;
         return;
     }
