@@ -8,6 +8,7 @@
 #import <libssh/server.h>
 
 #import <CommonCrypto/CommonKeyDerivation.h>
+#import <CommonCrypto/CommonCryptoError.h>
 #import <arpa/inet.h>
 #import <errno.h>
 #import <fcntl.h>
@@ -150,7 +151,7 @@ static NSData *FilzaSSHDerivePassword(NSString *password, NSData *salt)
     NSMutableData *derived = [NSMutableData dataWithLength:32];
     int rc = CCKeyDerivationPBKDF(kCCPBKDF2,
                                   password.UTF8String,
-                                  password.lengthOfBytesUsingEncoding:NSUTF8StringEncoding,
+                                  [password lengthOfBytesUsingEncoding:NSUTF8StringEncoding],
                                   salt.bytes,
                                   salt.length,
                                   kCCPRFHmacAlgSHA256,
