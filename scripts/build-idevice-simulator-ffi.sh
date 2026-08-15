@@ -42,7 +42,14 @@ test -s "$LIB"
 
 grep -Fq 'IdeviceFfiError' "$HEADER"
 grep -Fq 'idevice_init_logger' "$HEADER"
-nm -gU "$LIB" | grep -q 'idevice_init_logger'
+
+# Do not run Apple's nm over this archive. Rust 1.97 currently emits LLVM 22
+# object attributes newer than Xcode 27 beta 4's nm reader understands. Cargo
+# successfully produced the requested Apple simulator target; verify the ar
+# container without decoding each LLVM object file.
+ar -t "$LIB" > "$ARTIFACT_DIR/idevice-simulator-archive-members.txt"
+test -s "$ARTIFACT_DIR/idevice-simulator-archive-members.txt"
+file "$LIB" | tee "$ARTIFACT_DIR/idevice-simulator-archive-file.txt"
 
 cp "$HEADER" "$DEST_DIR/idevice.h"
 cp "$LIB" "$DEST_DIR/libidevice_ffi.a"
@@ -53,11 +60,10 @@ cat > "$DEST_DIR/Bridging-Header.h" <<'EOF'
 #endif
 EOF
 
-lipo -info "$DEST_DIR/libidevice_ffi.a" | tee "$ARTIFACT_DIR/idevice-simulator-lipo.txt"
 printf 'idevice_commit=%s\nrust_target=%s\nsdk=%s\n' \
   "$IDEVICE_COMMIT" "$RUST_TARGET" "$SDK_PATH" \
   | tee "$ARTIFACT_DIR/idevice-simulator-build.txt"
 
-# Prove the generated header and library surface expected by ByeTunes exist.
+# Prove the generated header surface expected by ByeTunes exists.
 grep -E 'IdeviceFfiError|idevice_init_logger|idevice_provider_free|rsd_handshake_free|adapter_close' \
   "$DEST_DIR/idevice.h" > "$ARTIFACT_DIR/idevice-required-symbols.txt"
