@@ -93,7 +93,7 @@ It supports portable `.3105` projects with:
 
 The full ByeTunes music-management UI is embedded directly into FilzaSlop.
 
-On first use, select a valid pairing file. FilzaSlop stores a persistent copy in its Documents container and reuses it on later launches when it is still valid.
+On first use, select a valid pairing file. ByeTunes saves a persistent copy and attempts to reuse it on later launches. If the saved pairing state is rejected, select the pairing file again.
 
 The embedded build includes:
 
@@ -119,7 +119,7 @@ Useful log messages include:
 
 ### Gestalt Editor
 
-Gestalt Editor uses the integrated current Mond source and opens directly from FilzaSlop.
+Gestalt Editor uses a pinned Mond integration adapted for FilzaSlop and opens directly from the app.
 
 The editor can inspect supported MobileGestalt values and, when the underlying file is actually writable, apply changes with backup and read-back validation.
 
