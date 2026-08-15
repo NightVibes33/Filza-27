@@ -12,3 +12,8 @@
 #import "MCMBridge.h"
 #import "ThirdParty/bad_query/bad_query/bad_query.h"
 #import "ThirdParty/3105/Sources/AppIconHelper.h"
+
+// Current mond carries its own bad_query snapshot. Its exported C symbols are
+// deterministically namespaced during staging so it can coexist with Filza's
+// existing bad_query integration without changing 3105 or access-map behavior.
+#import "ThirdParty/mond-current/Generated/mond_bad_query.h"
