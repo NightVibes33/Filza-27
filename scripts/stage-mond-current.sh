@@ -215,6 +215,25 @@ require_contains "$GEN/Mond/views_Tweaks_SantanderView.swift" 'struct SantanderV
 require_contains "$GEN/mond_bad_query.c" 'mond_bad_query' 'namespaced mond bad_query'
 require_contains "$GEN/ZIPFoundation/Entry.swift" 'public struct MondZIPEntry' 'namespaced ZIPFoundation Entry type'
 
+# Prove Filza is building and presenting the current full mond app rather than
+# the retired Gestalt-only reconstruction. The legacy Objective-C factory name
+# remains only as an ABI forwarder for existing toolbar/quick-action callers.
+require_contains Makefile 'FilzaMondCurrentHost.swift' 'current mond host in Swift build graph'
+require_contains Makefile '$(MOND_SWIFT_FILES)' 'current mond upstream sources in Swift build graph'
+require_contains Makefile '$(MOND_PARTYUI_SWIFT_FILES)' 'current mond PartyUI sources in Swift build graph'
+require_contains Makefile '$(MOND_ZIP_SWIFT_FILES)' 'current mond ZIPFoundation sources in Swift build graph'
+require_contains FilzaMondCurrentHost.swift '@objc(MondEmbeddedHostFactory)' 'full mond host factory'
+require_contains FilzaMondCurrentHost.swift 'MondCurrentContentView()' 'current mond root hosted by Filza'
+require_contains FilzaMondBridge.m 'full current mond route installed commit=4a37bfca5cb4abb2c99891972365d872d700525e' 'full mond bridge route'
+if grep -Fq 'MondGestaltView.swift' Makefile; then
+  echo "Current mond staging check failed: retired MondGestaltView.swift is back in the build graph" >&2
+  exit 1
+fi
+if grep -Fq 'FilzaGestaltResolvePath' FilzaMondBridge.m; then
+  echo "Current mond staging check failed: bridge still pre-gates presentation on MobileGestalt" >&2
+  exit 1
+fi
+
 if grep -Fq '.onChange(of: ka_on) { _, enabled in' "$GEN/Mond/views_App_SettingsView.swift"; then
   echo "Current mond staging check failed: iOS 17-only Keep Alive onChange form survived adaptation" >&2
   exit 1
