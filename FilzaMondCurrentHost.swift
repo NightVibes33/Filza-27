@@ -1,6 +1,8 @@
 import Foundation
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
+import ObjectiveC.runtime
 
 // Current mond is compiled into Filza as source rather than launched as a
 // second UIApplication. These globals preserve mond's standalone runtime
@@ -9,8 +11,24 @@ var pipe = Pipe()
 var sema = DispatchSemaphore(value: 0)
 var fm = FileManager.default
 
+// Upstream mond installs this UIDocumentPicker compatibility swizzle from its
+// @main App initializer. Because Filza owns UIApplication lifecycle, the exact
+// behavior has to live in the embedded host instead of being silently omitted.
+extension UIDocumentPickerViewController {
+    @objc(filzaMond_fix_initForOpeningContentTypes:asCopy:)
+    fileprivate func filzaMond_fix_init(
+        forOpeningContentTypes contentTypes: [UTType],
+        asCopy: Bool
+    ) -> UIDocumentPickerViewController {
+        // After the method exchange this selector resolves to Apple's/or the
+        // previously chained implementation, matching upstream's fix_init.
+        filzaMond_fix_init(forOpeningContentTypes: contentTypes, asCopy: true)
+    }
+}
+
 private enum MondEmbeddedRuntime {
     private static var didConfigure = false
+    private static var didInstallDocumentPickerFix = false
 
     @MainActor
     static func configureOnce() {
@@ -27,13 +45,14 @@ private enum MondEmbeddedRuntime {
 
         // Keep both keys because current upstream ContentView/Settings use
         // "method", while mond's standalone App init still registers the older
-        // "exploit_method" default. This preserves upstream behavior without
-        // allowing the Filza host to choose a different initial method.
+        // "exploit_method" default.
         UserDefaults.standard.register(defaults: [
             "exploit_method": "bad_query",
             "method": "bad_query",
             "ka_on": true
         ])
+
+        installDocumentPickerCompatibility()
 
         if UserDefaults.standard.bool(forKey: "ka_on") {
             keep_alive()
@@ -41,8 +60,32 @@ private enum MondEmbeddedRuntime {
 
         FilzaDiagnosticsAppend(
             "mond",
-            "current upstream runtime configured commit=4a37bfca5cb4abb2c99891972365d872d700525e"
+            "current upstream runtime configured commit=4a37bfca5cb4abb2c99891972365d872d700525e document-picker-fix=installed"
         )
+    }
+
+    @MainActor
+    private static func installDocumentPickerCompatibility() {
+        guard !didInstallDocumentPickerFix else { return }
+
+        let originalSelector = #selector(
+            UIDocumentPickerViewController.init(forOpeningContentTypes:asCopy:)
+        )
+        let replacementSelector = #selector(
+            UIDocumentPickerViewController.filzaMond_fix_init(forOpeningContentTypes:asCopy:)
+        )
+
+        guard
+            let original = class_getInstanceMethod(UIDocumentPickerViewController.self, originalSelector),
+            let replacement = class_getInstanceMethod(UIDocumentPickerViewController.self, replacementSelector)
+        else {
+            FilzaDiagnosticsAppend("mond", "failed to install upstream UIDocumentPicker fix: methods unavailable")
+            return
+        }
+
+        method_exchangeImplementations(original, replacement)
+        didInstallDocumentPickerFix = true
+        FilzaDiagnosticsAppend("mond", "installed upstream UIDocumentPicker asCopy compatibility behavior")
     }
 }
 
@@ -53,6 +96,17 @@ private struct MondEmbeddedRoot: View {
     var body: some View {
         MondCurrentContentView()
             .environmentObject(state)
+            // Upstream mond handles incoming .tendies/.zip files at its App
+            // root. Preserve the same behavior in the embedded SwiftUI root.
+            .onOpenURL { url in
+                guard is_pb_archive(url) else {
+                    print("(mond) ignoring unsupported URL: \(url.lastPathComponent)")
+                    return
+                }
+
+                state.append_poster_file(url)
+                FilzaDiagnosticsAppend("mond", "accepted upstream PosterBoard archive URL \(url.lastPathComponent)")
+            }
             .onAppear {
                 guard !didAppear else { return }
                 didAppear = true
@@ -65,10 +119,12 @@ private struct MondEmbeddedRoot: View {
                     )
                 }
 
+                // This is upstream mond's App-root access initialization. Do
+                // not replace it with a Filza-specific approximation.
                 grant_all(state: state)
                 FilzaDiagnosticsAppend(
                     "mond",
-                    "current upstream ContentView appeared full-screen; access initialization started"
+                    "current upstream ContentView appeared full-screen; upstream grant_all started"
                 )
             }
             .overlay {
@@ -119,7 +175,7 @@ public final class MondEmbeddedHostFactory: NSObject {
         controller.modalPresentationStyle = .fullScreen
         FilzaDiagnosticsAppend(
             "mond",
-            "constructed full-screen current mond root at 4a37bfca5cb4abb2c99891972365d872d700525e"
+            "constructed full-screen current mond root at 4a37bfca5cb4abb2c99891972365d872d700525e with upstream App bootstrap parity"
         )
         return controller
     }
