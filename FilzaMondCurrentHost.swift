@@ -25,7 +25,12 @@ private enum MondEmbeddedRuntime {
             dup2(pipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
         }
 
+        // Keep both keys because current upstream ContentView/Settings use
+        // "method", while mond's standalone App init still registers the older
+        // "exploit_method" default. This preserves upstream behavior without
+        // allowing the Filza host to choose a different initial method.
         UserDefaults.standard.register(defaults: [
+            "exploit_method": "bad_query",
             "method": "bad_query",
             "ka_on": true
         ])
@@ -63,7 +68,7 @@ private struct MondEmbeddedRoot: View {
                 grant_all(state: state)
                 FilzaDiagnosticsAppend(
                     "mond",
-                    "current upstream ContentView appeared; access initialization started"
+                    "current upstream ContentView appeared full-screen; access initialization started"
                 )
             }
             .overlay {
@@ -79,22 +84,42 @@ private struct MondEmbeddedRoot: View {
     }
 }
 
+// Mond is a standalone full-screen app upstream. Presenting its root as a
+// pageSheet changes the navigation geometry, safe-area height, list proportions
+// and the visible grabber. Use a full-screen host so the staged upstream views
+// render with the same screen geometry. A two-finger swipe down is retained as
+// an integration-only escape gesture without adding UI that is not in mond.
+@MainActor
+private final class MondEmbeddedViewController: UIHostingController<MondEmbeddedRoot> {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        modalPresentationStyle = .fullScreen
+
+        let dismissGesture = UISwipeGestureRecognizer(
+            target: self,
+            action: #selector(dismissEmbeddedMond)
+        )
+        dismissGesture.direction = .down
+        dismissGesture.numberOfTouchesRequired = 2
+        view.addGestureRecognizer(dismissGesture)
+    }
+
+    @objc private func dismissEmbeddedMond() {
+        FilzaDiagnosticsAppend("mond", "full-screen mond dismissed by two-finger swipe")
+        dismiss(animated: true)
+    }
+}
+
 @objc(MondEmbeddedHostFactory)
 public final class MondEmbeddedHostFactory: NSObject {
     @objc public static func makeViewController() -> UIViewController {
         MondEmbeddedRuntime.configureOnce()
-        let controller = UIHostingController(rootView: MondEmbeddedRoot())
+        let controller = MondEmbeddedViewController(rootView: MondEmbeddedRoot())
         controller.title = "mond"
-        controller.modalPresentationStyle = .pageSheet
-        if let sheet = controller.sheetPresentationController {
-            sheet.detents = [.large()]
-            sheet.selectedDetentIdentifier = .large
-            sheet.prefersGrabberVisible = true
-            sheet.prefersScrollingExpandsWhenScrolledToEdge = false
-        }
+        controller.modalPresentationStyle = .fullScreen
         FilzaDiagnosticsAppend(
             "mond",
-            "constructed full current mond root at 4a37bfca5cb4abb2c99891972365d872d700525e"
+            "constructed full-screen current mond root at 4a37bfca5cb4abb2c99891972365d872d700525e"
         )
         return controller
     }
