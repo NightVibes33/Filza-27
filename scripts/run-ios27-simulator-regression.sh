@@ -10,6 +10,11 @@ SIM_NAME="${SIM_NAME:-Filza27-iPhone16-iOS27}"
 BYETUNES_COMMIT="${BYETUNES_COMMIT:-8a4be32f188f30b98f15b00566c5ff3edc1c03b1}"
 MOND_COMMIT="${MOND_COMMIT:-4a37bfca5cb4abb2c99891972365d872d700525e}"
 THREEONE_COMMIT="${THREEONE_COMMIT:-438f3ccae6a436d0017185407bc286e55c357883}"
+IDEVICE_SIM_ROOT="${IDEVICE_SIM_ROOT:-$ROOT/Vendor/idevice-simulator}"
+
+test -s "$IDEVICE_SIM_ROOT/lib/libidevice_ffi.a"
+test -s "$IDEVICE_SIM_ROOT/include/idevice.h"
+test -s "$IDEVICE_SIM_ROOT/include/ByeTunesSimulatorBridging.h"
 
 mkdir -p .sim/artifacts .sim/results .sim/logs .sim/derived
 SIM_UDID=""
@@ -83,7 +88,7 @@ grep -R -Fq 'MetadataProviderSettings' ByeTunes/MusicManager
 cat > ByeTunes/MusicManagerTests/Filza27ParityTests.swift <<'SWIFT'
 import Foundation
 import XCTest
-@testable import MusicManager
+@testable import ByeTunes
 
 final class Filza27ParityTests: XCTestCase {
     override func tearDown() {
@@ -162,6 +167,10 @@ xcodebuild test \
   -derivedDataPath "$ROOT/.sim/derived/ByeTunes" \
   -resultBundlePath "$ROOT/.sim/results/ByeTunes.xcresult" \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+  SWIFT_OBJC_BRIDGING_HEADER="$IDEVICE_SIM_ROOT/include/ByeTunesSimulatorBridging.h" \
+  HEADER_SEARCH_PATHS="$IDEVICE_SIM_ROOT/include" \
+  LIBRARY_SEARCH_PATHS="$IDEVICE_SIM_ROOT/lib" \
+  OTHER_LDFLAGS="-lidevice_ffi" \
   2>&1 | tee .sim/logs/byetunes-xcodebuild.log
 
 BYETUNES_APP="$(find .sim/derived/ByeTunes/Build/Products -type d \( -name 'ByeTunes.app' -o -name 'MusicManager.app' \) -print -quit)"
@@ -230,6 +239,7 @@ Device type: iPhone 16
 
 Covered by this lane:
 - patched ByeTunes compile + XCTest + UI launch
+- complete ByeTunes DeviceManager compiled against the same pinned idevice FFI, built for the simulator ABI
 - All Sources / YouTube migration and parser tests
 - live iTunes, Deezer, YouTube HTTPS/DNS from the simulator
 - Mond standalone compile + launch
@@ -237,6 +247,7 @@ Covered by this lane:
 - simulator screenshots and xcresult evidence
 
 Physical-device-only:
+- successful idevice lockdown/pairing/AFC transport against the phone
 - bad_query sandbox escape
 - kernel/vnode/APFS/SPTM behavior
 - real MobileGestalt/private-service mutations
