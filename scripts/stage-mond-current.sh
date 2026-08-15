@@ -102,6 +102,8 @@ mond_map = {
     'PlainToggle': 'MondCurrentPlainToggle',
     'ToggleInfoType': 'MondCurrentToggleInfoType',
     'doubleSystemVersion': 'mondCurrentSystemVersion',
+    'sandbox_extension_consume': 'mondCurrentSandboxExtensionConsume',
+    'sandbox_extension_issue_file': 'mondCurrentSandboxExtensionIssueFile',
     'bad_query_release': 'mond_bad_query_release',
     'bad_query_list': 'mond_bad_query_list',
     'bad_query': 'mond_bad_query',
@@ -122,6 +124,13 @@ party_map = {
     'doubleSystemVersion': 'mondCurrentSystemVersion',
 }
 
+# ZIPFoundation normally lives in its own Swift module, where Entry cannot
+# collide with 3105's private SecureZIPArchive.Entry. Since the Theos target
+# embeds package source into one module, namespace only that package-level type.
+zip_map = {
+    'Entry': 'MondZIPEntry',
+}
+
 def rewrite(path: Path, mapping: dict[str, str], strip_imports=()):
     text = path.read_text(encoding='utf-8')
     for module in strip_imports:
@@ -136,6 +145,20 @@ for path in sorted((root / 'Mond').glob('*.swift')):
 
 for path in sorted((root / 'PartyUI').glob('*.swift')):
     rewrite(path, party_map)
+
+for path in sorted((root / 'ZIPFoundation').glob('*.swift')):
+    rewrite(path, zip_map)
+
+# Current mond targets iOS 17 and uses the two-argument onChange closure. Filza
+# intentionally remains iOS 16-compatible. The one-argument overload has the
+# same enabled-value behavior and is the only UI API adaptation required here.
+settings = root / 'Mond' / 'views_App_SettingsView.swift'
+settings_text = settings.read_text(encoding='utf-8')
+old_on_change = '.onChange(of: ka_on) { _, enabled in'
+new_on_change = '.onChange(of: ka_on) { enabled in'
+if old_on_change not in settings_text:
+    raise SystemExit('Current mond staging check failed: expected Keep Alive iOS 17 onChange form not found')
+settings.write_text(settings_text.replace(old_on_change, new_on_change, 1), encoding='utf-8')
 
 # Namespace only the exported C API; implementation internals remain exact.
 for name in ('mond_bad_query.c', 'mond_bad_query.h'):
@@ -184,9 +207,22 @@ require_contains "$GEN/Mond/views_App_ContentView.swift" '"HouseArrest"' 'curren
 require_contains "$GEN/Mond/views_App_SettingsView.swift" '"Run Exploit"' 'exploit action'
 require_contains "$GEN/Mond/views_App_SettingsView.swift" '"Generate Token"' 'token action'
 require_contains "$GEN/Mond/views_App_SettingsView.swift" '"Keep Alive"' 'keep-alive setting'
+require_contains "$GEN/Mond/views_App_SettingsView.swift" '.onChange(of: ka_on) { enabled in' 'iOS 16 Keep Alive onChange compatibility'
 require_contains "$GEN/Mond/views_App_SettingsView.swift" '"Respring"' 'respring action'
+require_contains "$GEN/Mond/helpers_sbx.swift" 'func mondCurrentSandboxExtensionConsume' 'namespaced sandbox consume helper'
+require_contains "$GEN/Mond/helpers_sbx.swift" 'func mondCurrentSandboxExtensionIssueFile' 'namespaced sandbox issue helper'
 require_contains "$GEN/Mond/views_Tweaks_SantanderView.swift" 'struct SantanderView' 'current Santander view'
 require_contains "$GEN/mond_bad_query.c" 'mond_bad_query' 'namespaced mond bad_query'
+require_contains "$GEN/ZIPFoundation/Entry.swift" 'public struct MondZIPEntry' 'namespaced ZIPFoundation Entry type'
+
+if grep -Fq '.onChange(of: ka_on) { _, enabled in' "$GEN/Mond/views_App_SettingsView.swift"; then
+  echo "Current mond staging check failed: iOS 17-only Keep Alive onChange form survived adaptation" >&2
+  exit 1
+fi
+if grep -Fq 'public struct Entry' "$GEN/ZIPFoundation/Entry.swift"; then
+  echo "Current mond staging check failed: unnamespaced ZIPFoundation Entry survived adaptation" >&2
+  exit 1
+fi
 
 ZIP_SWIFT_COUNT="$(find "$GEN/ZIPFoundation" -type f -name '*.swift' | wc -l | tr -d ' ')"
 test "$ZIP_SWIFT_COUNT" -ge 20 || {
