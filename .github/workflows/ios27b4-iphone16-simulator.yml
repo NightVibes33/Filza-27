@@ -18,7 +18,9 @@ on:
       - '.github/workflows/ios27b4-iphone16-simulator.yml'
 
 concurrency:
-  group: ios27b4-iphone16-simulator-${{ github.ref }}
+  # Generation suffix intentionally avoids old cancelled runs that may still be
+  # finishing a large artifact upload in the previous concurrency group.
+  group: ios27b4-iphone16-simulator-v2-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -89,7 +91,6 @@ jobs:
           path: |
             .sim/artifacts/**
             .sim/logs/**
-            .sim/results/**
           if-no-files-found: warn
           include-hidden-files: true
           retention-days: 14
