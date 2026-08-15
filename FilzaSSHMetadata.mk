@@ -8,7 +8,7 @@ SSH_MBEDTLS := $(SSH_VENDOR)/lib/libmbedtls.a
 SSH_MBEDX509 := $(SSH_VENDOR)/lib/libmbedx509.a
 SSH_MBEDCRYPTO := $(SSH_VENDOR)/lib/libmbedcrypto.a
 
-FilzaApplySandboxExt_FILES += FilzaSSHServer.m FilzaSSHPreferences.m
+FilzaApplySandboxExt_FILES += FilzaSSHServer.m FilzaSSHPreferences.m FilzaSSHPublicAccess.m
 FilzaApplySandboxExt_CFLAGS += -I$(SSH_VENDOR)/include -DLIBSSH_STATIC=1
 FilzaApplySandboxExt_LDFLAGS += $(SSH_STATIC) $(SSH_MBEDTLS) $(SSH_MBEDX509) $(SSH_MBEDCRYPTO)
 
@@ -16,6 +16,10 @@ before-FilzaApplySandboxExt-all::
 	@test -f "FilzaSSHServer.h" || (echo "Missing FilzaSSHServer.h" >&2; exit 1)
 	@test -f "FilzaSSHServer.m" || (echo "Missing FilzaSSHServer.m" >&2; exit 1)
 	@test -f "FilzaSSHPreferences.m" || (echo "Missing FilzaSSHPreferences.m" >&2; exit 1)
+	@test -f "FilzaSSHPublicAccess.m" || (echo "Missing FilzaSSHPublicAccess.m" >&2; exit 1)
+	@grep -Fq 'NAT-PMP (RFC 6886)' FilzaSSHPublicAccess.m
+	@grep -Fq 'UPnP IGD WANIPConnection' FilzaSSHPublicAccess.m
+	@grep -Fq 'PUBLIC via' FilzaSSHPublicAccess.m
 	@test -f "scripts/build-ssh-stack.sh" || (echo "Missing pinned SSH build script" >&2; exit 1)
 	@test -s "$(SSH_STATIC)" || (echo "Missing $(SSH_STATIC). Run: bash scripts/build-ssh-stack.sh" >&2; exit 1)
 	@test -s "$(SSH_MBEDTLS)" || (echo "Missing $(SSH_MBEDTLS)" >&2; exit 1)
