@@ -1,4 +1,4 @@
-name: Verify upstream ByeTunes + SSH IPA
+name: Verify ByeTunes All Sources + YouTube + SSH IPA
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: verify-upstream-byetunes-ssh-${{ github.ref }}
+  group: verify-byetunes-all-youtube-ssh-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -34,26 +34,32 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Verify upstream ByeTunes source contract
+      - name: Verify ByeTunes parity source contract
         run: |
           set -euxo pipefail
           test "$(uname -m)" = "x86_64"
           test "$(xcrun --sdk iphoneos --show-sdk-version)" = "26.2"
           test "$(git -C ByeTunes rev-parse HEAD)" = "$BYETUNES_COMMIT"
-          test -f ByeTunes/MusicManager/MusicView.swift
-          test -f ByeTunes/MusicManager/SongMetadata.swift
-          test -f ByeTunes/MusicManager/iTunesSearchSheet.swift
-          test -f ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
-          grep -Fq 'let metadataSource = UserDefaults.standard.string(forKey: "metadataSource") ?? "local"' ByeTunes/MusicManager/MusicView.swift
-          grep -Fq 'return try await URLSession.shared.data(for: request)' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
-          grep -Fq 'return try await URLSession.shared.data(from: url)' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
-          grep -Fq 'return try await MetadataBackgroundURLSession.shared.data(for: request)' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
-          ! grep -Fq 'MetadataWebKitRequest' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
-          ! grep -Fq 'FilzaMetadataWebRequest' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
-          ! grep -Fq 'retrying through WebKit network process' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
-          grep -Fq 'filter-out ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift' FilzaSSHMetadata.mk
+          test -f ByeTunesMetadataCompat.swift
+          test -f ByeTunesDownloadParityCompat.swift
+          test -f scripts/restore-byetunes-v24-metadata-compat.sh
+          test -f scripts/patch-byetunes-metadata-parity-post.sh
+          test -f scripts/patch-byetunes-background-provider-parity.sh
+          test -f scripts/patch-byetunes-download-provider-parity.sh
+          grep -Fq 'case youtube' ByeTunesMetadataCompat.swift
+          grep -Fq 'defaultSources' ByeTunesMetadataCompat.swift
+          grep -Fq 'All Sources' scripts/restore-byetunes-v24-metadata-compat.sh
+          grep -Fq 'YouTube' scripts/restore-byetunes-v24-metadata-compat.sh
+          grep -Fq 'MetadataProviderSettings' ByeTunesEmbeddedHost.swift
+          grep -Fq 'case "youtube"' ByeTunesEmbeddedHost.swift
+          grep -Fq 'case "all"' ByeTunesEmbeddedHost.swift
+          ! grep -Fq 'filter-out ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift' FilzaSSHMetadata.mk
           grep -Fq 'include FilzaSSHMetadata.mk' Makefile
           grep -Fq 'include FilzaByeTunesNetwork.mk' Makefile
+          grep -Fq 'return try await URLSession.shared.data(for: request)' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
+          grep -Fq 'return try await URLSession.shared.data(from: url)' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
+          ! grep -Fq 'MetadataWebKitRequest' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
+          ! grep -Fq 'FilzaMetadataWebRequest' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
           ! grep -Fq 'bash scripts/patch-byetunes-metadata-network-resilience.sh' FilzaByeTunesNetwork.mk
 
       - name: Restore pinned SSH stack cache
@@ -138,8 +144,6 @@ jobs:
           test -s "$DYLIB"
           test "$(lipo -archs "$DYLIB")" = "arm64"
 
-          # Real embedded SSH: statically linked libssh, inline Preferences UI,
-          # password auth, persistent host key and in-process shell.
           grep -aFq 'SSH SERVER' "$DYLIB"
           grep -aFq 'embedded libssh server listening address=' "$DYLIB"
           grep -aFq 'inline SSH SERVER preferences installed after WebDAV with listener-backed toggle state' "$DYLIB"
@@ -149,19 +153,16 @@ jobs:
           grep -Eq '[_ ]ssh_bind_new$' .theos/FilzaApplySandboxExt.nm
           ! otool -L "$DYLIB" | grep -qi 'libssh'
 
-          # Exact pinned upstream ByeTunes metadata/search path. The host repair
-          # only removes obsolete Filza-only preference state.
-          grep -aFq 'Restored upstream provider state once:' "$DYLIB"
+          grep -aFq 'Reconciled legacy embedded provider state once:' "$DYLIB"
+          grep -aFq 'All Sources' "$DYLIB"
+          grep -aFq 'YouTube' "$DYLIB"
+          grep -aFq '[MusicView] metadata sources=' "$DYLIB"
           grep -aFq 'iTunes search failed:' "$DYLIB"
           grep -aFq 'Deezer search failed:' "$DYLIB"
-          grep -aFq 'Public search page fallback failed' "$DYLIB"
-          ! grep -aFq 'Repaired embedded default provider state: picker=all' "$DYLIB"
-          ! grep -aFq 'Filza embed metadata compatibility sources=' "$DYLIB"
           ! grep -aFq 'retrying through WebKit network process' "$DYLIB"
           ! grep -aFq 'WebKit fallback succeeded host=' "$DYLIB"
           ! grep -aFq 'URLSession DNS failed for ' "$DYLIB"
 
-          # Existing integrations must remain present.
           grep -aFq 'MondFullHostFactory' "$DYLIB"
           grep -aFq 'Filza3105HostFactory' "$DYLIB"
           grep -aFq 'ByeTunesEmbeddedHostFactory' "$DYLIB"
@@ -228,7 +229,9 @@ jobs:
           DYLIB="$APP/Frameworks/FilzaApplySandboxExt.dylib"
           test -s "$DYLIB"
           grep -aFq 'embedded libssh server listening address=' "$DYLIB"
-          grep -aFq 'Restored upstream provider state once:' "$DYLIB"
+          grep -aFq 'Reconciled legacy embedded provider state once:' "$DYLIB"
+          grep -aFq 'All Sources' "$DYLIB"
+          grep -aFq 'YouTube' "$DYLIB"
           ! grep -aFq 'retrying through WebKit network process' "$DYLIB"
           BONJOUR_JSON="$(plutil -extract NSBonjourServices json -o - "$APP/Info.plist")"
           grep -Fq '_ssh._tcp' <<<"$BONJOUR_JSON"
@@ -249,7 +252,7 @@ jobs:
       - name: Upload installable unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: FilzaSlop-upstream-ByeTunes-SSH-unsigned-arm64
+          name: FilzaSlop-ByeTunes-All-YouTube-SSH-unsigned-arm64
           path: |
             .theos/FilzaSlop-main-*-unsigned.ipa
             .theos/IPA-SHA256.txt
