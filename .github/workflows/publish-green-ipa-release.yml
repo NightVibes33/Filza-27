@@ -1,0 +1,68 @@
+name: Publish Green Filza 27 IPA
+
+on:
+  workflow_run:
+    workflows:
+      - Verify ByeTunes All Sources + YouTube + SSH IPA
+    types:
+      - completed
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  release:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download exact verified IPA artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: FilzaSlop-ByeTunes-All-YouTube-SSH-unsigned-arm64
+          path: verified-artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Verify and name release IPA
+        shell: bash
+        run: |
+          set -euxo pipefail
+          SOURCE_IPA="$(find verified-artifact -type f -name '*.ipa' -print -quit)"
+          test -n "$SOURCE_IPA"
+          test -s "$SOURCE_IPA"
+
+          mkdir -p release
+          cp "$SOURCE_IPA" "release/Filza 27.ipa"
+
+          unzip -tq "release/Filza 27.ipa"
+          unzip -l "release/Filza 27.ipa" | grep -Eq 'Payload/[^/]+\.app/'
+          shasum -a 256 "release/Filza 27.ipa" | tee release/Filza-27-SHA256.txt
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERIFIED_RUN_ID: ${{ github.event.workflow_run.id }}
+          VERIFIED_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          TAG="filza-27-${VERIFIED_RUN_NUMBER}"
+          NOTES="Verified green Filza 27 IPA from workflow run ${VERIFIED_RUN_ID} at commit ${VERIFIED_SHA}."
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "release/Filza 27.ipa" "release/Filza-27-SHA256.txt" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" \
+              "release/Filza 27.ipa" \
+              "release/Filza-27-SHA256.txt" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$VERIFIED_SHA" \
+              --title "Filza 27" \
+              --notes "$NOTES" \
+              --latest
+          fi
