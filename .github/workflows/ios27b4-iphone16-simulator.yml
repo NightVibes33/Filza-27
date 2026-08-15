@@ -38,22 +38,32 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Repair upstream ByeTunes XCTest host path for simulator
+      - name: Repair stale upstream ByeTunes Xcode settings for simulator
         run: |
           set -euxo pipefail
           python3 - <<'PY'
           from pathlib import Path
           path = Path('ByeTunes/MusicManager.xcodeproj/project.pbxproj')
           text = path.read_text()
-          old = '$(BUILT_PRODUCTS_DIR)/MusicManager.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MusicManager'
-          new = '$(BUILT_PRODUCTS_DIR)/ByeTunes.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ByeTunes'
-          count = text.count(old)
-          if count != 2:
-              raise SystemExit(f'expected 2 stale TEST_HOST entries, found {count}')
-          path.write_text(text.replace(old, new))
+
+          old_host = '$(BUILT_PRODUCTS_DIR)/MusicManager.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MusicManager'
+          new_host = '$(BUILT_PRODUCTS_DIR)/ByeTunes.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ByeTunes'
+          host_count = text.count(old_host)
+          if host_count != 2:
+              raise SystemExit(f'expected 2 stale TEST_HOST entries, found {host_count}')
+          text = text.replace(old_host, new_host)
+
+          stale_bridge = '\t\t\t\tSWIFT_OBJC_BRIDGING_HEADER = "MusicManager/Bridging-Header.h";\n'
+          bridge_count = text.count(stale_bridge)
+          if bridge_count != 2:
+              raise SystemExit(f'expected 2 stale bridging-header entries, found {bridge_count}')
+          text = text.replace(stale_bridge, '')
+          path.write_text(text)
           PY
           grep -Fq 'TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ByeTunes.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ByeTunes";' ByeTunes/MusicManager.xcodeproj/project.pbxproj
           ! grep -Fq 'TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MusicManager.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MusicManager";' ByeTunes/MusicManager.xcodeproj/project.pbxproj
+          ! grep -Fq 'SWIFT_OBJC_BRIDGING_HEADER = "MusicManager/Bridging-Header.h";' ByeTunes/MusicManager.xcodeproj/project.pbxproj
+          test ! -e ByeTunes/MusicManager/Bridging-Header.h
 
       - name: Run real component simulator regression
         run: bash scripts/run-ios27-simulator-regression.sh
