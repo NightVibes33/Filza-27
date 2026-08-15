@@ -3,19 +3,19 @@
 
 #import <objc/message.h>
 #import <objc/runtime.h>
+#import <string.h>
 
 #import "FilzaDiagnostics.h"
 
-// Filza's stock WebDAV settings row asks TGPreferences.isServerStarted to
-// decide whether a tap means Start or Stop.  The jailed build uses an
-// in-process GCDWebDAVServer rather than Filza's legacy helper/PID path, so the
-// getter must observe that listener.  It must NOT mutate the air-browser
-// preference: doing so from a state getter creates a feedback loop where an
-// in-flight stop is observed as still-running and the preference is forced
-// back to YES before the server has finished stopping.
+// Keep Filza's WebDAV switch tied to the real in-process listener. RuntimeFix
+// already replaces startAirBrowser/stopAirBrowser with the jailed-safe
+// GCDWebDAVServer lifecycle. This layer owns only the settings-row state.
+//
+// Do not chain the old checkbox implementation here. RuntimeFix also hooks that
+// selector, and chaining both checkbox state machines can race an OFF request
+// with a stale air-browser=YES write that immediately restarts the listener.
 
 static BOOL (*FilzaPreviousIsServerStarted)(id, SEL) = NULL;
-static void (*FilzaPreviousWebDAVCheckbox)(id, SEL) = NULL;
 static BOOL FilzaWebDAVToggleStateInstalled = NO;
 
 static id FilzaWebDAVToggleSharedPreferences(void)
@@ -24,6 +24,19 @@ static id FilzaWebDAVToggleSharedPreferences(void)
     SEL selector = NSSelectorFromString(@"sharedInstance");
     if (!cls || ![cls respondsToSelector:selector]) return nil;
     return ((id (*)(id, SEL))objc_msgSend)(cls, selector);
+}
+
+static id FilzaWebDAVTogglePreference(id preferences, NSString *key)
+{
+    SEL selector = NSSelectorFromString(@"objectForPreferenceKey:");
+    if (!preferences || ![preferences respondsToSelector:selector]) return nil;
+    return ((id (*)(id, SEL, id))objc_msgSend)(preferences, selector, key);
+}
+
+static BOOL FilzaWebDAVToggleStoredEnabled(id preferences)
+{
+    id value = FilzaWebDAVTogglePreference(preferences, @"air-browser");
+    return [value respondsToSelector:@selector(boolValue)] && [value boolValue];
 }
 
 static id FilzaWebDAVToggleHTTPServer(id preferences)
@@ -44,22 +57,21 @@ static BOOL FilzaWebDAVToggleInProcessServerRunning(id preferences)
 static BOOL FilzaWebDAVToggleIsServerStarted(id preferences, SEL selector)
 {
     id server = FilzaWebDAVToggleHTTPServer(preferences);
-    if (server && [server respondsToSelector:NSSelectorFromString(@"isRunning")]) {
-        // Observation only.  Never write UserDefaults from this getter.
+    if (server && [server respondsToSelector:NSSelectorFromString(@"isRunning")])
         return FilzaWebDAVToggleInProcessServerRunning(preferences);
-    }
+
     return FilzaPreviousIsServerStarted
         ? FilzaPreviousIsServerStarted(preferences, selector)
         : NO;
 }
 
-static void FilzaWebDAVToggleSetEnabledPreference(id preferences, BOOL enabled)
+static BOOL FilzaWebDAVToggleSetEnabledPreference(id preferences, BOOL enabled)
 {
     SEL selector = NSSelectorFromString(@"setObject:forPreferenceKey:notification:");
-    if (!preferences || ![preferences respondsToSelector:selector]) return;
+    if (!preferences || ![preferences respondsToSelector:selector]) return NO;
 
     NSMethodSignature *signature = [preferences methodSignatureForSelector:selector];
-    if (!signature || signature.numberOfArguments < 5) return;
+    if (!signature || signature.numberOfArguments < 5) return NO;
 
     NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
     invocation.target = preferences;
@@ -85,18 +97,32 @@ static void FilzaWebDAVToggleSetEnabledPreference(id preferences, BOOL enabled)
 
     @try {
         [invocation invoke];
+        return YES;
     } @catch (NSException *exception) {
         FilzaDiagnosticsAppend(@"WebDAV",
             [NSString stringWithFormat:@"toggle could not persist air-browser=%@: %@",
              enabled ? @"YES" : @"NO", exception.reason ?: exception.name]);
+        return NO;
     }
 }
 
 static void FilzaWebDAVToggleCallLifecycle(id preferences, BOOL shouldRun)
 {
     SEL selector = NSSelectorFromString(shouldRun ? @"startAirBrowser" : @"stopAirBrowser");
-    if (!preferences || ![preferences respondsToSelector:selector]) return;
-    ((void (*)(id, SEL))objc_msgSend)(preferences, selector);
+    if (!preferences || ![preferences respondsToSelector:selector]) {
+        FilzaDiagnosticsAppend(@"WebDAV",
+            [NSString stringWithFormat:@"toggle lifecycle selector unavailable for %@",
+             shouldRun ? @"START" : @"STOP"]);
+        return;
+    }
+
+    @try {
+        ((void (*)(id, SEL))objc_msgSend)(preferences, selector);
+    } @catch (NSException *exception) {
+        FilzaDiagnosticsAppend(@"WebDAV",
+            [NSString stringWithFormat:@"toggle lifecycle %@ raised: %@",
+             shouldRun ? @"START" : @"STOP", exception.reason ?: exception.name]);
+    }
 }
 
 static void FilzaWebDAVToggleReloadSettings(id controller, BOOL running)
@@ -106,30 +132,32 @@ static void FilzaWebDAVToggleReloadSettings(id controller, BOOL running)
     UITableView *tableView = nil;
     SEL tableSelector = NSSelectorFromString(@"tableView");
     if ([controller respondsToSelector:tableSelector]) {
-        tableView = ((id (*)(id, SEL))objc_msgSend)(controller, tableSelector);
+        id candidate = ((id (*)(id, SEL))objc_msgSend)(controller, tableSelector);
+        if ([candidate isKindOfClass:UITableView.class]) tableView = candidate;
     }
 
-    if ([tableView isKindOfClass:UITableView.class]) {
+    if (!tableView) {
+        SEL viewSelector = NSSelectorFromString(@"view");
+        id view = [controller respondsToSelector:viewSelector]
+            ? ((id (*)(id, SEL))objc_msgSend)(controller, viewSelector)
+            : nil;
+        if ([view isKindOfClass:UITableView.class]) tableView = view;
+    }
+
+    if (tableView) {
         [tableView reloadData];
         FilzaDiagnosticsAppend(@"WebDAV",
-            [NSString stringWithFormat:@"settings table redrawn from settled listener state=%@",
-             running ? @"ON" : @"OFF"]);
-        return;
+            [NSString stringWithFormat:@"settings table redrawn listener=%@ stored=%@",
+             running ? @"ON" : @"OFF",
+             FilzaWebDAVToggleStoredEnabled(FilzaWebDAVToggleSharedPreferences())
+                 ? @"ON" : @"OFF"]);
     }
+}
 
-    SEL viewSelector = NSSelectorFromString(@"view");
-    UIView *view = [controller respondsToSelector:viewSelector]
-        ? ((id (*)(id, SEL))objc_msgSend)(controller, viewSelector)
-        : nil;
-    if ([view isKindOfClass:UITableView.class]) {
-        [(UITableView *)view reloadData];
-        FilzaDiagnosticsAppend(@"WebDAV",
-            [NSString stringWithFormat:@"settings root table redrawn from settled listener state=%@",
-             running ? @"ON" : @"OFF"]);
-    } else {
-        FilzaDiagnosticsAppend(@"WebDAV",
-            @"settled listener state recorded but settings table could not be resolved for redraw");
-    }
+static void FilzaWebDAVTogglePostChanged(id preferences)
+{
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AirBrowserChanged"
+                                                      object:preferences];
 }
 
 static void FilzaWebDAVToggleFinishTransition(id controller,
@@ -138,54 +166,66 @@ static void FilzaWebDAVToggleFinishTransition(id controller,
                                                NSInteger attempt)
 {
     BOOL running = FilzaWebDAVToggleInProcessServerRunning(preferences);
-    if (running != shouldRun && attempt == 0) {
+
+    if (running != shouldRun && attempt < 2) {
         FilzaDiagnosticsAppend(@"WebDAV",
-            [NSString stringWithFormat:@"toggle transition retry desired=%@ observed=%@",
-             shouldRun ? @"ON" : @"OFF", running ? @"ON" : @"OFF"]);
+            [NSString stringWithFormat:@"toggle settle retry=%ld desired=%@ observed=%@",
+             (long)attempt + 1,
+             shouldRun ? @"ON" : @"OFF",
+             running ? @"ON" : @"OFF"]);
         FilzaWebDAVToggleCallLifecycle(preferences, shouldRun);
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)),
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.18 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
-            FilzaWebDAVToggleFinishTransition(controller, preferences, shouldRun, 1);
+            FilzaWebDAVToggleFinishTransition(controller, preferences, shouldRun, attempt + 1);
         });
         return;
     }
 
     running = FilzaWebDAVToggleInProcessServerRunning(preferences);
-    FilzaWebDAVToggleSetEnabledPreference(preferences, running);
-    FilzaDiagnosticsAppend(@"WebDAV",
-        [NSString stringWithFormat:@"toggle transition complete desired=%@ observed=%@ preference=%@",
-         shouldRun ? @"ON" : @"OFF", running ? @"ON" : @"OFF",
-         running ? @"YES" : @"NO"]);
+    if (shouldRun) {
+        // Failed starts must not leave a fake enabled switch behind.
+        FilzaWebDAVToggleSetEnabledPreference(preferences, running);
+    } else {
+        // OFF is authoritative. Never rewrite OFF to YES from a stale listener.
+        FilzaWebDAVToggleSetEnabledPreference(preferences, NO);
+    }
 
-    // Filza reloads the section synchronously inside its checkbox action. The
-    // in-process listener binds/unbinds asynchronously, so that first reload can
-    // observe the old state. Redraw again only after the listener and preference
-    // have been reconciled to the settled state.
+    FilzaWebDAVTogglePostChanged(preferences);
     FilzaWebDAVToggleReloadSettings(controller, running);
+    FilzaDiagnosticsAppend(@"WebDAV",
+        [NSString stringWithFormat:@"toggle settled desired=%@ listener=%@ stored=%@",
+         shouldRun ? @"ON" : @"OFF",
+         running ? @"ON" : @"OFF",
+         FilzaWebDAVToggleStoredEnabled(preferences) ? @"ON" : @"OFF"]);
 }
 
-static void FilzaWebDAVToggleCheckbox(id controller, SEL selector)
+static void FilzaWebDAVToggleCheckbox(id controller, __unused SEL selector)
 {
     id preferences = FilzaWebDAVToggleSharedPreferences();
-    BOOL wasRunning = FilzaWebDAVToggleIsServerStarted(preferences,
-                                                        NSSelectorFromString(@"isServerStarted"));
-    BOOL shouldRun = !wasRunning;
+    if (!preferences) {
+        FilzaDiagnosticsAppend(@"WebDAV", @"settings toggle ignored: TGPreferences unavailable");
+        return;
+    }
+
+    BOOL running = FilzaWebDAVToggleInProcessServerRunning(preferences);
+    BOOL stored = FilzaWebDAVToggleStoredEnabled(preferences);
+    BOOL wasEnabled = stored || running;
+    BOOL shouldRun = !wasEnabled;
 
     FilzaDiagnosticsAppend(@"WebDAV",
-        [NSString stringWithFormat:@"settings toggle requested %@ -> %@",
-         wasRunning ? @"ON" : @"OFF", shouldRun ? @"ON" : @"OFF"]);
+        [NSString stringWithFormat:@"settings toggle direct request stored=%@ listener=%@ -> desired=%@",
+         stored ? @"ON" : @"OFF",
+         running ? @"ON" : @"OFF",
+         shouldRun ? @"ON" : @"OFF"]);
 
-    // Chain through WebDAVRuntimeFix and then Filza's original settings action.
-    // The original action gets the corrected isServerStarted value and therefore
-    // chooses the intended Start/Stop branch.
-    if (FilzaPreviousWebDAVCheckbox)
-        FilzaPreviousWebDAVCheckbox(controller, selector);
+    // Write the user's intent first. RuntimeFix observes this too, so a stop
+    // can never be followed by a queued stale YES decision from this handler.
+    FilzaWebDAVToggleSetEnabledPreference(preferences, shouldRun);
+    FilzaWebDAVTogglePostChanged(preferences);
+    FilzaWebDAVToggleReloadSettings(controller, running);
+    FilzaWebDAVToggleCallLifecycle(preferences, shouldRun);
 
-    // Give GCDWebServer one run-loop turn to bind/unbind.  If the listener did
-    // not reach the state implied by the user's tap, call the already-hooked
-    // TGPreferences lifecycle method once and verify again.  Preference state
-    // is written only after this transition, never from the getter.
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.08 * NSEC_PER_SEC)),
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.12 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         FilzaWebDAVToggleFinishTransition(controller, preferences, shouldRun, 0);
     });
@@ -217,25 +257,22 @@ static void FilzaInstallWebDAVToggleStateFix(void)
         method_setImplementation(startedMethod, (IMP)FilzaWebDAVToggleIsServerStarted);
     }
 
+    // Replace RuntimeFix's checkbox state machine instead of chaining it. Its
+    // startAirBrowser/stopAirBrowser hooks remain installed and are called above.
     IMP currentCheckbox = method_getImplementation(checkboxMethod);
-    if (currentCheckbox != (IMP)FilzaWebDAVToggleCheckbox) {
-        FilzaPreviousWebDAVCheckbox = (void (*)(id, SEL))currentCheckbox;
+    if (currentCheckbox != (IMP)FilzaWebDAVToggleCheckbox)
         method_setImplementation(checkboxMethod, (IMP)FilzaWebDAVToggleCheckbox);
-    }
 
     FilzaWebDAVToggleStateInstalled = YES;
     FilzaDiagnosticsAppend(@"WebDAV",
-        @"toggle-state fix installed: listener getter is observation-only and OFF transitions are explicit");
+        @"toggle-state fix installed: direct intent owns checkbox and OFF is authoritative");
 }
 
 __attribute__((constructor)) static void FilzaWebDAVToggleStateInit(void)
 {
     @autoreleasepool {
         dispatch_async(dispatch_get_main_queue(), ^{
-            // WebDAVRuntimeFix installs from the main queue as well.  Chain on
-            // top after it so startAirBrowser/stopAirBrowser remain the real
-            // in-process lifecycle implementation.
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.20 * NSEC_PER_SEC)),
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
                            dispatch_get_main_queue(), ^{
                 FilzaInstallWebDAVToggleStateFix();
             });
@@ -247,8 +284,6 @@ __attribute__((constructor)) static void FilzaWebDAVToggleStateInit(void)
                         usingBlock:^(__unused NSNotification *notification) {
                 if (!FilzaWebDAVToggleStateInstalled)
                     FilzaInstallWebDAVToggleStateFix();
-                // Intentionally do not synchronize air-browser here.  App
-                // activation is an observation event, not a user toggle.
             }];
         });
     }
