@@ -202,6 +202,8 @@ require_contains FilzaMondCurrentHost.swift '@objc(MondEmbeddedHostFactory)' 'fu
 require_contains FilzaMondCurrentHost.swift 'MondCurrentContentView()' 'current mond root hosted by Filza'
 require_contains MondFullRootHost.swift 'current mond compatibility shim' 'retired custom root replaced by forwarding shim'
 require_contains FilzaMondBridge.m 'full current mond route installed commit=4a37bfca5cb4abb2c99891972365d872d700525e' 'full mond bridge route'
+require_contains scripts/patch-mond-ios27-keys.sh 'FILZA_IOS27_GESTALT_KEYS_BEGIN' 'iOS 27 Mond overlay patch'
+require_contains MondIOS27KeySupport.swift 'DeviceSupportsInstructionFollowingPruningModels' 'iOS 27 key support table'
 
 if grep -Fq 'MondGestaltView.swift' Makefile; then
   echo "Current mond staging check failed: retired MondGestaltView.swift is back in the build graph" >&2
@@ -229,5 +231,13 @@ test "$ZIP_SWIFT_COUNT" -ge 20 || {
   echo "Current mond staging check failed: expected >=20 ZIPFoundation Swift sources, got $ZIP_SWIFT_COUNT" >&2
   exit 1
 }
+
+# Layer the project-specific iOS 27 key editor and Mond asset-color parity onto
+# the freshly staged immutable upstream source. The patch aborts if upstream's
+# structural anchor changes instead of silently building a partial Mond port.
+bash scripts/patch-mond-ios27-keys.sh
+
+require_contains "$GEN/Mond/views_Tweaks_GestaltView.swift" 'FILZA_IOS27_GESTALT_KEYS_BEGIN' 'compiled iOS 27 key section'
+require_contains "$GEN/Mond/views_Tweaks_GestaltView.swift" 'DeviceSupportsHighLuminanceAlwaysOnDisplay' 'compiled iOS 27 keys'
 
 echo "Staged current mond ${MOND_COMMIT} with PartyUI ${PARTYUI_COMMIT} and ZIPFoundation ${ZIPFOUNDATION_COMMIT}"
