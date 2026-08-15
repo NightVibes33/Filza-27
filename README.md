@@ -4,7 +4,7 @@ A jailed, sideloadable Filza fork for modern iOS with extra container access, ap
 
 [![Verified IPA](https://github.com/NightVibes33/Filza-27/actions/workflows/verify-upstream-byetunes-ssh.yml/badge.svg?branch=main)](https://github.com/NightVibes33/Filza-27/actions/workflows/verify-upstream-byetunes-ssh.yml)
 
-[**Download the latest green `Filza 27.ipa`**](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza%202027.ipa)
+[**Download the latest green `Filza 27.ipa`**](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza%2027.ipa)
 
 **Release rule:** `Filza 27.ipa` is published only after the full IPA workflow finishes green on `main`.
 
@@ -36,7 +36,7 @@ Exact access can vary by device and iOS build, so the app verifies real file or 
 
 ## Download and install
 
-1. Download **[`Filza 27.ipa`](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza%202027.ipa)** from the latest GitHub Release.
+1. Download **[`Filza 27.ipa`](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza%2027.ipa)** from the latest GitHub Release.
 2. Sideload it with your preferred signing method.
 
 The Release asset is created automatically from the newest successful **Verify ByeTunes All Sources + YouTube + SSH IPA** run on `main`, so a failed build is never promoted as the latest IPA.
