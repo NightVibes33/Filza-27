@@ -37,7 +37,7 @@ BYETUNES_SWIFT_FILES := $(shell find $(BYETUNES_ROOT) -type f -name '*.swift' ! 
 # exact immutable 1.0 upstream files before compilation while preserving the
 # Filza-only root/settings namespace and host glue.
 THREEONE_SWIFT_FILES := $(shell find $(THREEONE_ROOT)/Sources -type f -name '*.swift' -print)
-FilzaApplySandboxExt_SWIFT_FILES = ByeTunesEmbeddedHost.swift ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift MondGestaltView.swift Filza3105Host.swift $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
+FilzaApplySandboxExt_SWIFT_FILES = ByeTunesEmbeddedHost.swift ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift MondGestaltView.swift MondFullRootHost.swift Filza3105Host.swift $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
 
 FilzaApplySandboxExt_CFLAGS = -I$(PWD)/compat -I$(PWD) -I$(PWD)/XPF/src -I$(PWD)/XPF/external/ChOma/include -I$(IDEVICE_VENDOR)/include -I$(PWD)/$(BAD_QUERY_ROOT)/bad_query -I$(PWD)/$(THREEONE_ROOT)/Sources \
     -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Core -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Requests -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Responses -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebDAVServer \
@@ -94,6 +94,7 @@ before-FilzaApplySandboxExt-all::
 	@test -f "FilzaMondBridge.m" || (echo "Missing FilzaMondBridge.m" >&2; exit 1)
 	@test -f "FilzaMainToolbarGestalt.m" || (echo "Missing FilzaMainToolbarGestalt.m" >&2; exit 1)
 	@test -f "MondGestaltView.swift" || (echo "Missing MondGestaltView.swift" >&2; exit 1)
+	@test -f "MondFullRootHost.swift" || (echo "Missing full current mond root host" >&2; exit 1)
 	@test -f "Filza3105Host.swift" || (echo "Missing Filza3105Host.swift" >&2; exit 1)
 	@test -f "Filza3105Bridge.m" || (echo "Missing Filza3105Bridge.m" >&2; exit 1)
 	@test -f "scripts/stage-3105-v1.sh" || (echo "Missing pinned 3105 1.0 staging script" >&2; exit 1)
