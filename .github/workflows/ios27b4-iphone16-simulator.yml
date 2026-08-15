@@ -38,6 +38,23 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Repair upstream ByeTunes XCTest host path for simulator
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('ByeTunes/MusicManager.xcodeproj/project.pbxproj')
+          text = path.read_text()
+          old = '$(BUILT_PRODUCTS_DIR)/MusicManager.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MusicManager'
+          new = '$(BUILT_PRODUCTS_DIR)/ByeTunes.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ByeTunes'
+          count = text.count(old)
+          if count != 2:
+              raise SystemExit(f'expected 2 stale TEST_HOST entries, found {count}')
+          path.write_text(text.replace(old, new))
+          PY
+          grep -Fq 'TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ByeTunes.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ByeTunes";' ByeTunes/MusicManager.xcodeproj/project.pbxproj
+          ! grep -Fq 'TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MusicManager.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MusicManager";' ByeTunes/MusicManager.xcodeproj/project.pbxproj
+
       - name: Run real component simulator regression
         run: bash scripts/run-ios27-simulator-regression.sh
 
