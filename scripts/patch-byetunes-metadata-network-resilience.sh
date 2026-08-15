@@ -2,17 +2,14 @@
 set -euo pipefail
 
 NETWORK="ByeTunes/MusicManager/MetadataBackgroundURLSession.swift"
-COMPAT="ByeTunesMetadataCompat.swift"
-
 test -f "$NETWORK"
-test -f "$COMPAT"
 
-python3 - "$NETWORK" "$COMPAT" <<'PY'
+python3 - "$NETWORK" <<'PY'
 from pathlib import Path
 import sys
 
-network = Path(sys.argv[1])
-compat = Path(sys.argv[2])
+path = Path(sys.argv[1])
+text = path.read_text()
 
 
 def replace_once(text: str, old: str, new: str, label: str) -> str:
@@ -58,81 +55,22 @@ def replace_braced_block(text: str, start_marker: str, replacement: str, label: 
         i += 1
     raise SystemExit(f"{label}: closing brace not found")
 
+# Preserve pinned ByeTunes v2.4 provider/settings behavior. The device log shows
+# a transport failure, not a parser failure: music.apple.com, itunes.apple.com
+# and api.deezer.com all return NSURLErrorCannotFindHost while the Wi-Fi path is
+# satisfied. Only replace the shared network dispatcher. URLSession remains the
+# primary transport; foreground metadata GETs retry DNS-resolution failures via
+# WebKit's separate networking process. The original background URLSession route
+# remains byte-for-byte equivalent at its call sites.
+text = replace_once(text, "import Foundation\n", "import Foundation\nimport WebKit\n", "WebKit import")
 
-# ---------------------------------------------------------------------------
-# Provider-state repair.
-#
-# Older Filza embedded builds migrated a missing pre-v2.4 provider selection to
-# Local Files and persisted that result. That turns every remote provider off,
-# even though the embedded build restores the All Sources picker. Repair only
-# that exact old embedded default once. Any later explicit user selection is
-# left alone because the versioned repair flag is already set.
-# ---------------------------------------------------------------------------
-ct = compat.read_text()
-repair_anchor = '''    static let legacySourceKey = "metadataSource"\n'''
-repair_code = '''    static let legacySourceKey = "metadataSource"
-    private static let filzaRepairKey = "filzaMetadataSourcesRepairV2"
-
-    private static func repairFilzaEmbeddedDefaultIfNeeded() {
-        let defaults = UserDefaults.standard
-        guard !defaults.bool(forKey: filzaRepairKey) else { return }
-        defer { defaults.set(true, forKey: filzaRepairKey) }
-
-        let bundleID = Bundle.main.bundleIdentifier ?? ""
-        guard bundleID == "com.apple.mobile.MobileHouseArrest" else { return }
-
-        let picker = (defaults.string(forKey: legacySourceKey) ?? "local").lowercased()
-        let decodedSources: [MetadataProviderID]? = {
-            guard let json = defaults.string(forKey: sourcesKey),
-                  let data = json.data(using: .utf8) else { return nil }
-            return try? JSONDecoder().decode([MetadataProviderID].self, from: data)
-        }()
-
-        let isOldLocalDefault = picker == "local" &&
-            (decodedSources == nil || decodedSources == [.local])
-        guard isOldLocalDefault else {
-            Logger.shared.log("[MetadataParity] Filza provider repair preserved explicit picker=\\(picker), sources=\\((decodedSources ?? []).map(\\.rawValue).joined(separator: ","))")
-            return
-        }
-
-        defaults.set("all", forKey: legacySourceKey)
-        saveSources(defaultSources)
-        Logger.shared.log("[MetadataParity] Repaired embedded default provider state: picker=all, sources=\\(defaultSources.map(\\.rawValue).joined(separator: ","))")
-    }
-'''
-if "filzaMetadataSourcesRepairV2" not in ct:
-    ct = replace_once(ct, repair_anchor, repair_code, "metadata provider repair insertion")
-
-selected_anchor = '''    static func selectedSources() -> [MetadataProviderID] {
-        migrateIfNeeded()
-'''
-selected_replacement = '''    static func selectedSources() -> [MetadataProviderID] {
-        migrateIfNeeded()
-        repairFilzaEmbeddedDefaultIfNeeded()
-'''
-ct = replace_once(ct, selected_anchor, selected_replacement, "metadata provider repair call")
-compat.write_text(ct)
-
-
-# ---------------------------------------------------------------------------
-# Shared metadata transport repair.
-#
-# Device logs show CFNetwork/URLSession returning NSURLErrorCannotFindHost for
-# music.apple.com, itunes.apple.com and api.deezer.com while the Wi-Fi path is
-# satisfied. Keep the upstream background-session path unchanged. Foreground
-# metadata requests use an isolated ephemeral URLSession first, then retry only
-# DNS-resolution failures through WebKit's separate networking process.
-# ---------------------------------------------------------------------------
-nt = network.read_text()
-nt = replace_once(nt, "import Foundation\n", "import Foundation\nimport WebKit\n", "WebKit import")
-
-transport = r'''
+replacement = r'''
 @MainActor
-private final class MetadataWebKitRequest: NSObject, WKNavigationDelegate {
+private final class FilzaMetadataWebRequest: NSObject, WKNavigationDelegate {
     private var continuation: CheckedContinuation<(Data, URLResponse), Error>?
     private var response: URLResponse?
-    private var finished = false
     private var webView: WKWebView?
+    private var finished = false
 
     func run(_ request: URLRequest) async throws -> (Data, URLResponse) {
         try await withCheckedThrowingContinuation { continuation in
@@ -145,20 +83,23 @@ private final class MetadataWebKitRequest: NSObject, WKNavigationDelegate {
             webView.navigationDelegate = self
             webView.load(request)
 
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: 18_000_000_000)
-                guard let self, !self.finished else { return }
-                self.finish(.failure(URLError(.timedOut)))
-            }
+            perform(#selector(timeoutRequest), with: nil, afterDelay: 18.0)
         }
+    }
+
+    @objc private func timeoutRequest() {
+        guard !finished else { return }
+        finish(.failure(URLError(.timedOut)))
     }
 
     private func finish(_ result: Result<(Data, URLResponse), Error>) {
         guard !finished else { return }
         finished = true
+        NSObject.cancelPreviousPerformRequests(withTarget: self)
         webView?.stopLoading()
         webView?.navigationDelegate = nil
         webView = nil
+
         let continuation = self.continuation
         self.continuation = nil
         switch result {
@@ -180,37 +121,40 @@ private final class MetadataWebKitRequest: NSObject, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard !finished else { return }
-        Task { @MainActor [weak self, weak webView] in
+        let isHTML = response?.mimeType?.lowercased().contains("html") == true
+        if isHTML {
+            perform(#selector(extractDocument), with: nil, afterDelay: 0.35)
+        } else {
+            extractDocument()
+        }
+    }
+
+    @objc private func extractDocument() {
+        guard !finished, let webView else { return }
+        let isHTML = response?.mimeType?.lowercased().contains("html") == true
+        let script = isHTML
+            ? "document.documentElement ? document.documentElement.outerHTML : ''"
+            : "document.body ? document.body.innerText : (document.documentElement ? document.documentElement.innerText : '')"
+
+        webView.evaluateJavaScript(script) { [weak self, weak webView] value, error in
             guard let self, let webView, !self.finished else { return }
-
-            let isHTML = self.response?.mimeType?.lowercased().contains("html") == true
-            if isHTML {
-                try? await Task.sleep(nanoseconds: 350_000_000)
-                guard !self.finished else { return }
-            }
-
-            let script = isHTML
-                ? "document.documentElement ? document.documentElement.outerHTML : ''"
-                : "document.body ? document.body.innerText : (document.documentElement ? document.documentElement.innerText : '')"
-
-            do {
-                let value = try await webView.evaluateJavaScript(script)
-                guard let text = value as? String,
-                      let data = text.data(using: .utf8) else {
-                    self.finish(.failure(URLError(.cannotDecodeContentData)))
-                    return
-                }
-
-                let response = self.response ?? URLResponse(
-                    url: webView.url ?? URL(string: "about:blank")!,
-                    mimeType: isHTML ? "text/html" : "text/plain",
-                    expectedContentLength: data.count,
-                    textEncodingName: "utf-8"
-                )
-                self.finish(.success((data, response)))
-            } catch {
+            if let error {
                 self.finish(.failure(error))
+                return
             }
+            guard let text = value as? String,
+                  let data = text.data(using: .utf8) else {
+                self.finish(.failure(URLError(.cannotDecodeContentData)))
+                return
+            }
+
+            let response = self.response ?? URLResponse(
+                url: webView.url ?? URL(string: "about:blank")!,
+                mimeType: isHTML ? "text/html" : "text/plain",
+                expectedContentLength: data.count,
+                textEncodingName: "utf-8"
+            )
+            self.finish(.success((data, response)))
         }
     }
 
@@ -223,28 +167,15 @@ private final class MetadataWebKitRequest: NSObject, WKNavigationDelegate {
     }
 }
 
-private enum MetadataWebKitTransport {
+private enum FilzaMetadataWebFallback {
     @MainActor
     static func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-        try await MetadataWebKitRequest().run(request)
+        try await FilzaMetadataWebRequest().run(request)
     }
 }
 
 enum SongMetadataNetworking {
     @TaskLocal static var useBackgroundSession: Bool = false
-
-    private static func foregroundData(for request: URLRequest) async throws -> (Data, URLResponse) {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.waitsForConnectivity = true
-        configuration.allowsExpensiveNetworkAccess = true
-        configuration.allowsConstrainedNetworkAccess = true
-        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        configuration.urlCache = nil
-        configuration.timeoutIntervalForRequest = 20
-        configuration.timeoutIntervalForResource = 30
-        configuration.connectionProxyDictionary = [:]
-        return try await URLSession(configuration: configuration).data(for: request)
-    }
 
     private static func shouldRetryThroughWebKit(_ request: URLRequest, error: Error) -> Bool {
         guard request.httpMethod == nil || request.httpMethod == "GET" else { return false }
@@ -262,32 +193,35 @@ enum SongMetadataNetworking {
     }
 
     static func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-        // Preserve the upstream background-session route exactly. Keeping this
-        // direct call avoids moving URLRequest across a helper isolation domain.
+        // Exact upstream background route.
         if useBackgroundSession {
             return try await MetadataBackgroundURLSession.shared.data(for: request)
         }
 
         do {
-            return try await foregroundData(for: request)
+            // Exact upstream foreground transport remains primary.
+            return try await URLSession.shared.data(for: request)
         } catch {
-            guard shouldRetryThroughWebKit(request, error: error) else { throw error }
+            let primaryError = error
+            guard shouldRetryThroughWebKit(request, error: primaryError) else {
+                throw primaryError
+            }
+
             let host = request.url?.host ?? "unknown"
             Logger.shared.log("[MetadataNetwork] URLSession DNS failed for \\(host); retrying through WebKit network process")
             do {
-                let result = try await MetadataWebKitTransport.data(for: request)
+                let result = try await FilzaMetadataWebFallback.data(for: request)
                 Logger.shared.log("[MetadataNetwork] WebKit fallback succeeded host=\\(host) bytes=\\(result.0.count)")
                 return result
             } catch let fallbackError {
                 Logger.shared.log("[MetadataNetwork] WebKit fallback failed host=\\(host): \\(fallbackError)")
-                throw error
+                throw primaryError
             }
         }
     }
 
     static func data(from url: URL) async throws -> (Data, URLResponse) {
-        // Preserve upstream background behavior here too rather than wrapping it
-        // in a foreground helper.
+        // Preserve exact upstream background behavior.
         if useBackgroundSession {
             return try await MetadataBackgroundURLSession.shared.data(from: url)
         }
@@ -295,17 +229,17 @@ enum SongMetadataNetworking {
     }
 }
 '''
-nt = replace_braced_block(nt, "enum SongMetadataNetworking {", transport.strip(), "SongMetadataNetworking transport")
-network.write_text(nt)
+
+text = replace_braced_block(text, "enum SongMetadataNetworking {", replacement.strip(), "SongMetadataNetworking")
+path.write_text(text)
 PY
 
-grep -Fq 'filzaMetadataSourcesRepairV2' "$COMPAT"
-grep -Fq 'Repaired embedded default provider state' "$COMPAT"
 grep -Fq 'import WebKit' "$NETWORK"
+grep -Fq 'FilzaMetadataWebRequest' "$NETWORK"
+grep -Fq 'return try await MetadataBackgroundURLSession.shared.data(for: request)' "$NETWORK"
+grep -Fq 'return try await URLSession.shared.data(for: request)' "$NETWORK"
 grep -Fq 'retrying through WebKit network process' "$NETWORK"
-grep -Fq 'URLSessionConfiguration.ephemeral' "$NETWORK"
-grep -Fq 'connectionProxyDictionary = [:]' "$NETWORK"
-grep -Fq 'MetadataWebKitRequest' "$NETWORK"
-grep -Fq 'Preserve the upstream background-session route exactly' "$NETWORK"
+grep -Fq 'WebKit fallback succeeded host=' "$NETWORK"
+! grep -Fq 'filzaMetadataSourcesRepairV2' "$NETWORK"
 
-echo "Verified ByeTunes metadata provider-state repair and DNS-resilient transport"
+echo "Verified minimal ByeTunes DNS fallback without provider/settings rewrites"
