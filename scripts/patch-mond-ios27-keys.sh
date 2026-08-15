@@ -9,12 +9,13 @@ for path in "$TARGET" "$HOST" "$SUPPORT"; do
   test -f "$path" || { echo "Missing Mond iOS 27 overlay input: $path" >&2; exit 1; }
 done
 
-python3 - "$TARGET" <<'PY'
+python3 - "$TARGET" "$SUPPORT" <<'PY'
 from pathlib import Path
 import sys
 
-path = Path(sys.argv[1])
-text = path.read_text(encoding="utf-8")
+target = Path(sys.argv[1])
+support_path = Path(sys.argv[2])
+text = target.read_text(encoding="utf-8")
 
 marker = "// FILZA_IOS27_GESTALT_KEYS_BEGIN"
 if marker not in text:
@@ -59,6 +60,17 @@ if marker not in text:
 '''
     text = text.replace(needle, overlay + needle, 1)
 
+# The support declarations are staged into the same compiled upstream source
+# file so Makefile source discovery stays deterministic and MondGestaltView.swift
+# remains retired from the build graph.
+if "enum MondIOS27GestaltScalarKind" not in text:
+    support = support_path.read_text(encoding="utf-8")
+    support = "\n".join(
+        line for line in support.splitlines()
+        if not line.startswith("import ")
+    ).strip()
+    text = text.rstrip() + "\n\n" + support + "\n"
+
 # Upstream Mond resolves AccentColor from its own asset catalog. Embedded in
 # Filza, Bundle.main would otherwise resolve Filza's asset instead. Keep the
 # exact upstream RGB while deliberately leaving Bundle.main identity alone in
@@ -68,7 +80,7 @@ text = text.replace(
     'Color(red: 0.28529, green: 0.44118, blue: 0.92451)'
 )
 
-path.write_text(text, encoding="utf-8")
+target.write_text(text, encoding="utf-8")
 PY
 
 # ContentView also uses Mond's AccentColor asset upstream.
@@ -89,12 +101,12 @@ grep -Fq '// FILZA_IOS27_GESTALT_KEYS_BEGIN' "$TARGET" || {
   echo "Mond iOS 27 overlay failed: section marker missing" >&2
   exit 1
 }
-grep -Fq 'DeviceSupportsHighLuminanceAlwaysOnDisplay' "$SUPPORT" || {
-  echo "Mond iOS 27 overlay failed: key support table missing" >&2
+grep -Fq 'DeviceSupportsHighLuminanceAlwaysOnDisplay' "$TARGET" || {
+  echo "Mond iOS 27 overlay failed: staged key support table missing" >&2
   exit 1
 }
-grep -Fq 'DeviceSupportsInstructionFollowingPruningModels' "$SUPPORT" || {
-  echo "Mond iOS 27 overlay failed: current iOS 27 key table incomplete" >&2
+grep -Fq 'DeviceSupportsInstructionFollowingPruningModels' "$TARGET" || {
+  echo "Mond iOS 27 overlay failed: staged current iOS 27 key table incomplete" >&2
   exit 1
 }
 grep -Fq 'filzaMond_fix_init' "$HOST" || {
