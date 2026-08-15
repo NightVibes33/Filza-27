@@ -1,312 +1,249 @@
-# FilzaSlop
+# FilzaSlop / Filza-27
 
-A jailed Filza fork focused on iOS container access, application metadata recovery, MobileGestalt inspection/editing, and embedded utility experiments on modern iOS.
+A jailed, sideloadable Filza fork for modern iOS with extra container access, app management, music tools, MobileGestalt editing, WebDAV, and SSH built into one IPA.
 
-This fork currently targets the iOS 18 / iOS 26 / early iOS 27 behavior exposed by the bundled container-access primitives. The iOS 27 Gestalt catalog also includes keys identified through beta 5, but that does **not** imply every underlying access primitive works on beta 5.
+[![Build IPA](https://github.com/NightVibes33/Filza-27/actions/workflows/verify-upstream-byetunes-ssh.yml/badge.svg?branch=main)](https://github.com/NightVibes33/Filza-27/actions/workflows/verify-upstream-byetunes-ssh.yml)
 
-> **Important:** this project does not claim unrestricted root filesystem access. Paths are only exposed after the process can actually open/enumerate them. A returned access handle by itself is not treated as proof that a directory is usable.
+> **This is not a full jailbreak.** FilzaSlop only exposes files and containers the running app can actually access. It does not claim unrestricted `/`, kernel read/write, or a writable system volume.
 
-## Current status
+## What is included
 
-| Area | Status |
+| Feature | Status |
 | --- | --- |
-| Real unsigned arm64 IPA build | ✅ CI builds and uploads a real IPA |
-| 3105 workspace | ✅ Complete Home/Files/Patches/Cleaner/Wallpapers/Settings/Logs graph integrated |
-| Portable Patches | ✅ Full `.3105` project/import/apply/restore flow connected to Files |
-| Foreign app data-container fallback | ✅ Integrated |
-| App size metadata retry | ✅ Integrated |
-| App icon fallback | ✅ Integrated |
-| Gestalt Editor | ✅ Complete editor is linked into the main toolbar route |
-| Gestalt Home Screen quick action | ✅ Static action and runtime handler are both linked |
-| iOS 27 Gestalt key catalog | ✅ Included |
-| Music Library resources | ✅ Packaged into the IPA |
-| Music Library integration | ✅ Complete UI opens directly without an intermediate loading or splash screen |
-| WebDAV server | ✅ Redirected to Filza's in-process server for jailed/sideloaded use |
-| Arbitrary `/` / full system filesystem access | ❌ Not established |
+| Filza file browser | ✅ Included |
+| Apps Manager / app containers | ✅ Integrated |
+| Portable `.3105` patches | ✅ Integrated |
+| Music Library / ByeTunes | ✅ Integrated |
+| YouTube metadata provider | ✅ Restored and bundled |
+| MobileGestalt editor / Mond | ✅ Integrated |
+| WebDAV server | ✅ In-process server |
+| SSH server | ✅ In-process libssh server |
+| Home Screen quick actions | ✅ Apps Manager, Music Library, Gestalt Editor, Patches |
+| Full root filesystem / jailbreak | ❌ Not provided |
 
-## Managers
+## Compatibility
 
-### Apps Manager
+This fork is aimed at the iOS 18 / iOS 26 / early iOS 27 behavior used by the bundled container-access methods.
 
-Filza's bottom **Apps Manager** button and the Home Screen **Apps Manager** action
-both open the Files tab in the complete native workspace from `NightVibes33/3105` commit
-`1da66f733a7ad6bb5c9e1d078e89cfbb02faec72`. This is the real 3105 browser,
-adapted to reuse FilzaSlop's retained ContainerManager leases and `bad_query`
-runtime rather than a look-alike screen. The original five-tab navigation is
-present: Home, Files, Patches, Cleaner, and Wallpapers. Home also exposes the
-original Settings and Logs sheets.
+For iOS 27, the useful `bad_query` behavior is associated with beta 1–4. **Do not assume the same access on beta 5 or newer**, where that primitive was patched. The Gestalt catalog can still contain keys identified on newer betas even when the access primitive itself is unavailable.
 
-The 3105 sheet has a persistent **Close** control above every tab, so it can be
-left from Apps Manager, Patches, or any other page. It does not duplicate the
-original Filza Apps Manager inside the 3105 Apps Manager.
+Exact access can vary by device and iOS build, so the app verifies real file or directory access instead of treating a returned handle as automatic success.
 
-Current behavior includes:
+## Download and install
 
-- LaunchServices-backed application discovery fallback.
-- Direct ContainerManager identifier validation.
-- `bad_query_list()` fallback for foreign application data containers when normal lookup does not provide usable access.
-- Container access is considered successful only after directory access can be verified.
-- App disk usage is retried after a real foreign data-container path becomes available instead of permanently showing `0 KB` from the initial inaccessible path.
-- App icon lookup includes a MobileIcons resource-proxy fallback and format `10` before older formats.
-- Native app search, container browsing, file preview, multi-file import, create,
-  rename, replace, and delete operations are included.
-- Files and folders can be turned directly into portable patch drafts; the
-  upstream coordinator switches to Patches and opens the real editor.
-- Limited Cleaner scans only app Caches/tmp paths and requires confirmation.
-- Wallpaper Lab includes safe `.tendies` import, validation, receipts, install,
-  and restore.
+1. Open **Actions** in this repository.
+2. Open **Verify ByeTunes All Sources + YouTube + SSH IPA**.
+3. Choose the newest green run on `main`.
+4. Download the artifact named:
 
-### Patches
+   ```text
+   FilzaSlop-ByeTunes-All-YouTube-SSH-unsigned-arm64
+   ```
 
-**Patches** is a fourth static Home Screen quick action and a persistent bottom
-toolbar button. It opens the Patches tab inside the same complete 3105
-workspace, so Files/App Manager and Patches remain connected:
+5. Unzip the artifact and sideload the included `.ipa` with your preferred signing method.
 
-- create and edit portable `.3105` projects;
-- import and export packages;
-- optional password protection with PBKDF2, AES-GCM, and Keychain-backed keys;
-- stable bundle-identifier targets that survive app-container UUID changes;
-- validated path and payload limits;
-- transactional apply with backups, receipts, and restore.
+### Important signing note
 
-The imported GPLv3 license, upstream commit pin, and third-party notices are
-preserved under `ThirdParty/3105`.
-
-### Music Library
-
-The complete upstream music-management implementation is compiled into the arm64 target and its runtime resources are copied into the final app bundle.
-
-The packaged IPA includes:
-
-```text
-AppIconImage.png
-ByeTunes-Info.plist
-```
-
-The Music Library action intercepts `TGMainView.openMusicLib` and constructs the
-complete SwiftUI `ContentView` immediately. The Home Screen Music Library action uses
-the same presenter. There is no intermediate UIKit loading controller, branded splash,
-or artificial delay. `TGMusicLibraryViewController` remains only as a fallback route.
-Imported pairing files are copied into FilzaSlop's persistent Documents container. On
-later launches the embedded manager validates that saved copy, skips the import screen,
-and reconnects automatically; the document picker is shown only when no valid saved
-pairing file exists. The source pin is the official ByeTunes `v2.4` tag, including its
-background download queue, queue persistence, device-library browser, backup/restore,
-repair, and Live Activity support. Apple Music lookup uses ByeTunes 2.4's public catalog
-page parser instead of the older web-player JWT scraper.
-
-Transport completion is capped below 100% until the response has passed HTTP and audio
-validation. Each failed backend clears its progress before the next fallback, failed
-tracks remain visibly retryable, and 100% is published only after the validated file is
-handed off or persisted. The embedded Settings version row is informational because a
-standalone ByeTunes IPA cannot update the copy compiled into FilzaSlop; Music Library
-updates are delivered by the FilzaSlop IPA.
-
-A runtime stage marker is written to:
-
-```text
-Documents/FilzaSlop Logs/ByeTunesEmbedStage.txt
-```
-
-The stage log records the factory call, `ContentView` construction, hosting-controller
-construction, view materialization, and final attachment. CI proves the complete source
-is compiled and linked into the IPA; the installed build still requires device runtime
-validation.
-
-### Gestalt Editor
-
-The complete Gestalt editor is compiled into the Filza runtime. **Gestalt Editor**
-and **Patches** are small icon buttons beside Filza's existing Apps Manager and Music
-Library buttons in the bottom `TGMainView` toolbar. The toolbar is restored after
-Filza rebuilds it, when a browser page/window appears, and when the app becomes active;
-the old manager-table-row insertion is disabled.
-
-It is also exposed as a static Home Screen quick action named **Gestalt Editor**.
-All four quick actions use only their feature names—Apps Manager, Music Library,
-Gestalt Editor, and Patches—with no redundant subtitle text.
-
-Both the in-app button and Home Screen quick action open the same editor directly with
-no intermediate loading controller. MobileGestalt access is prewarmed after launch;
-an access failure is shown as a normal error alert instead of a fake editor screen.
-The editor attempts to resolve:
-
-```text
-/private/var/containers/Shared/SystemGroup/systemgroup.com.apple.mobilegestaltcache/Library/Caches/com.apple.MobileGestalt.plist
-```
-
-Access flow:
-
-1. Run the access method selected in Settings (`bad_query` by default or `cmg`).
-2. Activate the returned sandbox extension when the selected method provides one.
-3. Verify the actual MobileGestalt plist is readable before exposing it.
-4. Detect whether the file is read-only or read/write.
-
-Write handling includes:
-
-- one-time backup before modification;
-- property-list serialization validation;
-- atomic write when possible;
-- direct file-descriptor fallback when necessary;
-- post-write plist read-back validation;
-- automatic restoration of the backup if validation fails.
-
-The editor follows `rooootdev/mond` GestaltView at upstream commit
-`50b76a500b34d70119e30e04921dcb138c284855`: complete device-artwork, software,
-hardware, eligibility, iPadOS, internal-feature, spoofing, Apply, and Revert controls;
-the same device/version gating; and the same warning and information dialogs. Its
-navigation-bar gear opens Mond's functional Settings surface: selectable `bad_query`
-or `cmg` access, Run Exploit, sandbox-token generation and validation, Keep Alive,
-and confirmed Respring. Filza's bridge runs the selected access method in-process and
-preserves property-list read-back validation and automatic backup restoration.
-
-On iOS 27, the editor also exposes these beta key mappings. Boolean capabilities use
-toggles; the remaining scalar values open a type-aware editor that detects the current
-plist type and supports Boolean, integer, decimal, and string values.
-
-| MobileGestalt key | Name |
-|---|---|
-| `7brdL5xrEUWnlF9C0kdg5A` | `DeviceSupportsHighLuminanceAlwaysOnDisplay` |
-| `A/74xUbqJwBsaWTjSDd0fQ` | `ChassisSlotFunctionNumber` |
-| `a3n5T9sFtlyQ74NEp9ESxg` | `SiriMode` |
-| `HBG+hj/Oz89PjVgn93Jd8A` | `Image4SecureBootKeyScheme` |
-| `ikn/KMyeztXJhAj/dqBjBg` | `LowPowerRendererCapability` |
-| `J2+oJRiGdbAzTi6U5nhqdQ` | `PostQuantumCryptographyEnforced` |
-| `Kpfa0nb8nn8EVzI/UgcMfQ` | `CoalescedSubTargetID` |
-| `lyJZrSDc8J8eQ5b7A1Rvw` | `DeviceSupportsTouchSensitiveCameraControl` |
-| `m4xs4mhvxnAopYrApoLDMw` | `DeviceSupportsInstructionFollowingPruningModels` |
-| `mnPU37/y4i0TJFnJc+r4lA` | `DeviceSupportsLowPowerWake` |
-| `odI0U9Etrx7hObzvJ9xJ8Q` | `DeviceSupportsSandcat` |
-| `P4ZJVy/zYuLy4ejRKP+0DA` | `DeviceSupportsRegionalCameraShutterRelaxation` |
-| `qqrspu7CpuPdZwSDxNY+Fg` | `MaximumFlipbookCount` |
-| `s1ZXqZtUSpr+BjUgZXZ/2g` | `ChassisSlotInstanceNumber` |
-| `TusANsf9Lfe3P/9fIXXSrQ` | `DeviceSupportsAlwaysListeningHeySiri` |
-| `VXc3L66nqQ6bn4z60ChX+A` | `ResponsiveAirPlayAudioCapability` |
-| `ym8C/Ut5YcBnqAdm4NEDLQ` | `Image4SecureBootCertificateFormat` |
-
-### WebDAV server
-
-Filza's original **Run as system service** option targets jailbreak-only `launchctl`
-and `/usr/libexec/filza/FilzaWebDAVServer` paths. Those paths cannot work from the
-sideloaded MobileHouseArrest app container. FilzaSlop now links a pinned complete
-`GCDWebDAVServer` implementation and forces WebDAV through that in-process server
-while preserving Filza's port, Bonjour, authentication, WebDAV methods, and
-shared-folder settings. The runtime hooks Filza's actual `swithAirBrowserCheckbox`
-action (the selector is misspelled in Filza itself) and the underlying
-`air-browser` preference write/removal, so the visible switch now starts and stops
-the in-process listener instead of only changing its stored value. It implements
-OPTIONS, PROPFIND, GET/HEAD, PUT, MKCOL,
-DELETE, COPY, MOVE, LOCK, and UNLOCK. When Filza authentication is enabled, the
-server validates HTTP Basic credentials against Filza's saved password hash and
-refuses to start if those credentials are incomplete.
-
-Use **Preferences → Advanced options → Enable WebDAV server**. The default port is
-`11111`; the exact listening URL and root are recorded after every start or resume in:
-
-```text
-Documents/FilzaSlop Logs/WebDAVStatus.txt
-Documents/FilzaSlop Logs/Runtime.log
-```
-
-The IPA declares local-network and `_http._tcp` Bonjour usage, so accept the iOS Local
-Network prompt the first time the server starts. Keep FilzaSlop in the foreground while
-transferring files: a sideloaded app cannot install a persistent launch daemon, and iOS
-may suspend its listener in the background. Returning to the app automatically checks
-and restarts the listener when WebDAV remains enabled.
-
-## iOS 27 Gestalt keys
-
-The current catalog contains these newer keys identified through iOS 27 beta 5:
-
-| Key | Name |
-| --- | --- |
-| `7brdL5xrEUWnlF9C0kdg5A` | `DeviceSupportsHighLuminanceAlwaysOnDisplay` |
-| `A/74xUbqJwBsaWTjSDd0fQ` | `ChassisSlotFunctionNumber` |
-| `a3n5T9sFtlyQ74NEp9ESxg` | `SiriMode` |
-| `HBG+hj/Oz89PjVgn93Jd8A` | `Image4SecureBootKeyScheme` |
-| `ikn/KMyeztXJhAj/dqBjBg` | `LowPowerRendererCapability` |
-| `J2+oJRiGdbAzTi6U5nhqdQ` | `PostQuantumCryptographyEnforced` |
-| `Kpfa0nb8nn8EVzI/UgcMfQ` | `CoalescedSubTargetID` |
-| `lyJZrSDc8J8eQ5b7A1Rvw` | `DeviceSupportsTouchSensitiveCameraControl` |
-| `m4xs4mhvxnAopYrApoLDMw` | `DeviceSupportsInstructionFollowingPruningModels` |
-| `mnPU37/y4i0TJFnJc+r4lA` | `DeviceSupportsLowPowerWake` |
-| `odI0U9Etrx7hObzvJ9xJ8Q` | `DeviceSupportsSandcat` |
-| `P4ZJVy/zYuLy4ejRKP+0DA` | `DeviceSupportsRegionalCameraShutterRelaxation` |
-| `qqrspu7CpuPdZwSDxNY+Fg` | `MaximumFlipbookCount` |
-| `s1ZXqZtUSpr+BjUgZXZ/2g` | `ChassisSlotInstanceNumber` |
-| `TusANsf9Lfe3P/9fIXXSrQ` | `DeviceSupportsAlwaysListeningHeySiri` |
-| `VXc3L66nqQ6bn4z60ChX+A` | `ResponsiveAirPlayAudioCapability` |
-| `ym8C/Ut5YcBnqAdm4NEDLQ` | `Image4SecureBootCertificateFormat` |
-
-The manager also includes older feature mappings for items such as Dynamic Island, Always-On Display, Camera Control, Action Button, Stage Manager, Apple Intelligence eligibility, internal features, and related capability flags.
-
-## Filesystem paths
-
-### Container roots
-
-```text
-/private/var/mobile/Containers/Data/Application/
-/private/var/mobile/Containers/Shared/AppGroup/
-/private/var/mobile/Containers/Data/PluginKitPlugin/
-/private/var/mobile/Containers/Data/VPNPlugin/
-/private/var/mobile/Containers/Data/InternalDaemon/
-/private/var/mobile/Containers/Data/System/
-/private/var/mobile/Containers/Shared/SystemGroup/
-/private/var/mobile/Containers/Data/Protected/
-```
-
-### Additional known paths
-
-```text
-/private/var/containers/Shared/SystemGroup/systemgroup.com.apple.mobilegestaltcache/Library/Caches/
-/private/var/containers/Shared/SystemGroup/systemgroup.com.apple.installcoordinationd/Library/InstallCoordination/
-```
-
-The system-path probe also checks selected higher-level paths, but a path is not presented as usable merely because a query returned a handle. Actual `opendir` / `readdir` success is required.
-
-### Notable app data
-
-```text
-# Notes
-/private/var/mobile/Containers/Shared/AppGroup/<Notes-group-UUID>/NoteStore.sqlite
-
-# Safari app data
-/private/var/mobile/Containers/Data/Application/<Safari-app-UUID>/
-
-# Safari shared data: group.com.apple.safari
-/private/var/mobile/Containers/Shared/AppGroup/<Safari-group-UUID>/
-```
-
-## PosterBoard
-
-Wallpaper Lab can:
-
-- Inspect the PosterBoard descriptor store.
-- Import the bundled Cipher wallpaper.
-- Import extracted `.tendies` wallpaper packages.
-- Apply the PosterBoard refresh preferences.
-- Roll back the latest import.
-
-Place additional packages in:
-
-```text
-Documents/Device Storage/[MHA-C2] Wallpaper Lab/Imports/
-```
-
-Use the **Wallpaper** button at the Wallpaper Lab root. Imports add new descriptor directories and keep a rollback backup. They do not overwrite the PosterBoard database or existing descriptors.
-
-## Signing
-
-Keep the MobileHouseArrest bundle / CodeDirectory identity used by the base app:
+Keep the base app identity:
 
 ```text
 com.apple.mobile.MobileHouseArrest
 ```
 
-Changing that identity can break the MobileHouseArrest-dependent access path.
+Changing the bundle identifier can break the MobileHouseArrest-dependent access path.
+
+## Quick start
+
+The main Filza toolbar and Home Screen quick actions expose the four main additions:
+
+- **Apps Manager**
+- **Music Library**
+- **Gestalt Editor**
+- **Patches**
+
+### Apps Manager
+
+Apps Manager opens the integrated 3105 workspace and can browse applications and the containers that are actually reachable from the current process.
+
+It includes:
+
+- application search;
+- app icons and disk-size recovery where available;
+- foreign app data-container fallback;
+- file preview;
+- create, rename, import, replace, and delete operations;
+- Cleaner and Wallpaper Lab tools;
+- direct handoff from Files into portable patch projects.
+
+A container is only treated as available after real directory access succeeds.
+
+### Patches
+
+The Patches page uses the same 3105 workspace as Apps Manager.
+
+It supports portable `.3105` projects with:
+
+- create, edit, import, and export;
+- bundle-ID based targets so projects are not tied to one container UUID;
+- optional password protection;
+- backups and receipts;
+- apply and restore flows.
+
+### Music Library
+
+The full ByeTunes music-management UI is embedded directly into FilzaSlop.
+
+On first use, select a valid pairing file. FilzaSlop stores a persistent copy in its Documents container and reuses it on later launches when it is still valid.
+
+The embedded build includes:
+
+- device-library browsing;
+- downloads and queue persistence;
+- backup / restore and repair tools;
+- metadata editing;
+- Apple Music, iTunes, Deezer, YouTube, and **All Sources** metadata routing;
+- Live Activity support where iOS allows it.
+
+#### YouTube metadata
+
+The current build keeps ByeTunes v2.4 while restoring the known working pre-v2.4 YouTubeKit metadata path as the first free YouTube provider before mirror fallbacks.
+
+The required JavaScript solver resources are bundled inside the IPA, so no extra files need to be installed manually.
+
+Useful log messages include:
+
+```text
+[YouTubeProvider] YouTubeKit metadata matched videoID=...
+[YouTubeProvider] YouTubeKit metadata failed: ...
+```
+
+### Gestalt Editor
+
+Gestalt Editor uses the integrated current Mond source and opens directly from FilzaSlop.
+
+The editor can inspect supported MobileGestalt values and, when the underlying file is actually writable, apply changes with backup and read-back validation.
+
+Open the gear in Gestalt Editor for Mond settings. The available access methods are:
+
+- `bad_query`
+- `cmg`
+
+Typical flow:
+
+1. Choose the access method.
+2. Press **Run Exploit**.
+3. If access succeeds, use **Generate Token** if you need to view or validate the captured sandbox token.
+4. Return to the editor and use Apply / Revert normally.
+
+The token UI uses the MobileGestalt token already captured by the access method when available instead of requiring a second token to be issued.
+
+The MobileGestalt cache used by the editor is:
+
+```text
+/private/var/containers/Shared/SystemGroup/systemgroup.com.apple.mobilegestaltcache/Library/Caches/com.apple.MobileGestalt.plist
+```
+
+The editor includes the newer iOS 27 capability mappings in addition to the existing Dynamic Island, Always-On Display, Camera Control, Action Button, Stage Manager, Apple Intelligence eligibility, internal-feature, and related controls.
+
+### WebDAV
+
+FilzaSlop runs WebDAV inside the app instead of trying to use Filza's jailbreak-only launch daemon path.
+
+Enable it from:
+
+**Preferences → Advanced options → Enable WebDAV server**
+
+Default port:
+
+```text
+11111
+```
+
+Accept the iOS **Local Network** permission prompt the first time. For the most reliable transfers, keep FilzaSlop in the foreground because iOS can suspend sideloaded apps in the background.
+
+The exact listening address is written to the logs described below.
+
+### SSH
+
+FilzaSlop also contains a real in-process libssh server.
+
+Open **Preferences → SSH SERVER** to configure:
+
+- **Port** — default `2222`
+- **Bonjour** — enabled by default
+- **Authentication** — enabled by default
+- **Username** — default `filza`
+- **Password** — set your own password before enabling the server
+
+Then turn on **Enable SSH server**. The connection address is shown in the SSH section footer.
+
+Example:
+
+```sh
+ssh filza@192.168.1.50 -p 2222
+```
+
+The embedded shell intentionally exposes a small useful command set rather than pretending to be a full iOS userland. Commands include `pwd`, `cd`, `ls`, `cat`, `stat`, `mkdir`, `touch`, `cp`, `mv`, `rm`, `chmod`, `readlink`, `df`, `whoami`, `id`, `uname`, `echo`, `clear`, `help`, and `exit`.
+
+Filesystem permissions over SSH are **exactly the same permissions the FilzaSlop process has**.
+
+FilzaSlop can also request direct router port mapping with NAT-PMP or UPnP when the network supports it. It only reports a public endpoint after a mapping is confirmed and a globally routable IPv4 address is detected. CGNAT or double-NAT is reported instead of showing a fake public address.
+
+Do not expose SSH publicly without authentication.
+
+## Logs
+
+Runtime logs are stored under:
+
+```text
+Documents/FilzaSlop Logs/
+```
+
+Useful files include:
+
+```text
+Runtime.log
+WebDAVStatus.txt
+SSHStatus.txt
+ByeTunesEmbedStage.txt
+```
+
+These are the first files to check when a server, Music Library, or access method behaves differently on a specific iOS build.
+
+## Current limitations
+
+- A green GitHub Actions build proves the source compiled, linked, packaged, and uploaded successfully. It cannot prove every private API behaves the same on every iOS build.
+- `/System/Library` may be readable or enumerable while still living on iOS's signed read-only system volume.
+- Access to an App Group or data container does not imply access to the entire filesystem.
+- Kernel read/write is not established by this project.
+- No full jailbreak, root shell, SPTM bypass, or system-volume remount is claimed here.
+- WebDAV and SSH are app-hosted services and may be suspended when iOS backgrounds the app.
 
 ## Building
 
-### Local dylib build
+Normal users do not need to build the project manually; use the Actions artifact above.
+
+<details>
+<summary><strong>GitHub Actions build details</strong></summary>
+
+The current installable IPA workflow is:
+
+```text
+.github/workflows/verify-upstream-byetunes-ssh.yml
+```
+
+It verifies the pinned dependencies, builds the arm64 runtime, generates ByeTunes AppIntents metadata, stages the required Music Library and YouTubeKit resources, injects everything into the pinned unsigned Filza base IPA, verifies the final package, and uploads the artifact.
+
+The workflow currently builds with Xcode 26.2 and produces:
+
+```text
+FilzaSlop-ByeTunes-All-YouTube-SSH-unsigned-arm64
+```
+
+</details>
+
+<details>
+<summary><strong>Local Theos build</strong></summary>
 
 ```sh
 export THEOS="$HOME/theos"
@@ -314,68 +251,33 @@ make clean
 make all FINALPACKAGE=1 TARGET=iphone:clang:latest:16.0
 ```
 
-The resulting runtime dylib is:
+The runtime dylib is written to:
 
 ```text
 .theos/obj/FilzaApplySandboxExt.dylib
 ```
 
-### Real unsigned IPA in GitHub Actions
+</details>
 
-The repository workflow:
+## Upstream projects and credits
 
-```text
-.github/workflows/verify-safe-fixes.yml
-```
-
-now performs the complete installable build:
-
-1. verifies pinned source dependencies;
-2. syntax-checks the Objective-C runtime integrations;
-3. builds and links the complete arm64 target;
-4. stages ByeTunes runtime resources;
-5. downloads and hash-verifies the pinned unsigned Filza base IPA;
-6. injects the current runtime dylib and resources;
-7. writes exactly four Home Screen shortcuts plus Local Network/Bonjour and Live Activity declarations into `Info.plist` and assigns build version `4.11`;
-8. verifies the base executable actually loads `FilzaApplySandboxExt.dylib`;
-9. repacks a real unsigned IPA;
-10. uploads the IPA as a GitHub Actions artifact.
-
-The workflow is configured so a missing upload is a build failure rather than a warning.
-
-Current artifact name:
-
-```text
-FilzaSlop-installable-unsigned-arm64
-```
-
-Open **Actions → Verify Filza installable IPA** to download the latest build artifact.
-
-## Current limitations
-
-- A green build proves the current source compiled, linked, packaged, and uploaded successfully. It does **not** prove every private API or sandbox-extension path still works on a specific iOS build.
-- Apps Manager, Patches, Music Library, Gestalt Editor, and WebDAV should be revalidated on-device after each new IPA build.
-- The existing container-access primitives do not establish unrestricted `/`, `/System`, `/Library`, `/Applications`, or arbitrary `/private` traversal.
-- No kernel read/write or full jailbreak primitive is claimed by this README.
-- A verified `bad_query` root proves only the access recorded in its generated
-  `Probe Results.plist` and `Access Status.txt`. In particular,
-  `/System/Library` can be enumerated while remaining on iOS's read-only signed
-  system volume; the sandbox extension does not remount it or grant system-volume
-  writes. App Groups are on the separate Data volume and may be writable.
-
-## PoCs / upstream research
-
-- [MobileHouseArrest](https://github.com/0xjohnnydev/MobileHouseArrest-PoC)
-- [Geod MCM](https://github.com/0xjohnnydev/Geod-MCM-PoC)
-- [InstallCoordination](https://github.com/0xjohnnydev/InstallCoordination-PoC)
-- [CFPrefs zero-file](https://github.com/0xjohnnydev/CFPrefsZeroFile-PoC)
-
-## Credits
+FilzaSlop combines work from several open-source projects. Their upstream licenses and notices remain part of the repository.
 
 - [34306/FilzaJailedDS](https://github.com/34306/FilzaJailedDS)
-- CrazyMind90
+- [0xjohnnydev/FilzaSlop](https://github.com/0xjohnnydev/FilzaSlop)
+- [0xjohnnydev/MobileHouseArrest-PoC](https://github.com/0xjohnnydev/MobileHouseArrest-PoC)
+- [forcequitOS/bad_query](https://github.com/forcequitOS/bad_query)
+- [rooootdev/mond](https://github.com/rooootdev/mond)
+- [YangJiiii/3105](https://github.com/YangJiiii/3105)
+- [NightVibes33/3105](https://github.com/NightVibes33/3105)
+- [EduAlexxis/ByeTunes](https://github.com/EduAlexxis/ByeTunes)
+- [swisspol/GCDWebServer](https://github.com/swisspol/GCDWebServer)
+- [libssh](https://www.libssh.org/)
 - XPF and ChOma contributors
+- CrazyMind90
 - `SerStars/nugget-wallpapers`
 - mightycooldude12
-- [`rooootdev/mond`](https://github.com/rooootdev/mond) for the Gestalt editor behavior integrated into this fork
-- [`YangJiiii/3105`](https://github.com/YangJiiii/3105) and [`NightVibes33/3105`](https://github.com/NightVibes33/3105) for the native app-data browser and portable patch manager integrated under GPLv3
+
+## Research notes
+
+The repository also contains diagnostics and compatibility work for container-access and filesystem behavior on modern iOS. Those experiments should be treated as research features, not as proof of unrestricted system access.
