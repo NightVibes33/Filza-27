@@ -99,3 +99,14 @@ public final class MondEmbeddedHostFactory: NSObject {
         return controller
     }
 }
+
+// Keep the old Objective-C factory ABI so existing quick-action/tooling probes
+// do not break. It no longer creates the old Gestalt-only reconstruction: every
+// legacy call is forwarded to the complete current mond root.
+@objc(MondGestaltHostFactory)
+public final class MondGestaltHostFactory: NSObject {
+    @objc(makeViewControllerWithPath:)
+    public static func makeViewController(withPath ignoredPath: String) -> UIViewController {
+        MondEmbeddedHostFactory.makeViewController()
+    }
+}
