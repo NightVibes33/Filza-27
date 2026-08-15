@@ -18,6 +18,7 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
       BYETUNES_COMMIT: 8a4be32f188f30b98f15b00566c5ff3edc1c03b1
       BAD_QUERY_COMMIT: 73ef6da1adabef0982fd00e36cb85f21b8f8194a
+      THREEONE_COMMIT: 438f3ccae6a436d0017185407bc286e55c357883
       IDEVICE_COMMIT: 37ee77cf713f483551f3cf33ea8b2087a40058ca
       THEOS_COMMIT: 5280bd038207e14f8bd76f5417aa2fe641c03228
       BASE_IPA_SHA256: b11ce30a2db6f6bc77773ed30bdb855d7c847830891b14d21230f2d893d5f223
@@ -43,6 +44,7 @@ jobs:
           test "$(xcrun --sdk iphoneos --show-sdk-version)" = "26.2"
           test "$(git -C ByeTunes rev-parse HEAD)" = "$BYETUNES_COMMIT"
           test "$(git -C ThirdParty/bad_query rev-parse HEAD)" = "$BAD_QUERY_COMMIT"
+          test "$(git -C ../3105 rev-parse HEAD 2>/dev/null || true)" != "$THREEONE_COMMIT" || true
           test -f ByeTunes/MusicManager/ContentView.swift
           test -f ByeTunes/MusicManager/MusicView.swift
           test -f ByeTunes/MusicManager/DeviceLibraryBrowserView.swift
@@ -55,9 +57,16 @@ jobs:
           test -f scripts/patch-byetunes-metadata-parity-post.sh
           test -f scripts/patch-byetunes-device-library-save.sh
           test -f scripts/stage-byetunes-resources.sh
+          test -f scripts/stage-3105-v1.sh
+          test -f scripts/merge-3105-app-metadata.sh
           test -f ThirdParty/bad_query/bad_query/bad_query.c
           test -f ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
+          test -f ThirdParty/3105/Sources/FileOperationCoordinator.swift
+          test -f ThirdParty/3105/Sources/ZIPArchiveWriter.swift
+          test -f WebDAVToggleStateFix.m
           test -f ThirdParty/GCDWebServer/GCDWebDAVServer/GCDWebDAVServer.m
+          grep -Fq "$THREEONE_COMMIT" scripts/stage-3105-v1.sh
+          grep -Fq 'stage-3105-v1.sh' Makefile
           grep -Fq 'patch-byetunes-upstream-parity-v2.sh' Makefile
           grep -Fq 'patch-byetunes-metadata-parity-post.sh' Makefile
           grep -Fq 'patch-byetunes-device-library-save.sh' Makefile
@@ -66,6 +75,17 @@ jobs:
           ! grep -Fq 'fix-byetunes-import-source-routing.sh' Makefile
           ! grep -Fq 'patch-byetunes-device-library-save.sh' scripts/patch-access-map-provenance.sh
           ! grep -Fq 'fix-byetunes-import-source-routing.sh' scripts/patch-access-map-provenance.sh
+
+          # Prove the immutable 3105 1.0 overlay is downloadable and complete
+          # before entering the expensive arm64 build.
+          bash scripts/stage-3105-v1.sh
+          test -s ThirdParty/3105/Sources/FileOperationCoordinator.swift
+          test -s ThirdParty/3105/Sources/ZIPArchiveWriter.swift
+          test -s ThirdParty/3105/Resources/Filza3105.bundle/UpstreamAppInfo.plist
+          grep -Fq 'FileOperationCoordinator' ThirdParty/3105/Sources/FileBrowserView.swift
+          grep -Fq 'importPackage(from:' ThirdParty/3105/Sources/PatchProjectsView.swift
+          grep -Fq '"browser.copy"' ThirdParty/3105/Resources/Filza3105.bundle/en.lproj/Localizable.strings
+          grep -Fq '"cleaner.select_all_results"' ThirdParty/3105/Resources/Filza3105.bundle/en.lproj/Localizable.strings
 
       - name: Syntax-check runtime integrations
         run: |
@@ -99,6 +119,7 @@ jobs:
           xcrun --sdk iphoneos clang "${COMMON[@]}" FilzaDiagnostics.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" FilzaQuickActions.m
           xcrun --sdk iphoneos clang "${COMMON[@]}" WebDAVRuntimeFix.m
+          xcrun --sdk iphoneos clang "${COMMON[@]}" WebDAVToggleStateFix.m
           while IFS= read -r source; do
             xcrun --sdk iphoneos clang "${COMMON[@]}" "$source"
           done < <(find ThirdParty/GCDWebServer/GCDWebServer ThirdParty/GCDWebServer/GCDWebDAVServer -type f -name '*.m' -print | sort)
@@ -168,6 +189,12 @@ jobs:
           grep -aFq 'TGMainView direct full ByeTunes route installed' "$DYLIB"
           grep -aFq 'ByeTunes 2.4 background URL session route installed on Filza AppDelegate' "$DYLIB"
           grep -aFq 'jailed in-process WebDAV lifecycle hook installed' "$DYLIB"
+          grep -aFq 'toggle-state fix installed: isServerStarted now reflects in-process listener' "$DYLIB"
+          grep -aFq 'settings toggle synchronized visible-state=' "$DYLIB"
+
+          grep -aFq 'full upstream 3105 1.0 workspace appeared' "$DYLIB"
+          grep -aFq 'constructing 3105 1.0 Patches for external import' "$DYLIB"
+          grep -aFq 'FileOperationCoordinator' "$DYLIB"
 
           grep -aFq 'upstream lifecycle onAppear entered' "$DYLIB"
           grep -aFq 'Installing auto-reconnect watcher' "$DYLIB"
@@ -261,11 +288,22 @@ jobs:
           plutil -replace NSSupportsLiveActivitiesFrequentUpdates -bool YES "$APP/Info.plist"
           plutil -replace NSLocalNetworkUsageDescription -string "FilzaSlop uses your local network when you enable its WebDAV server." "$APP/Info.plist"
           plutil -replace NSBonjourServices -json '["_http._tcp"]' "$APP/Info.plist"
+          bash scripts/merge-3105-app-metadata.sh "$APP/Info.plist"
 
           test -s "$APP/Frameworks/FilzaApplySandboxExt.dylib"
           test -s "$APP/AppIconImage.png"
           test -s "$APP/Config.plist"
           test -s "$APP/Filza3105.bundle/Info.plist"
+          test -s "$APP/Filza3105.bundle/UpstreamAppInfo.plist"
+          test "$(plutil -extract CFBundleShortVersionString raw -o - "$APP/Filza3105.bundle/Info.plist")" = "1.0"
+          test "$(plutil -extract CFBundleVersion raw -o - "$APP/Filza3105.bundle/Info.plist")" = "4"
+          grep -Fq '"browser.copy"' "$APP/Filza3105.bundle/en.lproj/Localizable.strings"
+          grep -Fq '"browser.create_zip"' "$APP/Filza3105.bundle/en.lproj/Localizable.strings"
+          grep -Fq '"cleaner.select_all_results"' "$APP/Filza3105.bundle/en.lproj/Localizable.strings"
+          grep -Fq '"patch.error.remote_import"' "$APP/Filza3105.bundle/en.lproj/Localizable.strings"
+          plutil -extract CFBundleDocumentTypes xml1 -o - "$APP/Info.plist" | grep -Fq 'com.yangjiii.3105.patch-package'
+          plutil -extract CFBundleURLTypes xml1 -o - "$APP/Info.plist" | grep -Fq 'threeoneosfive'
+          plutil -extract UTExportedTypeDeclarations xml1 -o - "$APP/Info.plist" | grep -Fq 'application/x-3105-patch'
           test -x "$APP/helpers/FilzaWebDAVServer"
           otool -L "$APP/$EXECUTABLE" | grep -F 'FilzaApplySandboxExt.dylib'
 
@@ -276,6 +314,7 @@ jobs:
           unzip -tq "$OUTPUT"
           unzip -l "$OUTPUT" | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
           unzip -l "$OUTPUT" | grep -F 'Config.plist'
+          unzip -l "$OUTPUT" | grep -F 'Filza3105.bundle/UpstreamAppInfo.plist'
           shasum -a 256 "$OUTPUT" | tee .theos/IPA-SHA256.txt
 
       - name: Upload installable unsigned IPA and verification files
@@ -288,6 +327,7 @@ jobs:
             .theos/obj/FilzaApplySandboxExt.dylib
             .theos/byetunes-resources/**
             .theos/byetunes-appintents/Metadata.appintents/**
+            ThirdParty/3105/Resources/Filza3105.bundle/UpstreamAppInfo.plist
             ThirdParty/3105/UPSTREAM.md
             ThirdParty/3105/LICENSE
           if-no-files-found: error
