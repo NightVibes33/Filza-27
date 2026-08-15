@@ -1,0 +1,260 @@
+name: Verify upstream ByeTunes + SSH IPA
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: verify-upstream-byetunes-ssh-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  arm64-ipa:
+    runs-on: macos-26-intel
+    env:
+      THEOS: ${{ github.workspace }}/theos
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+      BYETUNES_COMMIT: 8a4be32f188f30b98f15b00566c5ff3edc1c03b1
+      IDEVICE_COMMIT: 37ee77cf713f483551f3cf33ea8b2087a40058ca
+      LIBSSH_COMMIT: 07430deb9b97b751ec5ea5a7fc307f40bf042e0a
+      MBEDTLS_COMMIT: 068ff080b369adfac81509f9b57b2afabaf82dc5
+      THEOS_COMMIT: 5280bd038207e14f8bd76f5417aa2fe641c03228
+      BASE_IPA_SHA256: b11ce30a2db6f6bc77773ed30bdb855d7c847830891b14d21230f2d893d5f223
+      BASE_IPA_URL: https://github.com/0xjohnnydev/FilzaSlop/releases/download/v1.0.2/FilzaSlop-v1.0.2-unsigned.ipa
+
+    steps:
+      - name: Xcode 26.2 setup
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.2'
+
+      - name: Checkout complete source tree
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Verify upstream ByeTunes source contract
+        run: |
+          set -euxo pipefail
+          test "$(uname -m)" = "x86_64"
+          test "$(xcrun --sdk iphoneos --show-sdk-version)" = "26.2"
+          test "$(git -C ByeTunes rev-parse HEAD)" = "$BYETUNES_COMMIT"
+          test -f ByeTunes/MusicManager/MusicView.swift
+          test -f ByeTunes/MusicManager/SongMetadata.swift
+          test -f ByeTunes/MusicManager/iTunesSearchSheet.swift
+          test -f ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
+          grep -Fq 'let metadataSource = UserDefaults.standard.string(forKey: "metadataSource") ?? "local"' ByeTunes/MusicManager/MusicView.swift
+          grep -Fq 'return try await URLSession.shared.data(for: request)' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
+          grep -Fq 'return try await URLSession.shared.data(from: url)' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
+          grep -Fq 'return try await MetadataBackgroundURLSession.shared.data(for: request)' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
+          ! grep -Fq 'MetadataWebKitRequest' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
+          ! grep -Fq 'FilzaMetadataWebRequest' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
+          ! grep -Fq 'retrying through WebKit network process' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
+          grep -Fq 'filter-out ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift' FilzaSSHMetadata.mk
+          grep -Fq 'include FilzaSSHMetadata.mk' Makefile
+          grep -Fq 'include FilzaByeTunesNetwork.mk' Makefile
+          ! grep -Fq 'bash scripts/patch-byetunes-metadata-network-resilience.sh' FilzaByeTunesNetwork.mk
+
+      - name: Restore pinned SSH stack cache
+        id: ssh-cache
+        uses: actions/cache@v4
+        with:
+          path: Vendor/ssh
+          key: ssh-stack-${{ runner.os }}-${{ runner.arch }}-xcode26.2-ios26.2-${{ env.LIBSSH_COMMIT }}-${{ env.MBEDTLS_COMMIT }}-${{ hashFiles('scripts/build-ssh-stack.sh') }}
+
+      - name: Build pinned SSH stack
+        if: steps.ssh-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          bash scripts/build-ssh-stack.sh "$GITHUB_WORKSPACE/Vendor/ssh"
+
+      - name: Verify pinned SSH stack
+        run: |
+          set -euxo pipefail
+          test "$(cat Vendor/ssh/LIBSSH_COMMIT)" = "$LIBSSH_COMMIT"
+          test "$(cat Vendor/ssh/MBEDTLS_COMMIT)" = "$MBEDTLS_COMMIT"
+          test -s Vendor/ssh/lib/libssh.a
+          test -s Vendor/ssh/lib/libmbedtls.a
+          test -s Vendor/ssh/lib/libmbedx509.a
+          test -s Vendor/ssh/lib/libmbedcrypto.a
+          test "$(lipo -archs Vendor/ssh/lib/libssh.a)" = "arm64"
+
+      - name: Install Procursus build tools
+        uses: dhinakg/procursus-action@main
+        with:
+          packages: ldid make
+
+      - name: Restore pinned Theos cache
+        id: theos-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.THEOS }}
+          key: theos-${{ runner.os }}-${{ runner.arch }}-${{ env.THEOS_COMMIT }}
+
+      - name: Install pinned Theos
+        if: steps.theos-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          rm -rf "$THEOS"
+          git clone --filter=blob:none https://github.com/theos/theos.git "$THEOS"
+          git -C "$THEOS" checkout --detach "$THEOS_COMMIT"
+          git -C "$THEOS" submodule update --init --recursive
+
+      - name: Verify pinned Theos
+        run: |
+          set -euxo pipefail
+          test "$(git -C "$THEOS" rev-parse HEAD)" = "$THEOS_COMMIT"
+          test -f "$THEOS/makefiles/common.mk"
+
+      - name: Restore pinned idevice FFI cache
+        id: idevice-cache
+        uses: actions/cache@v4
+        with:
+          path: Vendor/idevice
+          key: idevice-ffi-${{ runner.os }}-${{ runner.arch }}-xcode26.2-ios26.2-${{ env.IDEVICE_COMMIT }}-${{ hashFiles('scripts/build-idevice.sh') }}
+
+      - name: Build pinned idevice FFI
+        if: steps.idevice-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          bash scripts/build-idevice.sh "$GITHUB_WORKSPACE/Vendor/idevice"
+
+      - name: Verify pinned idevice FFI
+        run: |
+          set -euxo pipefail
+          test "$(cat Vendor/idevice/COMMIT)" = "$IDEVICE_COMMIT"
+          test -s Vendor/idevice/lib/libidevice_ffi.a
+          test -s Vendor/idevice/include/idevice.h
+
+      - name: Build and verify arm64 target
+        run: |
+          set -euxo pipefail
+          export PATH="/opt/procursus/bin:$PATH"
+          gmake clean || true
+          gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:16.0
+
+          DYLIB=".theos/obj/FilzaApplySandboxExt.dylib"
+          test -s "$DYLIB"
+          test "$(lipo -archs "$DYLIB")" = "arm64"
+
+          # Real embedded SSH: statically linked libssh, inline Preferences UI,
+          # password auth, persistent host key and in-process shell.
+          grep -aFq 'SSH SERVER' "$DYLIB"
+          grep -aFq 'embedded libssh server listening address=' "$DYLIB"
+          grep -aFq 'inline SSH SERVER preferences installed after WebDAV with listener-backed toggle state' "$DYLIB"
+          grep -aFq 'password verifier updated using PBKDF2-HMAC-SHA256' "$DYLIB"
+          grep -aFq 'subsystem rejected because it is not implemented yet:' "$DYLIB"
+          nm "$DYLIB" | grep -Eq '[_ ]ssh_bind_new$'
+          ! otool -L "$DYLIB" | grep -qi 'libssh'
+
+          # Exact pinned upstream ByeTunes metadata/search path. The host repair
+          # only removes obsolete Filza-only preference state.
+          grep -aFq 'Restored upstream provider state once:' "$DYLIB"
+          grep -aFq 'iTunes search failed:' "$DYLIB"
+          grep -aFq 'Deezer search failed:' "$DYLIB"
+          grep -aFq 'Public search page fallback failed' "$DYLIB"
+          ! grep -aFq 'Repaired embedded default provider state: picker=all' "$DYLIB"
+          ! grep -aFq 'Filza embed metadata compatibility sources=' "$DYLIB"
+          ! grep -aFq 'retrying through WebKit network process' "$DYLIB"
+          ! grep -aFq 'WebKit fallback succeeded host=' "$DYLIB"
+          ! grep -aFq 'URLSession DNS failed for ' "$DYLIB"
+
+          # Existing integrations must remain present.
+          grep -aFq 'MondFullHostFactory' "$DYLIB"
+          grep -aFq 'Filza3105HostFactory' "$DYLIB"
+          grep -aFq 'ByeTunesEmbeddedHostFactory' "$DYLIB"
+          grep -aFq 'jailed in-process WebDAV lifecycle hook installed' "$DYLIB"
+          shasum -a 256 "$DYLIB"
+
+      - name: Generate ByeTunes AppIntents metadata
+        run: |
+          set -euxo pipefail
+          bash scripts/generate-appintents-metadata.sh .theos/byetunes-appintents
+
+      - name: Stage ByeTunes runtime resources
+        run: |
+          set -euxo pipefail
+          bash scripts/stage-byetunes-resources.sh .theos/byetunes-resources
+          test -s .theos/byetunes-resources/AppIconImage.png
+          plutil -lint .theos/byetunes-resources/ByeTunes-Info.plist
+          test -s .theos/byetunes-resources/Config.plist
+          plutil -lint .theos/byetunes-resources/Config.plist
+
+      - name: Download base Filza IPA
+        run: |
+          set -euxo pipefail
+          curl -fL --retry 3 --retry-delay 2 "$BASE_IPA_URL" -o .theos/FilzaSlop-base-unsigned.ipa
+          echo "$BASE_IPA_SHA256  .theos/FilzaSlop-base-unsigned.ipa" | shasum -a 256 -c -
+
+      - name: Package installable unsigned IPA
+        run: |
+          set -euxo pipefail
+          STAGE="$(mktemp -d /tmp/filzaslop-ipa.XXXXXX)"
+          trap 'rm -rf "$STAGE"' EXIT
+          unzip -q .theos/FilzaSlop-base-unsigned.ipa -d "$STAGE"
+          APP="$(find "$STAGE/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          test -n "$APP"
+          test "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Info.plist")" = "com.apple.mobile.MobileHouseArrest"
+          EXECUTABLE="$(plutil -extract CFBundleExecutable raw -o - "$APP/Info.plist")"
+          test -s "$APP/$EXECUTABLE"
+
+          mkdir -p "$APP/Frameworks"
+          cp .theos/obj/FilzaApplySandboxExt.dylib "$APP/Frameworks/FilzaApplySandboxExt.dylib"
+          codesign --remove-signature "$APP/Frameworks/FilzaApplySandboxExt.dylib" >/dev/null 2>&1 || true
+
+          cp .theos/byetunes-resources/AppIconImage.png "$APP/AppIconImage.png"
+          cp .theos/byetunes-resources/ByeTunes-Info.plist "$APP/ByeTunes-Info.plist"
+          cp .theos/byetunes-resources/Config.plist "$APP/Config.plist"
+          rm -rf "$APP/Filza3105.bundle"
+          cp -R ThirdParty/3105/Resources/Filza3105.bundle "$APP/Filza3105.bundle"
+          if test -d .theos/byetunes-appintents/Metadata.appintents; then
+            rm -rf "$APP/Metadata.appintents"
+            cp -R .theos/byetunes-appintents/Metadata.appintents "$APP/Metadata.appintents"
+          fi
+
+          plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemIconSymbolName":"square.grid.2x2"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music Library","UIApplicationShortcutItemIconSymbolName":"music.note.list"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Editor","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.patches","UIApplicationShortcutItemTitle":"Patches","UIApplicationShortcutItemIconSymbolName":"shippingbox"}]' "$APP/Info.plist"
+          plutil -replace CFBundleShortVersionString -string "4.11" "$APP/Info.plist"
+          plutil -replace CFBundleVersion -string "${GITHUB_RUN_NUMBER}" "$APP/Info.plist"
+          plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
+          plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
+          plutil -replace NSSupportsLiveActivities -bool YES "$APP/Info.plist"
+          plutil -replace NSSupportsLiveActivitiesFrequentUpdates -bool YES "$APP/Info.plist"
+          plutil -replace NSLocalNetworkUsageDescription -string "FilzaSlop uses your local network when you enable its WebDAV or SSH server." "$APP/Info.plist"
+          plutil -replace NSBonjourServices -json '["_http._tcp","_ssh._tcp"]' "$APP/Info.plist"
+          bash scripts/merge-3105-app-metadata.sh "$APP/Info.plist"
+
+          DYLIB="$APP/Frameworks/FilzaApplySandboxExt.dylib"
+          test -s "$DYLIB"
+          grep -aFq 'embedded libssh server listening address=' "$DYLIB"
+          grep -aFq 'Restored upstream provider state once:' "$DYLIB"
+          ! grep -aFq 'retrying through WebKit network process' "$DYLIB"
+          plutil -extract NSBonjourServices json -o - "$APP/Info.plist" | grep -Fq '_ssh._tcp'
+          plutil -extract NSLocalNetworkUsageDescription raw -o - "$APP/Info.plist" | grep -Fq 'SSH server'
+          test -s "$APP/Filza3105.bundle/UpstreamAppInfo.plist"
+          test -x "$APP/helpers/FilzaWebDAVServer"
+          otool -L "$APP/$EXECUTABLE" | grep -F 'FilzaApplySandboxExt.dylib'
+
+          OUTPUT="$GITHUB_WORKSPACE/.theos/FilzaSlop-main-${GITHUB_SHA::7}-unsigned.ipa"
+          rm -f "$OUTPUT"
+          (cd "$STAGE" && zip -qry "$OUTPUT" Payload)
+          test -s "$OUTPUT"
+          unzip -tq "$OUTPUT"
+          unzip -l "$OUTPUT" | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
+          shasum -a 256 "$OUTPUT" | tee .theos/IPA-SHA256.txt
+
+      - name: Upload installable unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: FilzaSlop-upstream-ByeTunes-SSH-unsigned-arm64
+          path: |
+            .theos/FilzaSlop-main-*-unsigned.ipa
+            .theos/IPA-SHA256.txt
+            .theos/obj/FilzaApplySandboxExt.dylib
+            .theos/byetunes-resources/**
+            .theos/byetunes-appintents/Metadata.appintents/**
+            ThirdParty/3105/Resources/Filza3105.bundle/UpstreamAppInfo.plist
+            ThirdParty/mond/UPSTREAM.md
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14
