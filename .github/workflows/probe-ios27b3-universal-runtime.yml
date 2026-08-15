@@ -1,0 +1,40 @@
+name: Probe iOS 27 beta 3 universal simulator runtime
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/probe-ios27b3-universal-runtime.yml'
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - name: Probe exact beta 3 universal runtime
+        run: |
+          set -euxo pipefail
+          xcodebuild -version
+          xcodebuild -downloadPlatform iOS \
+            -buildVersion 24A5380h \
+            -architectureVariant universal \
+            2>&1 | tee universal-runtime.log
+          xcrun simctl list -j runtimes > runtimes.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('runtimes.json'))
+          matches=[r for r in data['runtimes'] if r.get('buildversion')=='24A5380h' and r.get('isAvailable', True)]
+          if len(matches)!=1:
+              raise SystemExit(f'exact beta 3 runtime missing after download: {matches}')
+          print(matches[0])
+          PY
+      - name: Upload probe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios27b3-universal-runtime-probe
+          path: |
+            universal-runtime.log
+            runtimes.json
+          if-no-files-found: warn
