@@ -8,6 +8,10 @@ permissions:
   actions: read
   contents: write
 
+concurrency:
+  group: publish-green-filza-27
+  cancel-in-progress: true
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -84,11 +88,11 @@ jobs:
           test -s "$SOURCE_IPA"
 
           mkdir -p release
-          cp "$SOURCE_IPA" "release/Filza 27.ipa"
+          cp "$SOURCE_IPA" "release/Filza.27.ipa"
 
-          unzip -tq "release/Filza 27.ipa"
-          unzip -l "release/Filza 27.ipa" | grep -Eq 'Payload/[^/]+\.app/'
-          shasum -a 256 "release/Filza 27.ipa" | tee release/Filza-27-SHA256.txt
+          unzip -tq "release/Filza.27.ipa"
+          unzip -l "release/Filza.27.ipa" | grep -Eq 'Payload/[^/]+\.app/'
+          shasum -a 256 "release/Filza.27.ipa" | tee release/Filza-27-SHA256.txt
 
       - name: Publish GitHub Release
         env:
@@ -101,16 +105,17 @@ jobs:
           set -euxo pipefail
           TAG="filza-27-${VERIFIED_RUN_NUMBER}"
           NOTES="Verified green Filza 27 IPA from workflow run ${VERIFIED_RUN_ID} at commit ${VERIFIED_SHA}."
+          IPA_ASSET="release/Filza.27.ipa#Filza 27.ipa"
 
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" \
-              "release/Filza 27.ipa" \
+              "$IPA_ASSET" \
               "release/Filza-27-SHA256.txt" \
               --clobber \
               --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$TAG" \
-              "release/Filza 27.ipa" \
+              "$IPA_ASSET" \
               "release/Filza-27-SHA256.txt" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$VERIFIED_SHA" \
