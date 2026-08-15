@@ -225,7 +225,7 @@ static void FilzaInstallWebDAVToggleStateFix(void)
 
     FilzaWebDAVToggleStateInstalled = YES;
     FilzaDiagnosticsAppend(@"WebDAV",
-        @"toggle-state fix installed: settled listener redraw is enabled");
+        @"toggle-state fix installed: listener getter is observation-only and OFF transitions are explicit");
 }
 
 __attribute__((constructor)) static void FilzaWebDAVToggleStateInit(void)
