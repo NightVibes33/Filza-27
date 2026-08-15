@@ -46,6 +46,8 @@ jobs:
           test -f scripts/patch-byetunes-metadata-parity-post.sh
           test -f scripts/patch-byetunes-background-provider-parity.sh
           test -f scripts/patch-byetunes-download-provider-parity.sh
+          test -f scripts/stage-byetunes-youtubekit.sh
+          test -f scripts/patch-byetunes-youtubekit-primary.sh
           grep -Fq 'case youtube' ByeTunesMetadataCompat.swift
           grep -Fq 'defaultSources' ByeTunesMetadataCompat.swift
           grep -Fq 'All Sources' scripts/restore-byetunes-v24-metadata-compat.sh
@@ -53,6 +55,8 @@ jobs:
           grep -Fq 'MetadataProviderSettings' ByeTunesEmbeddedHost.swift
           grep -Fq 'case "youtube"' ByeTunesEmbeddedHost.swift
           grep -Fq 'case "all"' ByeTunesEmbeddedHost.swift
+          grep -Fq '1a90f9e0f2b1a1787b208809ad2373f5c52175c8' scripts/stage-byetunes-youtubekit.sh
+          grep -Fq 'let youtube = YouTube(videoID: videoID)' scripts/patch-byetunes-youtubekit-primary.sh
           ! grep -Fq 'filter-out ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift' FilzaSSHMetadata.mk
           grep -Fq 'include FilzaSSHMetadata.mk' Makefile
           grep -Fq 'include FilzaByeTunesNetwork.mk' Makefile
@@ -156,6 +160,7 @@ jobs:
           grep -aFq 'Reconciled legacy embedded provider state once:' "$DYLIB"
           grep -aFq 'All Sources' "$DYLIB"
           grep -aFq 'YouTube' "$DYLIB"
+          grep -aFq '[YouTubeProvider] YouTubeKit metadata matched videoID=' "$DYLIB"
           grep -aFq '[MusicView] metadata sources=' "$DYLIB"
           grep -aFq 'iTunes search failed:' "$DYLIB"
           grep -aFq 'Deezer search failed:' "$DYLIB"
@@ -164,6 +169,7 @@ jobs:
           ! grep -aFq 'URLSession DNS failed for ' "$DYLIB"
 
           grep -aFq 'MondFullHostFactory' "$DYLIB"
+          grep -aFq 'Generate Token loaded captured exploit token' "$DYLIB"
           grep -aFq 'Filza3105HostFactory' "$DYLIB"
           grep -aFq 'ByeTunesEmbeddedHostFactory' "$DYLIB"
           grep -aFq 'jailed in-process WebDAV lifecycle hook installed' "$DYLIB"
@@ -182,6 +188,9 @@ jobs:
           plutil -lint .theos/byetunes-resources/ByeTunes-Info.plist
           test -s .theos/byetunes-resources/Config.plist
           plutil -lint .theos/byetunes-resources/Config.plist
+          test -s .theos/byetunes-resources/meriyah.umd.js
+          test -s .theos/byetunes-resources/astring.umd.js
+          test -s .theos/byetunes-resources/yt_ejs_helper.js
 
       - name: Download base Filza IPA
         run: |
@@ -208,6 +217,9 @@ jobs:
           cp .theos/byetunes-resources/AppIconImage.png "$APP/AppIconImage.png"
           cp .theos/byetunes-resources/ByeTunes-Info.plist "$APP/ByeTunes-Info.plist"
           cp .theos/byetunes-resources/Config.plist "$APP/Config.plist"
+          cp .theos/byetunes-resources/meriyah.umd.js "$APP/meriyah.umd.js"
+          cp .theos/byetunes-resources/astring.umd.js "$APP/astring.umd.js"
+          cp .theos/byetunes-resources/yt_ejs_helper.js "$APP/yt_ejs_helper.js"
           rm -rf "$APP/Filza3105.bundle"
           cp -R ThirdParty/3105/Resources/Filza3105.bundle "$APP/Filza3105.bundle"
           if test -d .theos/byetunes-appintents/Metadata.appintents; then
@@ -232,6 +244,9 @@ jobs:
           grep -aFq 'Reconciled legacy embedded provider state once:' "$DYLIB"
           grep -aFq 'All Sources' "$DYLIB"
           grep -aFq 'YouTube' "$DYLIB"
+          test -s "$APP/meriyah.umd.js"
+          test -s "$APP/astring.umd.js"
+          test -s "$APP/yt_ejs_helper.js"
           ! grep -aFq 'retrying through WebKit network process' "$DYLIB"
           BONJOUR_JSON="$(plutil -extract NSBonjourServices json -o - "$APP/Info.plist")"
           grep -Fq '_ssh._tcp' <<<"$BONJOUR_JSON"
@@ -247,6 +262,9 @@ jobs:
           test -s "$OUTPUT"
           unzip -tq "$OUTPUT"
           unzip -l "$OUTPUT" | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
+          unzip -l "$OUTPUT" | grep -F 'meriyah.umd.js'
+          unzip -l "$OUTPUT" | grep -F 'astring.umd.js'
+          unzip -l "$OUTPUT" | grep -F 'yt_ejs_helper.js'
           shasum -a 256 "$OUTPUT" | tee .theos/IPA-SHA256.txt
 
       - name: Upload installable unsigned IPA
