@@ -43,8 +43,8 @@ jobs:
           set -euxo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          path = Path('ByeTunes/MusicManager.xcodeproj/project.pbxproj')
-          text = path.read_text()
+          project = Path('ByeTunes/MusicManager.xcodeproj/project.pbxproj')
+          text = project.read_text()
 
           old_host = '$(BUILT_PRODUCTS_DIR)/MusicManager.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MusicManager'
           new_host = '$(BUILT_PRODUCTS_DIR)/ByeTunes.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ByeTunes'
@@ -58,12 +58,25 @@ jobs:
           if bridge_count != 2:
               raise SystemExit(f'expected 2 stale bridging-header entries, found {bridge_count}')
           text = text.replace(stale_bridge, '')
-          path.write_text(text)
+          project.write_text(text)
+
+          for filename in [
+              'ByeTunes/MusicManagerTests/MusicManagerTests.swift',
+              'scripts/run-ios27-simulator-regression.sh',
+          ]:
+              path = Path(filename)
+              source = path.read_text()
+              count = source.count('@testable import MusicManager')
+              if count != 1:
+                  raise SystemExit(f'expected exactly one stale test-module import in {filename}, found {count}')
+              path.write_text(source.replace('@testable import MusicManager', '@testable import ByeTunes'))
           PY
           grep -Fq 'TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ByeTunes.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ByeTunes";' ByeTunes/MusicManager.xcodeproj/project.pbxproj
           ! grep -Fq 'TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MusicManager.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MusicManager";' ByeTunes/MusicManager.xcodeproj/project.pbxproj
           ! grep -Fq 'SWIFT_OBJC_BRIDGING_HEADER = "MusicManager/Bridging-Header.h";' ByeTunes/MusicManager.xcodeproj/project.pbxproj
           test ! -e ByeTunes/MusicManager/Bridging-Header.h
+          grep -Fq '@testable import ByeTunes' ByeTunes/MusicManagerTests/MusicManagerTests.swift
+          grep -Fq '@testable import ByeTunes' scripts/run-ios27-simulator-regression.sh
 
       - name: Run real component simulator regression
         run: bash scripts/run-ios27-simulator-regression.sh
