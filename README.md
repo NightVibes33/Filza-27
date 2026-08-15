@@ -2,7 +2,11 @@
 
 A jailed, sideloadable Filza fork for modern iOS with extra container access, app management, music tools, MobileGestalt editing, WebDAV, and SSH built into one IPA.
 
-[![Build IPA](https://github.com/NightVibes33/Filza-27/actions/workflows/verify-upstream-byetunes-ssh.yml/badge.svg?branch=main)](https://github.com/NightVibes33/Filza-27/actions/workflows/verify-upstream-byetunes-ssh.yml)
+[![Verified IPA](https://github.com/NightVibes33/Filza-27/actions/workflows/verify-upstream-byetunes-ssh.yml/badge.svg?branch=main)](https://github.com/NightVibes33/Filza-27/actions/workflows/verify-upstream-byetunes-ssh.yml)
+
+[**Download the latest green `Filza 27.ipa`**](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza%202027.ipa)
+
+**Release rule:** `Filza 27.ipa` is published only after the full IPA workflow finishes green on `main`.
 
 > **This is not a full jailbreak.** FilzaSlop only exposes files and containers the running app can actually access. It does not claim unrestricted `/`, kernel read/write, or a writable system volume.
 
@@ -10,6 +14,7 @@ A jailed, sideloadable Filza fork for modern iOS with extra container access, ap
 
 | Feature | Status |
 | --- | --- |
+| Latest Release IPA | ✅ Published only from a green verified build |
 | Filza file browser | ✅ Included |
 | Apps Manager / app containers | ✅ Integrated |
 | Portable `.3105` patches | ✅ Integrated |
@@ -31,16 +36,10 @@ Exact access can vary by device and iOS build, so the app verifies real file or 
 
 ## Download and install
 
-1. Open **Actions** in this repository.
-2. Open **Verify ByeTunes All Sources + YouTube + SSH IPA**.
-3. Choose the newest green run on `main`.
-4. Download the artifact named:
+1. Download **[`Filza 27.ipa`](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza%202027.ipa)** from the latest GitHub Release.
+2. Sideload it with your preferred signing method.
 
-   ```text
-   FilzaSlop-ByeTunes-All-YouTube-SSH-unsigned-arm64
-   ```
-
-5. Unzip the artifact and sideload the included `.ipa` with your preferred signing method.
+The Release asset is created automatically from the newest successful **Verify ByeTunes All Sources + YouTube + SSH IPA** run on `main`, so a failed build is never promoted as the latest IPA.
 
 ### Important signing note
 
@@ -221,7 +220,7 @@ These are the first files to check when a server, Music Library, or access metho
 
 ## Building
 
-Normal users do not need to build the project manually; use the Actions artifact above.
+Normal users do not need to build the project manually; use the verified Release IPA above.
 
 <details>
 <summary><strong>GitHub Actions build details</strong></summary>
@@ -234,11 +233,13 @@ The current installable IPA workflow is:
 
 It verifies the pinned dependencies, builds the arm64 runtime, generates ByeTunes AppIntents metadata, stages the required Music Library and YouTubeKit resources, injects everything into the pinned unsigned Filza base IPA, verifies the final package, and uploads the artifact.
 
-The workflow currently builds with Xcode 26.2 and produces:
+After that workflow finishes successfully, `.github/workflows/publish-green-ipa-release.yml` republishes that exact verified artifact to GitHub Releases as:
 
 ```text
-FilzaSlop-ByeTunes-All-YouTube-SSH-unsigned-arm64
+Filza 27.ipa
 ```
+
+The workflow currently builds with Xcode 26.2.
 
 </details>
 
