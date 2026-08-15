@@ -25,10 +25,9 @@ concurrency:
 jobs:
   simulator:
     runs-on: xcode-27
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
-      EXPECTED_XCODE_BUILD: 27A5218g
-      EXPECTED_RUNTIME_NAME: iOS 27.0
+      IOS27B3_BUILD: 24A5380h
       EXPECTED_DEVICE_NAME: iPhone 16
       BYETUNES_COMMIT: 8a4be32f188f30b98f15b00566c5ff3edc1c03b1
       MOND_COMMIT: 4a37bfca5cb4abb2c99891972365d872d700525e
@@ -40,33 +39,16 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Prove exact Xcode 27 beta 3 image
+      - name: Record host and installed simulator state
         run: |
           set -euxo pipefail
           mkdir -p .sim/artifacts .sim/results .sim/logs .sim/derived
-          xcodebuild -version | tee .sim/artifacts/xcode-version.txt
-          ACTUAL_BUILD="$(xcodebuild -version | awk '/Build version/{print $3}')"
-          test "$ACTUAL_BUILD" = "$EXPECTED_XCODE_BUILD"
           test "$(uname -m)" = "arm64"
+          xcodebuild -version | tee .sim/artifacts/xcode-version.txt
           xcrun --sdk iphonesimulator --show-sdk-version | tee .sim/artifacts/iphonesimulator-sdk.txt
-          test "$(xcrun --sdk iphonesimulator --show-sdk-version)" = "27.0"
-          xcrun simctl list -j runtimes > .sim/artifacts/runtimes.json
+          xcrun simctl list -j runtimes > .sim/artifacts/runtimes-before.json
           xcrun simctl list -j devicetypes > .sim/artifacts/device-types.json
-
-      - name: Create exact iPhone 16 on iOS 27 beta 3 runtime
-        id: sim
-        run: |
-          set -euxo pipefail
-          RUNTIME_ID="$(python3 - <<'PY'
-          import json
-          d=json.load(open('.sim/artifacts/runtimes.json'))
-          matches=[r for r in d['runtimes'] if r.get('name')=='iOS 27.0' and r.get('isAvailable', True)]
-          if len(matches)!=1:
-              raise SystemExit(f'expected exactly one available iOS 27.0 runtime, got {matches}')
-          print(matches[0]['identifier'])
-          PY
-          )"
-          DEVICE_TYPE_ID="$(python3 - <<'PY'
+          python3 - <<'PY' | tee .sim/artifacts/iphone16-device-type.txt
           import json
           d=json.load(open('.sim/artifacts/device-types.json'))
           matches=[r for r in d['devicetypes'] if r.get('name')=='iPhone 16']
@@ -74,8 +56,45 @@ jobs:
               raise SystemExit(f'expected exactly one iPhone 16 device type, got {matches}')
           print(matches[0]['identifier'])
           PY
+
+      - name: Download and install exact iOS 27 beta 3 simulator runtime
+        run: |
+          set -euxo pipefail
+          xcodebuild -downloadPlatform iOS \
+            -buildVersion "$IOS27B3_BUILD" \
+            -architectureVariant arm64 \
+            2>&1 | tee .sim/logs/download-ios27b3-runtime.log
+          xcrun simctl list -j runtimes > .sim/artifacts/runtimes-after.json
+          python3 - "$IOS27B3_BUILD" <<'PY' | tee .sim/artifacts/ios27b3-runtime.txt
+          import json, sys
+          expected=sys.argv[1]
+          d=json.load(open('.sim/artifacts/runtimes-after.json'))
+          matches=[r for r in d['runtimes'] if r.get('buildversion')==expected and r.get('isAvailable', True)]
+          if len(matches)!=1:
+              raise SystemExit(f'expected exactly one available simulator runtime build {expected}, got {matches}')
+          r=matches[0]
+          print(f"name={r.get('name')}")
+          print(f"version={r.get('version')}")
+          print(f"buildversion={r.get('buildversion')}")
+          print(f"identifier={r.get('identifier')}")
+          PY
+
+      - name: Create exact iPhone 16 on iOS 27 beta 3 runtime
+        id: sim
+        run: |
+          set -euxo pipefail
+          RUNTIME_ID="$(python3 - "$IOS27B3_BUILD" <<'PY'
+          import json, sys
+          expected=sys.argv[1]
+          d=json.load(open('.sim/artifacts/runtimes-after.json'))
+          matches=[r for r in d['runtimes'] if r.get('buildversion')==expected and r.get('isAvailable', True)]
+          if len(matches)!=1:
+              raise SystemExit(f'expected exactly one runtime build {expected}, got {matches}')
+          print(matches[0]['identifier'])
+          PY
           )"
-          printf 'runtime=%s\ndevice_type=%s\n' "$RUNTIME_ID" "$DEVICE_TYPE_ID" | tee .sim/artifacts/exact-target.txt
+          DEVICE_TYPE_ID="$(tail -1 .sim/artifacts/iphone16-device-type.txt)"
+          printf 'runtime_build=%s\nruntime=%s\ndevice_type=%s\n' "$IOS27B3_BUILD" "$RUNTIME_ID" "$DEVICE_TYPE_ID" | tee .sim/artifacts/exact-target.txt
           UDID="$(xcrun simctl create 'Filza27-iPhone16-iOS27b3' "$DEVICE_TYPE_ID" "$RUNTIME_ID")"
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
           echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"
@@ -122,32 +141,17 @@ jobs:
                   let defaults = UserDefaults.standard
                   defaults.removeObject(forKey: MetadataProviderSettings.sourcesKey)
                   defaults.set("all", forKey: MetadataProviderSettings.legacySourceKey)
-                  XCTAssertEqual(
-                      MetadataProviderSettings.selectedSources().map(\.rawValue),
-                      ["local", "youtube", "itunes", "deezer", "apple"]
-                  )
+                  XCTAssertEqual(MetadataProviderSettings.selectedSources().map(\.rawValue), ["local", "youtube", "itunes", "deezer", "apple"])
 
                   defaults.removeObject(forKey: MetadataProviderSettings.sourcesKey)
                   defaults.set("youtube", forKey: MetadataProviderSettings.legacySourceKey)
-                  XCTAssertEqual(
-                      MetadataProviderSettings.selectedSources().map(\.rawValue),
-                      ["local", "youtube"]
-                  )
+                  XCTAssertEqual(MetadataProviderSettings.selectedSources().map(\.rawValue), ["local", "youtube"])
               }
 
               func testYouTubeURLExtractionAndNormalization() throws {
-                  XCTAssertEqual(
-                      MetadataProvider.extractYouTubeVideoID(from: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"),
-                      "dQw4w9WgXcQ"
-                  )
-                  XCTAssertEqual(
-                      MetadataProvider.extractYouTubeVideoID(from: "https://youtu.be/dQw4w9WgXcQ"),
-                      "dQw4w9WgXcQ"
-                  )
-                  let normalized = MetadataProvider.normalizeYouTubeTitle(
-                      "Rick Astley - Never Gonna Give You Up (Official Video)",
-                      channel: "Rick Astley"
-                  )
+                  XCTAssertEqual(MetadataProvider.extractYouTubeVideoID(from: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"), "dQw4w9WgXcQ")
+                  XCTAssertEqual(MetadataProvider.extractYouTubeVideoID(from: "https://youtu.be/dQw4w9WgXcQ"), "dQw4w9WgXcQ")
+                  let normalized = MetadataProvider.normalizeYouTubeTitle("Rick Astley - Never Gonna Give You Up (Official Video)", channel: "Rick Astley")
                   XCTAssertEqual(normalized.artist, "Rick Astley")
                   XCTAssertEqual(normalized.title, "Never Gonna Give You Up")
                   XCTAssertEqual(normalized.source, .youtube)
@@ -199,7 +203,6 @@ jobs:
         run: |
           set -euxo pipefail
           xcodebuild -list -project ByeTunes/MusicManager.xcodeproj | tee .sim/artifacts/byetunes-project-list.txt
-          set -o pipefail
           xcodebuild test \
             -project ByeTunes/MusicManager.xcodeproj \
             -scheme MusicManager \
@@ -233,7 +236,6 @@ jobs:
           git -C .sim/mond checkout --detach "$MOND_COMMIT"
           test "$(git -C .sim/mond rev-parse HEAD)" = "$MOND_COMMIT"
           xcodebuild -list -project .sim/mond/mond.xcodeproj | tee .sim/artifacts/mond-project-list.txt
-          set -o pipefail
           xcodebuild build \
             -project .sim/mond/mond.xcodeproj \
             -scheme mond \
@@ -266,7 +268,6 @@ jobs:
           git -C .sim/3105 checkout --detach "$THREEONE_COMMIT"
           test "$(git -C .sim/3105 rev-parse HEAD)" = "$THREEONE_COMMIT"
           xcodebuild -list -project .sim/3105/ThreeOneOSFive.xcodeproj | tee .sim/artifacts/3105-project-list.txt
-          set -o pipefail
           xcodebuild build \
             -project .sim/3105/ThreeOneOSFive.xcodeproj \
             -scheme ThreeOneOSFive \
@@ -295,11 +296,12 @@ jobs:
       - name: Record simulator coverage boundary
         if: always()
         run: |
-          cat > .sim/artifacts/COVERAGE.md <<'EOF'
+          cat > .sim/artifacts/COVERAGE.md <<EOF
           # iPhone 16 / iOS 27 beta 3 simulator coverage
 
-          This lane uses the GitHub `xcode-27` image and fails unless Xcode build 27A5218g is active.
-          It creates an exact `iPhone 16` CoreSimulator device on the installed iOS 27.0 runtime.
+          Target simulator runtime build: ${IOS27B3_BUILD}
+          GitHub's xcode-27 runner is rolling; its compiler Xcode build is recorded in xcode-version.txt rather than treated as the OS-under-test identity.
+          The simulator is created only from an installed runtime whose buildversion exactly equals ${IOS27B3_BUILD}, with device type exactly iPhone 16.
 
           Runtime-covered here:
           - patched ByeTunes application compilation
