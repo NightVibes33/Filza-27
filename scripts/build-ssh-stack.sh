@@ -28,6 +28,31 @@ echo "Building Mbed TLS 3.6.7 ($MBEDTLS_COMMIT) for arm64 iOS..."
 git clone --filter=blob:none https://github.com/Mbed-TLS/mbedtls.git "$WORK/mbedtls"
 git -C "$WORK/mbedtls" checkout --detach "$MBEDTLS_COMMIT"
 git -C "$WORK/mbedtls" submodule update --init --recursive
+
+# libssh 0.12.x uses its Mbed TLS threading adapter whenever the Mbed TLS
+# backend is selected. Mbed TLS 3.6.7 ships its threading layer disabled by
+# default, so explicitly enable the platform pthread implementation. iOS has
+# pthreads, and this keeps libssh's worker/session use on supported primitives
+# instead of patching libssh's source or suppressing its compile-time guard.
+python3 - "$WORK/mbedtls/include/mbedtls/mbedtls_config.h" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+for macro in ("MBEDTLS_THREADING_C", "MBEDTLS_THREADING_PTHREAD"):
+    disabled = f"//#define {macro}"
+    enabled = f"#define {macro}"
+    if enabled in text and disabled not in text:
+        continue
+    if text.count(disabled) != 1:
+        raise SystemExit(f"expected exactly one disabled {macro} definition")
+    text = text.replace(disabled, enabled, 1)
+path.write_text(text)
+PY
+grep -Eq '^#define MBEDTLS_THREADING_C([[:space:]]|$)' "$WORK/mbedtls/include/mbedtls/mbedtls_config.h"
+grep -Eq '^#define MBEDTLS_THREADING_PTHREAD([[:space:]]|$)' "$WORK/mbedtls/include/mbedtls/mbedtls_config.h"
+
 cmake -S "$WORK/mbedtls" -B "$WORK/mbedtls-build" \
   "${common_cmake[@]}" \
   -DENABLE_PROGRAMS=OFF \
