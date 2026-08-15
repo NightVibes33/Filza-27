@@ -44,10 +44,25 @@ test -s "$PREFIX/lib/libmbedx509.a"
 echo "Building libssh 0.12.2 ($LIBSSH_COMMIT) with server support for arm64 iOS..."
 git clone --filter=blob:none https://gitlab.com/libssh/libssh-mirror.git "$WORK/libssh"
 git -C "$WORK/libssh" checkout --detach "$LIBSSH_COMMIT"
+
+# libssh's FindMbedTLS module uses find_path/find_library. During an iOS
+# cross-compile CMake intentionally restricts normal library discovery to the
+# SDK root, so MBEDTLS_ROOT_DIR alone is insufficient. Pass the exact already
+# cross-compiled include/archive paths into the cache to prevent host-library
+# discovery and make the backend selection deterministic.
+MBEDTLS_INCLUDE="$PREFIX/include"
+MBEDTLS_SSL="$PREFIX/lib/libmbedtls.a"
+MBEDTLS_CRYPTO="$PREFIX/lib/libmbedcrypto.a"
+MBEDTLS_X509="$PREFIX/lib/libmbedx509.a"
+
 cmake -S "$WORK/libssh" -B "$WORK/libssh-build" \
   "${common_cmake[@]}" \
   -DCMAKE_PREFIX_PATH="$PREFIX" \
   -DMBEDTLS_ROOT_DIR="$PREFIX" \
+  -DMBEDTLS_INCLUDE_DIR="$MBEDTLS_INCLUDE" \
+  -DMBEDTLS_SSL_LIBRARY="$MBEDTLS_SSL" \
+  -DMBEDTLS_CRYPTO_LIBRARY="$MBEDTLS_CRYPTO" \
+  -DMBEDTLS_X509_LIBRARY="$MBEDTLS_X509" \
   -DWITH_MBEDTLS=ON \
   -DWITH_GCRYPT=OFF \
   -DWITH_GSSAPI=OFF \
