@@ -39,8 +39,8 @@ source=MusicManager/YouTubeKit
 EOF
 
 SWIFT_COUNT="$(find "$GEN" -type f -name '*.swift' | wc -l | tr -d ' ')"
-test "$SWIFT_COUNT" -eq 27 || {
-  echo "Pinned YouTubeKit source count changed: expected 27, got $SWIFT_COUNT" >&2
+test "$SWIFT_COUNT" -eq 28 || {
+  echo "Pinned YouTubeKit source count changed: expected 28, got $SWIFT_COUNT" >&2
   exit 1
 }
 
