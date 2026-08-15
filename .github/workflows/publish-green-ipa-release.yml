@@ -88,11 +88,11 @@ jobs:
           test -s "$SOURCE_IPA"
 
           mkdir -p release
-          cp "$SOURCE_IPA" "release/Filza.27.ipa"
+          cp "$SOURCE_IPA" "release/Filza 27.ipa"
 
-          unzip -tq "release/Filza.27.ipa"
-          unzip -l "release/Filza.27.ipa" | grep -Eq 'Payload/[^/]+\.app/'
-          shasum -a 256 "release/Filza.27.ipa" | tee release/Filza-27-SHA256.txt
+          unzip -tq "release/Filza 27.ipa"
+          unzip -l "release/Filza 27.ipa" | grep -Eq 'Payload/[^/]+\.app/'
+          shasum -a 256 "release/Filza 27.ipa" | tee release/Filza-27-SHA256.txt
 
       - name: Publish GitHub Release
         env:
@@ -106,32 +106,54 @@ jobs:
           TAG="filza-27-${VERIFIED_RUN_NUMBER}"
           NOTES="Verified green Filza 27 IPA from workflow run ${VERIFIED_RUN_ID} at commit ${VERIFIED_SHA}."
 
+          # Keep the release hidden until GitHub proves it preserved the literal-space IPA name.
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" \
-              "release/Filza.27.ipa" \
-              "release/Filza-27-SHA256.txt" \
-              --clobber \
-              --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --draft \
+              --target "$VERIFIED_SHA" \
+              --title "Filza 27" \
+              --notes "$NOTES"
           else
             gh release create "$TAG" \
-              "release/Filza.27.ipa" \
               "release/Filza-27-SHA256.txt" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$VERIFIED_SHA" \
               --title "Filza 27" \
               --notes "$NOTES" \
-              --latest
+              --draft
           fi
 
-          ASSET_ID="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
-            --jq '.assets[] | select(.name == "Filza.27.ipa") | .id' | head -n 1)"
-          test -n "$ASSET_ID"
+          RELEASE_JSON="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
+          RELEASE_ID="$(jq -r '.id' <<<"$RELEASE_JSON")"
+          test -n "$RELEASE_ID"
 
-          gh api --method PATCH \
-            "repos/$GITHUB_REPOSITORY/releases/assets/$ASSET_ID" \
-            -f label='Filza 27.ipa' \
+          # Remove any previous IPA asset on a retried run so only the exact-name file can survive.
+          jq -r '.assets[] | select(.name == "Filza.27.ipa" or .name == "Filza 27.ipa") | .id' <<<"$RELEASE_JSON" | while read -r ASSET_ID; do
+            [[ -z "$ASSET_ID" ]] || gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$ASSET_ID"
+          done
+
+          # Upload with the exact filename encoded only for the URL. GitHub must return the literal name.
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @"release/Filza 27.ipa" \
+            "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?name=Filza%2027.ipa&label=Filza%2027.ipa" \
             > release/asset.json
 
-          test "$(jq -r '.name' release/asset.json)" = "Filza.27.ipa"
+          test "$(jq -r '.state' release/asset.json)" = "uploaded"
+          test "$(jq -r '.name' release/asset.json)" = "Filza 27.ipa"
           test "$(jq -r '.label' release/asset.json)" = "Filza 27.ipa"
-          echo "Release asset display label verified: Filza 27.ipa"
+
+          gh release edit "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false \
+            --latest
+
+          FINAL_JSON="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
+          test "$(jq -r '.draft' <<<"$FINAL_JSON")" = "false"
+          test "$(jq -r '.assets[] | select(.name == "Filza 27.ipa") | .name' <<<"$FINAL_JSON")" = "Filza 27.ipa"
+          echo "Literal Release asset filename verified: Filza 27.ipa"
