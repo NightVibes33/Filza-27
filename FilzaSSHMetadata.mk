@@ -1,6 +1,5 @@
-# Embedded SSH integration only.
-# ByeTunes metadata/search behavior is intentionally left on the exact pinned
-# upstream v2.4 implementation instead of being rewritten from this fragment.
+# Embedded SSH integration plus post-stage Mond token UI verification.
+# ByeTunes metadata/search behavior is not rewritten from this fragment.
 
 SSH_VENDOR ?= $(PWD)/Vendor/ssh
 SSH_STATIC := $(SSH_VENDOR)/lib/libssh.a
@@ -13,6 +12,11 @@ FilzaApplySandboxExt_CFLAGS += -I$(SSH_VENDOR)/include -DLIBSSH_STATIC=1
 FilzaApplySandboxExt_LDFLAGS += $(SSH_STATIC) $(SSH_MBEDTLS) $(SSH_MBEDX509) $(SSH_MBEDCRYPTO)
 
 before-FilzaApplySandboxExt-all::
+	@bash scripts/patch-mond-token-button.sh
+	@grep -Fq 'Generate Token loaded captured exploit token' ThirdParty/mond-current/Generated/Mond/views_App_SettingsView.swift
+	@grep -Fq 'Run Exploit populated captured token' ThirdParty/mond-current/Generated/Mond/views_App_SettingsView.swift
+	@grep -Fq 'issue("com.apple.app-sandbox.read-write", path, 0)' ThirdParty/mond-current/Generated/Mond/helpers_sbx.swift
+	@! grep -Fq 'issue("com.apple.app-sandbox.read-write", path, 0, 0)' ThirdParty/mond-current/Generated/Mond/helpers_sbx.swift
 	@test -f "FilzaSSHServer.h" || (echo "Missing FilzaSSHServer.h" >&2; exit 1)
 	@test -f "FilzaSSHServer.m" || (echo "Missing FilzaSSHServer.m" >&2; exit 1)
 	@test -f "FilzaSSHPreferences.m" || (echo "Missing FilzaSSHPreferences.m" >&2; exit 1)
