@@ -3,6 +3,7 @@
 Build/
 packages/
 Vendor/idevice/
+Vendor/ssh/
 MCMIdentifiers.plist
 *.deb
 *.ipa
