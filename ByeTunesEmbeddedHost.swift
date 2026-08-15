@@ -1,38 +1,34 @@
 import SwiftUI
 import UIKit
 
-/// One-time repair for preference state written by older Filza compatibility
-/// builds. Those builds could leave metadataSourcesJSON inconsistent with the
-/// visible metadataSource picker. Reconcile that known contamination once,
-/// then leave the original ByeTunes state machine completely in control.
+/// One-time cleanup for metadata preference state written by older Filza
+/// compatibility builds. Upstream ByeTunes v2.4 recognizes exactly four
+/// metadataSource values: local, itunes, deezer, and apple. Preserve any valid
+/// upstream choice, discard the retired multi-source JSON key, and normalize
+/// only obsolete compatibility values back to the upstream default (`local`).
 private enum ByeTunesEmbeddedStateRepair {
-    private static let completedKey = "filzaByeTunesMetadataParityStateRepairV1"
+    private static let completedKey = "filzaByeTunesUpstreamMetadataStateRepairV2"
+    private static let metadataSourceKey = "metadataSource"
+    private static let retiredSourcesKey = "metadataSourcesJSON"
+    private static let validSources: Set<String> = ["local", "itunes", "deezer", "apple"]
 
     static func runIfNeeded() {
         let defaults = UserDefaults.standard
         guard !defaults.bool(forKey: completedKey) else { return }
 
-        let selected = (defaults.string(forKey: MetadataProviderSettings.legacySourceKey) ?? "local").lowercased()
-        let repaired: [MetadataProviderID]
-        switch selected {
-        case "youtube":
-            repaired = [.local, .youtube]
-        case "itunes":
-            repaired = [.itunes]
-        case "deezer":
-            repaired = [.deezer]
-        case "apple":
-            repaired = [.apple]
-        case "all":
-            repaired = MetadataProviderSettings.defaultSources
-        default:
-            repaired = [.local]
+        let raw = (defaults.string(forKey: metadataSourceKey) ?? "local").lowercased()
+        let selected = validSources.contains(raw) ? raw : "local"
+        if selected != raw || defaults.string(forKey: metadataSourceKey) == nil {
+            defaults.set(selected, forKey: metadataSourceKey)
         }
 
-        MetadataProviderSettings.saveSources(repaired)
+        // This key never existed in tagged upstream ByeTunes releases. Remove
+        // it so no previous Filza compatibility build can influence selection.
+        defaults.removeObject(forKey: retiredSourcesKey)
         defaults.set(true, forKey: completedKey)
+
         Logger.shared.log(
-            "[MetadataParity] Reconciled legacy embedded provider state once: picker=\(selected), sources=\(repaired.map(\.rawValue).joined(separator: ","))"
+            "[MetadataParity] Restored upstream provider state once: picker=\(selected), retiredMultiSourceState=removed"
         )
     }
 }
