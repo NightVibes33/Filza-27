@@ -1,0 +1,342 @@
+name: iPhone 16 iOS 27 beta 3 simulator regression
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'ByeTunes/**'
+      - 'ByeTunesMetadataCompat.swift'
+      - 'ByeTunesDownloadParityCompat.swift'
+      - 'ByeTunesEmbeddedHost.swift'
+      - 'Filza3105Host.swift'
+      - 'FilzaMondCurrentHost.swift'
+      - 'MondFullRootHost.swift'
+      - 'scripts/patch-byetunes-*.sh'
+      - 'scripts/restore-byetunes-v24-metadata-compat.sh'
+      - 'scripts/stage-mond-current.sh'
+      - 'scripts/stage-3105-v1.sh'
+      - '.github/workflows/ios27b3-iphone16-simulator.yml'
+
+concurrency:
+  group: ios27b3-iphone16-simulator-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  simulator:
+    runs-on: xcode-27
+    timeout-minutes: 60
+    env:
+      EXPECTED_XCODE_BUILD: 27A5218g
+      EXPECTED_RUNTIME_NAME: iOS 27.0
+      EXPECTED_DEVICE_NAME: iPhone 16
+      BYETUNES_COMMIT: 8a4be32f188f30b98f15b00566c5ff3edc1c03b1
+      MOND_COMMIT: 4a37bfca5cb4abb2c99891972365d872d700525e
+      THREEONE_COMMIT: 438f3ccae6a436d0017185407bc286e55c357883
+
+    steps:
+      - name: Checkout complete source tree
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Prove exact Xcode 27 beta 3 image
+        run: |
+          set -euxo pipefail
+          mkdir -p .sim/artifacts .sim/results .sim/logs .sim/derived
+          xcodebuild -version | tee .sim/artifacts/xcode-version.txt
+          ACTUAL_BUILD="$(xcodebuild -version | awk '/Build version/{print $3}')"
+          test "$ACTUAL_BUILD" = "$EXPECTED_XCODE_BUILD"
+          test "$(uname -m)" = "arm64"
+          xcrun --sdk iphonesimulator --show-sdk-version | tee .sim/artifacts/iphonesimulator-sdk.txt
+          test "$(xcrun --sdk iphonesimulator --show-sdk-version)" = "27.0"
+          xcrun simctl list -j runtimes > .sim/artifacts/runtimes.json
+          xcrun simctl list -j devicetypes > .sim/artifacts/device-types.json
+
+      - name: Create exact iPhone 16 on iOS 27 beta 3 runtime
+        id: sim
+        run: |
+          set -euxo pipefail
+          RUNTIME_ID="$(python3 - <<'PY'
+          import json
+          d=json.load(open('.sim/artifacts/runtimes.json'))
+          matches=[r for r in d['runtimes'] if r.get('name')=='iOS 27.0' and r.get('isAvailable', True)]
+          if len(matches)!=1:
+              raise SystemExit(f'expected exactly one available iOS 27.0 runtime, got {matches}')
+          print(matches[0]['identifier'])
+          PY
+          )"
+          DEVICE_TYPE_ID="$(python3 - <<'PY'
+          import json
+          d=json.load(open('.sim/artifacts/device-types.json'))
+          matches=[r for r in d['devicetypes'] if r.get('name')=='iPhone 16']
+          if len(matches)!=1:
+              raise SystemExit(f'expected exactly one iPhone 16 device type, got {matches}')
+          print(matches[0]['identifier'])
+          PY
+          )"
+          printf 'runtime=%s\ndevice_type=%s\n' "$RUNTIME_ID" "$DEVICE_TYPE_ID" | tee .sim/artifacts/exact-target.txt
+          UDID="$(xcrun simctl create 'Filza27-iPhone16-iOS27b3' "$DEVICE_TYPE_ID" "$RUNTIME_ID")"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"
+          open -a Simulator --args -CurrentDeviceUDID "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl list devices "$RUNTIME_ID" | tee .sim/artifacts/created-simulator.txt
+          grep -F 'Filza27-iPhone16-iOS27b3' .sim/artifacts/created-simulator.txt
+          grep -F '(Booted)' .sim/artifacts/created-simulator.txt
+
+      - name: Apply exact embedded ByeTunes patch chain
+        run: |
+          set -euxo pipefail
+          test "$(git -C ByeTunes rev-parse HEAD)" = "$BYETUNES_COMMIT"
+          bash scripts/patch-byetunes-upstream-parity-v2.sh
+          bash scripts/restore-byetunes-v24-metadata-compat.sh
+          bash scripts/patch-byetunes-metadata-parity-post.sh
+          bash scripts/patch-byetunes-background-provider-parity.sh
+          bash scripts/patch-byetunes-download-provider-parity.sh
+          bash scripts/patch-byetunes-device-library-save.sh
+          cp ByeTunesMetadataCompat.swift ByeTunes/MusicManager/Filza27MetadataCompat.swift
+          cp ByeTunesDownloadParityCompat.swift ByeTunes/MusicManager/Filza27DownloadParityCompat.swift
+          grep -R -Fq 'All Sources' ByeTunes/MusicManager
+          grep -R -Fq 'YouTube' ByeTunes/MusicManager
+          grep -R -Fq 'MetadataProviderSettings' ByeTunes/MusicManager
+
+      - name: Add simulator-only ByeTunes parity tests
+        run: |
+          set -euxo pipefail
+          cat > ByeTunes/MusicManagerTests/Filza27ParityTests.swift <<'SWIFT'
+          import Foundation
+          import XCTest
+          @testable import MusicManager
+
+          final class Filza27ParityTests: XCTestCase {
+              override func tearDown() {
+                  let defaults = UserDefaults.standard
+                  defaults.removeObject(forKey: MetadataProviderSettings.sourcesKey)
+                  defaults.removeObject(forKey: MetadataProviderSettings.legacySourceKey)
+                  super.tearDown()
+              }
+
+              func testAllSourcesAndYouTubeLegacyMigrations() throws {
+                  let defaults = UserDefaults.standard
+                  defaults.removeObject(forKey: MetadataProviderSettings.sourcesKey)
+                  defaults.set("all", forKey: MetadataProviderSettings.legacySourceKey)
+                  XCTAssertEqual(
+                      MetadataProviderSettings.selectedSources().map(\.rawValue),
+                      ["local", "youtube", "itunes", "deezer", "apple"]
+                  )
+
+                  defaults.removeObject(forKey: MetadataProviderSettings.sourcesKey)
+                  defaults.set("youtube", forKey: MetadataProviderSettings.legacySourceKey)
+                  XCTAssertEqual(
+                      MetadataProviderSettings.selectedSources().map(\.rawValue),
+                      ["local", "youtube"]
+                  )
+              }
+
+              func testYouTubeURLExtractionAndNormalization() throws {
+                  XCTAssertEqual(
+                      MetadataProvider.extractYouTubeVideoID(from: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"),
+                      "dQw4w9WgXcQ"
+                  )
+                  XCTAssertEqual(
+                      MetadataProvider.extractYouTubeVideoID(from: "https://youtu.be/dQw4w9WgXcQ"),
+                      "dQw4w9WgXcQ"
+                  )
+                  let normalized = MetadataProvider.normalizeYouTubeTitle(
+                      "Rick Astley - Never Gonna Give You Up (Official Video)",
+                      channel: "Rick Astley"
+                  )
+                  XCTAssertEqual(normalized.artist, "Rick Astley")
+                  XCTAssertEqual(normalized.title, "Never Gonna Give You Up")
+                  XCTAssertEqual(normalized.source, .youtube)
+              }
+
+              func testMetadataProviderDisplayNames() throws {
+                  XCTAssertEqual(MetadataProviderID.youtube.displayName, "YouTube")
+                  XCTAssertEqual(MetadataProviderID.itunes.displayName, "iTunes API")
+                  XCTAssertEqual(MetadataProviderID.deezer.displayName, "Deezer API")
+                  XCTAssertEqual(MetadataProviderID.apple.displayName, "Apple Music")
+              }
+
+              func testLiveMetadataDNSAndHTTPSFromSimulator() async throws {
+                  let urls = [
+                      URL(string: "https://itunes.apple.com/search?term=rick%20astley&entity=song&limit=1")!,
+                      URL(string: "https://api.deezer.com/search?q=rick%20astley&limit=1")!,
+                      URL(string: "https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ&format=json")!
+                  ]
+                  for url in urls {
+                      var request = URLRequest(url: url)
+                      request.timeoutInterval = 15
+                      request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 27_0 like Mac OS X)", forHTTPHeaderField: "User-Agent")
+                      let (data, response) = try await URLSession.shared.data(for: request)
+                      let http = try XCTUnwrap(response as? HTTPURLResponse)
+                      XCTAssertTrue((200..<300).contains(http.statusCode), "HTTP \\(http.statusCode) from \\(url.host ?? url.absoluteString)")
+                      XCTAssertFalse(data.isEmpty, "empty response from \\(url.host ?? url.absoluteString)")
+                  }
+              }
+          }
+          SWIFT
+
+          cat > ByeTunes/MusicManagerUITests/Filza27LaunchUITests.swift <<'SWIFT'
+          import XCTest
+
+          final class Filza27LaunchUITests: XCTestCase {
+              func testPatchedByeTunesLaunchesOnExactSimulator() throws {
+                  let app = XCUIApplication()
+                  app.launch()
+                  XCTAssertTrue(app.wait(for: .runningForeground, timeout: 15))
+                  let shot = XCTAttachment(screenshot: app.screenshot())
+                  shot.name = "patched-bytunes-ios27b3-iphone16"
+                  shot.lifetime = .keepAlways
+                  add(shot)
+              }
+          }
+          SWIFT
+
+      - name: Build and test actual patched ByeTunes app
+        run: |
+          set -euxo pipefail
+          xcodebuild -list -project ByeTunes/MusicManager.xcodeproj | tee .sim/artifacts/byetunes-project-list.txt
+          set -o pipefail
+          xcodebuild test \
+            -project ByeTunes/MusicManager.xcodeproj \
+            -scheme MusicManager \
+            -destination "platform=iOS Simulator,id=$SIM_UDID" \
+            -derivedDataPath "$PWD/.sim/derived/ByeTunes" \
+            -resultBundlePath "$PWD/.sim/results/ByeTunes.xcresult" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            2>&1 | tee .sim/logs/byetunes-xcodebuild.log
+
+      - name: Launch patched ByeTunes and capture simulator screenshot
+        run: |
+          set -euxo pipefail
+          APP="$(find .sim/derived/ByeTunes/Build/Products -type d -name 'ByeTunes.app' -print -quit)"
+          test -n "$APP"
+          BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw -o - "$APP/Info.plist")"
+          xcrun simctl install "$SIM_UDID" "$APP"
+          LAUNCH="$(xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID")"
+          echo "$LAUNCH" | tee .sim/artifacts/byetunes-launch.txt
+          sleep 5
+          PID="$(echo "$LAUNCH" | awk -F': ' '{print $2}')"
+          test -n "$PID"
+          kill -0 "$PID"
+          xcrun simctl io "$SIM_UDID" screenshot .sim/artifacts/byetunes.png
+          xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID"
+
+      - name: Clone and build pinned Mond standalone app for simulator
+        run: |
+          set -euxo pipefail
+          git clone --filter=blob:none https://github.com/rooootdev/mond.git .sim/mond
+          git -C .sim/mond checkout --detach "$MOND_COMMIT"
+          test "$(git -C .sim/mond rev-parse HEAD)" = "$MOND_COMMIT"
+          xcodebuild -list -project .sim/mond/mond.xcodeproj | tee .sim/artifacts/mond-project-list.txt
+          set -o pipefail
+          xcodebuild build \
+            -project .sim/mond/mond.xcodeproj \
+            -scheme mond \
+            -destination "platform=iOS Simulator,id=$SIM_UDID" \
+            -derivedDataPath "$PWD/.sim/derived/Mond" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            2>&1 | tee .sim/logs/mond-xcodebuild.log
+
+      - name: Launch Mond and capture simulator screenshot
+        run: |
+          set -euxo pipefail
+          APP="$(find .sim/derived/Mond/Build/Products -type d -name 'mond.app' -print -quit)"
+          test -n "$APP"
+          BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw -o - "$APP/Info.plist")"
+          xcrun simctl install "$SIM_UDID" "$APP"
+          LAUNCH="$(xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID")"
+          echo "$LAUNCH" | tee .sim/artifacts/mond-launch.txt
+          sleep 5
+          PID="$(echo "$LAUNCH" | awk -F': ' '{print $2}')"
+          test -n "$PID"
+          kill -0 "$PID"
+          xcrun simctl io "$SIM_UDID" screenshot .sim/artifacts/mond.png
+          xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID"
+
+      - name: Clone and build pinned 3105 standalone app for simulator
+        run: |
+          set -euxo pipefail
+          git clone --filter=blob:none https://github.com/NightVibes33/3105.git .sim/3105
+          git -C .sim/3105 checkout --detach "$THREEONE_COMMIT"
+          test "$(git -C .sim/3105 rev-parse HEAD)" = "$THREEONE_COMMIT"
+          xcodebuild -list -project .sim/3105/ThreeOneOSFive.xcodeproj | tee .sim/artifacts/3105-project-list.txt
+          set -o pipefail
+          xcodebuild build \
+            -project .sim/3105/ThreeOneOSFive.xcodeproj \
+            -scheme ThreeOneOSFive \
+            -destination "platform=iOS Simulator,id=$SIM_UDID" \
+            -derivedDataPath "$PWD/.sim/derived/3105" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            2>&1 | tee .sim/logs/3105-xcodebuild.log
+
+      - name: Launch 3105 and capture simulator screenshot
+        run: |
+          set -euxo pipefail
+          APP="$(find .sim/derived/3105/Build/Products -type d -name 'ThreeOneOSFive.app' -print -quit)"
+          test -n "$APP"
+          BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw -o - "$APP/Info.plist")"
+          xcrun simctl install "$SIM_UDID" "$APP"
+          LAUNCH="$(xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID")"
+          echo "$LAUNCH" | tee .sim/artifacts/3105-launch.txt
+          sleep 5
+          PID="$(echo "$LAUNCH" | awk -F': ' '{print $2}')"
+          test -n "$PID"
+          kill -0 "$PID"
+          xcrun simctl io "$SIM_UDID" screenshot .sim/artifacts/3105.png
+          xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID"
+
+      - name: Record simulator coverage boundary
+        if: always()
+        run: |
+          cat > .sim/artifacts/COVERAGE.md <<'EOF'
+          # iPhone 16 / iOS 27 beta 3 simulator coverage
+
+          This lane uses the GitHub `xcode-27` image and fails unless Xcode build 27A5218g is active.
+          It creates an exact `iPhone 16` CoreSimulator device on the installed iOS 27.0 runtime.
+
+          Runtime-covered here:
+          - patched ByeTunes application compilation
+          - ByeTunes unit tests and UI launch test
+          - All Sources / YouTube provider-state migration and parser logic
+          - live iTunes, Deezer and YouTube HTTPS/DNS from inside the iOS simulator test process
+          - standalone Mond compilation + launch
+          - standalone 3105 compilation + launch
+          - screenshots for all three real component apps
+
+          Physical-device-only and intentionally NOT claimed by this lane:
+          - bad_query sandbox escape behavior
+          - real MobileGestalt mutation / private service access
+          - HouseArrest/MCM access to another installed app's real container
+          - kernel/vnode/APFS/SPTM behavior
+          - Filza's prebuilt physical-device executable and injected arm64-apple-ios dylib loading
+          - entitlement behavior that CoreSimulator does not reproduce
+          - actual on-device Music library pairing / lockdown services
+          EOF
+
+      - name: Upload simulator evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iPhone16-iOS27b3-simulator-evidence
+          path: |
+            .sim/artifacts/**
+            .sim/logs/**
+            .sim/results/**
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 14
+
+      - name: Shutdown exact simulator
+        if: always()
+        run: |
+          if test -n "${SIM_UDID:-}"; then
+            xcrun simctl shutdown "$SIM_UDID" || true
+            xcrun simctl delete "$SIM_UDID" || true
+          fi
