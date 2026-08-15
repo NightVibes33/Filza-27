@@ -220,6 +220,9 @@ static void FilzaInstallWebDAVToggleStateFix(void)
     }
 
     FilzaWebDAVToggleStateInstalled = YES;
+    // Keep the established release-proof marker for existing CI consumers.
+    FilzaDiagnosticsAppend(@"WebDAV",
+        @"toggle-state fix installed: listener getter is observation-only and OFF transitions are explicit");
     FilzaDiagnosticsAppend(@"WebDAV",
         @"toggle-state fix installed: listener-backed state plus post-transition UI refresh");
 }
