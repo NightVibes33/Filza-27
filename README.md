@@ -4,9 +4,9 @@ A jailed, sideloadable Filza fork for modern iOS with extra container access, ap
 
 [![Verified IPA](https://github.com/NightVibes33/Filza-27/actions/workflows/verify-upstream-byetunes-ssh.yml/badge.svg?branch=main)](https://github.com/NightVibes33/Filza-27/actions/workflows/verify-upstream-byetunes-ssh.yml)
 
-[**Download the latest green `Filza 27.ipa`**](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza.27.ipa)
+[**Download the latest green `Filza-27.ipa`**](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza-27.ipa)
 
-**Release rule:** the download above is published only after the full IPA workflow finishes green on `main`. GitHub normalizes the uploaded filename `Filza 27.ipa` to `Filza.27.ipa` in Releases.
+**Release rule:** `Filza-27.ipa` is published only after the full IPA workflow finishes green on `main`.
 
 > **This is not a full jailbreak.** FilzaSlop only exposes files and containers the running app can actually access. It does not claim unrestricted `/`, kernel read/write, or a writable system volume.
 
@@ -36,7 +36,7 @@ Exact access can vary by device and iOS build, so the app verifies real file or 
 
 ## Download and install
 
-1. Download **[`Filza 27.ipa`](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza.27.ipa)** from the latest GitHub Release.
+1. Download **[`Filza-27.ipa`](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza-27.ipa)** from the latest GitHub Release.
 2. Sideload it with your preferred signing method.
 
 The Release asset is created automatically from the newest successful **Verify ByeTunes All Sources + YouTube + SSH IPA** run on `main`, so a failed build is never promoted as the latest IPA.
@@ -233,10 +233,10 @@ The current installable IPA workflow is:
 
 It verifies the pinned dependencies, builds the arm64 runtime, generates ByeTunes AppIntents metadata, stages the required Music Library and YouTubeKit resources, injects everything into the pinned unsigned Filza base IPA, verifies the final package, and uploads the artifact.
 
-After that workflow finishes successfully, `.github/workflows/publish-green-ipa-release.yml` republishes that exact verified artifact to GitHub Releases. The workflow uploads it as `Filza 27.ipa`; GitHub serves the normalized asset filename as:
+After that workflow finishes successfully, `.github/workflows/publish-green-ipa-release.yml` republishes that exact verified artifact to GitHub Releases as:
 
 ```text
-Filza.27.ipa
+Filza-27.ipa
 ```
 
 The workflow currently builds with Xcode 26.2.
