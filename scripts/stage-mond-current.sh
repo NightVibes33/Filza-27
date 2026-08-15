@@ -82,7 +82,8 @@ import sys
 root = Path(sys.argv[1])
 
 # Host-only namespacing. This avoids collisions with ByeTunes/3105 types while
-# preserving upstream view bodies and behavior.
+# preserving upstream view bodies and behavior. Santander has no collision in
+# Filza, so its current upstream type names are intentionally left untouched.
 mond_map = {
     'ContentView': 'MondCurrentContentView',
     'AppState': 'MondCurrentAppState',
@@ -92,7 +93,6 @@ mond_map = {
     'GestaltView': 'MondCurrentGestaltView',
     'PosterView': 'MondCurrentPosterView',
     'SafariView': 'MondCurrentSafariView',
-    'Santander': 'MondCurrentSantander',
     'AppPaths': 'MondCurrentAppPaths',
     'TweakPaths': 'MondCurrentTweakPaths',
     'RespringView': 'MondCurrentRespringView',
@@ -166,15 +166,32 @@ PartyUI=$PARTYUI_COMMIT
 ZIPFoundation=$ZIPFOUNDATION_COMMIT
 EOF
 
-# Fail closed if the current app graph was not staged.
-grep -Fq 'navigationTitle("mond")' "$GEN/Mond/views_App_ContentView.swift"
-grep -Fq 'MondCurrentTerminalPlatter' "$GEN/Mond/views_App_ContentView.swift"
-grep -Fq 'Text("HouseArrest")' "$GEN/Mond/views_App_ContentView.swift"
-grep -Fq 'Text("Generate Token")' "$GEN/Mond/views_App_SettingsView.swift"
-grep -Fq 'Toggle("Keep Alive"' "$GEN/Mond/views_App_SettingsView.swift"
-grep -Fq 'Text("Respring")' "$GEN/Mond/views_App_SettingsView.swift"
-grep -Fq 'struct MondCurrentSantanderView' "$GEN/Mond/views_Tweaks_SantanderView.swift"
-grep -Fq 'mond_bad_query' "$GEN/mond_bad_query.c"
-test "$(find "$GEN/ZIPFoundation" -type f -name '*.swift' | wc -l | tr -d ' ')" -ge 20
+require_contains() {
+  local path="$1" marker="$2" label="$3"
+  grep -Fq "$marker" "$path" || {
+    echo "Current mond staging check failed: ${label} marker '${marker}' missing from ${path}" >&2
+    exit 1
+  }
+}
+
+# Fail closed on user-visible current-mond behavior rather than one particular
+# SwiftUI constructor spelling.
+require_contains "$GEN/Mond/views_App_ContentView.swift" 'navigationTitle("mond")' 'root title'
+require_contains "$GEN/Mond/views_App_ContentView.swift" 'MondCurrentTerminalPlatter' 'real terminal platter'
+require_contains "$GEN/Mond/views_App_ContentView.swift" '"MobileGestalt"' 'MobileGestalt route'
+require_contains "$GEN/Mond/views_App_ContentView.swift" '"PosterBoard"' 'PosterBoard route'
+require_contains "$GEN/Mond/views_App_ContentView.swift" '"HouseArrest"' 'current HouseArrest route'
+require_contains "$GEN/Mond/views_App_SettingsView.swift" '"Run Exploit"' 'exploit action'
+require_contains "$GEN/Mond/views_App_SettingsView.swift" '"Generate Token"' 'token action'
+require_contains "$GEN/Mond/views_App_SettingsView.swift" '"Keep Alive"' 'keep-alive setting'
+require_contains "$GEN/Mond/views_App_SettingsView.swift" '"Respring"' 'respring action'
+require_contains "$GEN/Mond/views_Tweaks_SantanderView.swift" 'struct SantanderView' 'current Santander view'
+require_contains "$GEN/mond_bad_query.c" 'mond_bad_query' 'namespaced mond bad_query'
+
+ZIP_SWIFT_COUNT="$(find "$GEN/ZIPFoundation" -type f -name '*.swift' | wc -l | tr -d ' ')"
+test "$ZIP_SWIFT_COUNT" -ge 20 || {
+  echo "Current mond staging check failed: expected >=20 ZIPFoundation Swift sources, got $ZIP_SWIFT_COUNT" >&2
+  exit 1
+}
 
 echo "Staged current mond ${MOND_COMMIT} with PartyUI ${PARTYUI_COMMIT} and ZIPFoundation ${ZIPFOUNDATION_COMMIT}"
