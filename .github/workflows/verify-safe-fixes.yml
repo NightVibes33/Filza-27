@@ -19,6 +19,7 @@ jobs:
       BYETUNES_COMMIT: 8a4be32f188f30b98f15b00566c5ff3edc1c03b1
       BAD_QUERY_COMMIT: 73ef6da1adabef0982fd00e36cb85f21b8f8194a
       THREEONE_COMMIT: 438f3ccae6a436d0017185407bc286e55c357883
+      MOND_COMMIT: 4a37bfca5cb4abb2c99891972365d872d700525e
       IDEVICE_COMMIT: 37ee77cf713f483551f3cf33ea8b2087a40058ca
       THEOS_COMMIT: 5280bd038207e14f8bd76f5417aa2fe641c03228
       BASE_IPA_SHA256: b11ce30a2db6f6bc77773ed30bdb855d7c847830891b14d21230f2d893d5f223
@@ -63,9 +64,14 @@ jobs:
           test -f ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
           test -f ThirdParty/3105/Sources/FileOperationCoordinator.swift
           test -f ThirdParty/3105/Sources/ZIPArchiveWriter.swift
+          test -f MondFullRootHost.swift
+          test -f ThirdParty/mond/UPSTREAM.md
           test -f WebDAVToggleStateFix.m
           test -f ThirdParty/GCDWebServer/GCDWebDAVServer/GCDWebDAVServer.m
           grep -Fq "$THREEONE_COMMIT" scripts/stage-3105-v1.sh
+          grep -Fq "$MOND_COMMIT" ThirdParty/mond/UPSTREAM.md
+          grep -Fq "$MOND_COMMIT" MondFullRootHost.swift
+          grep -Fq 'MondFullRootHost.swift' Makefile
           grep -Fq 'stage-3105-v1.sh' Makefile
           grep -Fq 'patch-byetunes-upstream-parity-v2.sh' Makefile
           grep -Fq 'patch-byetunes-metadata-parity-post.sh' Makefile
@@ -184,13 +190,25 @@ jobs:
 
           grep -aFq 'Gestalt Editor' "$DYLIB"
           grep -aFq 'MondGestaltHostFactory' "$DYLIB"
+          grep -aFq 'MondFullHostFactory' "$DYLIB"
+          grep -aFq 'constructing full current mond root commit=' "$DYLIB"
+          grep -aFq 'full upstream root appeared commit=' "$DYLIB"
+          grep -aFq "$MOND_COMMIT" "$DYLIB"
+          grep -aFq 'Run Exploit' "$DYLIB"
+          grep -aFq 'Generate Token' "$DYLIB"
+          grep -aFq 'Keep Alive' "$DYLIB"
+          grep -aFq 'Respring' "$DYLIB"
+          grep -aFq 'HouseArrest is still in development' "$DYLIB"
           grep -aFq 'Filza3105HostFactory' "$DYLIB"
           grep -aFq 'ByeTunesEmbeddedHostFactory' "$DYLIB"
           grep -aFq 'TGMainView direct full ByeTunes route installed' "$DYLIB"
           grep -aFq 'ByeTunes 2.4 background URL session route installed on Filza AppDelegate' "$DYLIB"
           grep -aFq 'jailed in-process WebDAV lifecycle hook installed' "$DYLIB"
-          grep -aFq 'toggle-state fix installed: isServerStarted now reflects in-process listener' "$DYLIB"
-          grep -aFq 'settings toggle synchronized visible-state=' "$DYLIB"
+          grep -aFq 'toggle-state fix installed: listener getter is observation-only and OFF transitions are explicit' "$DYLIB"
+          grep -aFq 'settings toggle requested ' "$DYLIB"
+          grep -aFq 'toggle transition complete desired=' "$DYLIB"
+          ! grep -aFq 'toggle-state fix installed: isServerStarted now reflects in-process listener' "$DYLIB"
+          ! grep -aFq 'settings toggle synchronized visible-state=' "$DYLIB"
 
           grep -aFq 'full upstream 3105 1.0 workspace appeared' "$DYLIB"
           grep -aFq 'constructing 3105 1.0 Patches for external import' "$DYLIB"
@@ -291,6 +309,9 @@ jobs:
           bash scripts/merge-3105-app-metadata.sh "$APP/Info.plist"
 
           test -s "$APP/Frameworks/FilzaApplySandboxExt.dylib"
+          grep -aFq 'MondFullHostFactory' "$APP/Frameworks/FilzaApplySandboxExt.dylib"
+          grep -aFq "$MOND_COMMIT" "$APP/Frameworks/FilzaApplySandboxExt.dylib"
+          grep -aFq 'toggle transition complete desired=' "$APP/Frameworks/FilzaApplySandboxExt.dylib"
           test -s "$APP/AppIconImage.png"
           test -s "$APP/Config.plist"
           test -s "$APP/Filza3105.bundle/Info.plist"
@@ -330,6 +351,7 @@ jobs:
             ThirdParty/3105/Resources/Filza3105.bundle/UpstreamAppInfo.plist
             ThirdParty/3105/UPSTREAM.md
             ThirdParty/3105/LICENSE
+            ThirdParty/mond/UPSTREAM.md
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 14
