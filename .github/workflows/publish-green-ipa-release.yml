@@ -79,7 +79,7 @@ jobs:
             --name FilzaSlop-ByeTunes-All-YouTube-SSH-unsigned-arm64 \
             --dir verified-artifact
 
-      - name: Verify and name release IPA
+      - name: Verify release IPA
         shell: bash
         run: |
           set -euxo pipefail
@@ -105,17 +105,16 @@ jobs:
           set -euxo pipefail
           TAG="filza-27-${VERIFIED_RUN_NUMBER}"
           NOTES="Verified green Filza 27 IPA from workflow run ${VERIFIED_RUN_ID} at commit ${VERIFIED_SHA}."
-          IPA_ASSET="release/Filza.27.ipa#Filza 27.ipa"
 
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" \
-              "$IPA_ASSET" \
+              "release/Filza.27.ipa" \
               "release/Filza-27-SHA256.txt" \
               --clobber \
               --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$TAG" \
-              "$IPA_ASSET" \
+              "release/Filza.27.ipa" \
               "release/Filza-27-SHA256.txt" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$VERIFIED_SHA" \
@@ -123,3 +122,16 @@ jobs:
               --notes "$NOTES" \
               --latest
           fi
+
+          ASSET_ID="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
+            --jq '.assets[] | select(.name == "Filza.27.ipa") | .id' | head -n 1)"
+          test -n "$ASSET_ID"
+
+          gh api --method PATCH \
+            "repos/$GITHUB_REPOSITORY/releases/assets/$ASSET_ID" \
+            -f label='Filza 27.ipa' \
+            > release/asset.json
+
+          test "$(jq -r '.name' release/asset.json)" = "Filza.27.ipa"
+          test "$(jq -r '.label' release/asset.json)" = "Filza 27.ipa"
+          echo "Release asset display label verified: Filza 27.ipa"
