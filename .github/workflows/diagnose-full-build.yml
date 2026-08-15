@@ -1,0 +1,104 @@
+name: Diagnose Filza full arm64 build
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: diagnose-filza-full-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: macos-26-intel
+    env:
+      THEOS: ${{ github.workspace }}/theos
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+      THEOS_COMMIT: 5280bd038207e14f8bd76f5417aa2fe641c03228
+      IDEVICE_COMMIT: 37ee77cf713f483551f3cf33ea8b2087a40058ca
+      LIBSSH_COMMIT: 07430deb9b97b751ec5ea5a7fc307f40bf042e0a
+      MBEDTLS_COMMIT: 068ff080b369adfac81509f9b57b2afabaf82dc5
+
+    steps:
+      - name: Xcode 26.2 setup
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.2'
+
+      - name: Checkout complete source tree
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Procursus build tools
+        uses: dhinakg/procursus-action@main
+        with:
+          packages: ldid make
+
+      - name: Restore pinned Theos cache
+        id: theos-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.THEOS }}
+          key: theos-${{ runner.os }}-${{ runner.arch }}-${{ env.THEOS_COMMIT }}
+
+      - name: Install pinned Theos
+        if: steps.theos-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          rm -rf "$THEOS"
+          git clone --filter=blob:none https://github.com/theos/theos.git "$THEOS"
+          git -C "$THEOS" checkout --detach "$THEOS_COMMIT"
+          git -C "$THEOS" submodule update --init --recursive
+
+      - name: Restore pinned idevice FFI cache
+        id: idevice-cache
+        uses: actions/cache@v4
+        with:
+          path: Vendor/idevice
+          key: idevice-ffi-${{ runner.os }}-${{ runner.arch }}-xcode26.2-ios26.2-${{ env.IDEVICE_COMMIT }}-${{ hashFiles('scripts/build-idevice.sh') }}
+
+      - name: Build pinned idevice FFI
+        if: steps.idevice-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          bash scripts/build-idevice.sh "$GITHUB_WORKSPACE/Vendor/idevice"
+
+      - name: Restore pinned SSH stack cache
+        id: ssh-cache
+        uses: actions/cache@v4
+        with:
+          path: Vendor/ssh
+          key: ssh-stack-${{ runner.os }}-${{ runner.arch }}-xcode26.2-ios26.2-${{ env.LIBSSH_COMMIT }}-${{ env.MBEDTLS_COMMIT }}-${{ hashFiles('scripts/build-ssh-stack.sh') }}
+
+      - name: Build pinned SSH stack
+        if: steps.ssh-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          bash scripts/build-ssh-stack.sh "$GITHUB_WORKSPACE/Vendor/ssh"
+
+      - name: Capture complete Theos build
+        id: full-build
+        shell: bash
+        run: |
+          set +e
+          export PATH="/opt/procursus/bin:$PATH"
+          mkdir -p .theos
+          gmake clean >/dev/null 2>&1 || true
+          set -o pipefail
+          gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:16.0 2>&1 | tee .theos/full-build.log
+          rc=${PIPESTATUS[0]}
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          echo "===== FAILURE/SUCCESS TAIL ====="
+          tail -n 400 .theos/full-build.log || true
+          exit "$rc"
+
+      - name: Upload complete build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: filza-full-build-log-${{ github.run_id }}
+          path: .theos/full-build.log
+          if-no-files-found: warn
+          retention-days: 7
