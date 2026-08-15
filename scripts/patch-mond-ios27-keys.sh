@@ -63,9 +63,6 @@ if marker not in text:
 '''
     text = text.replace(needle, overlay + needle, 1)
 
-# The support declarations are staged into the same compiled upstream source
-# file so Makefile source discovery stays deterministic and MondGestaltView.swift
-# remains retired from the build graph.
 if "enum MondIOS27GestaltScalarKind" not in text:
     support = support_path.read_text(encoding="utf-8")
     support = "\n".join(
@@ -74,10 +71,6 @@ if "enum MondIOS27GestaltScalarKind" not in text:
     ).strip()
     text = text.rstrip() + "\n\n" + support + "\n"
 
-# Upstream Mond resolves AccentColor from its own asset catalog. Embedded in
-# Filza, Bundle.main would otherwise resolve Filza's asset instead. Keep the
-# exact upstream RGB while deliberately leaving Bundle.main identity alone in
-# Settings so the Filza app card/name/version remains visible.
 text = text.replace(
     'Color("AccentColor")',
     'Color(red: 0.28529, green: 0.44118, blue: 0.92451)'
@@ -86,7 +79,6 @@ text = text.replace(
 target.write_text(text, encoding="utf-8")
 PY
 
-# ContentView also uses Mond's AccentColor asset upstream.
 python3 - <<'PY'
 from pathlib import Path
 root = Path("ThirdParty/mond-current/Generated/Mond")
@@ -100,12 +92,10 @@ for path in root.glob("*.swift"):
         path.write_text(new, encoding="utf-8")
 PY
 
-# Mond's SettingsView asks libsystem_sandbox to mint a second extension after
-# the selected exploit already obtained one from ContainerManager. In a jailed
-# Filza host that direct issuer call may return nil even though bad_query/CMG
-# already succeeded. Preserve the exact MobileGestalt token produced by the
-# exploit and use it as the Generate Token fallback. This does not synthesize
-# or forge a token; it keeps the token ContainerManager actually returned.
+# Preserve the exact MobileGestalt sandbox extension that ContainerManager
+# returns to the selected Mond exploit. The upstream Settings button otherwise
+# asks libsystem_sandbox to mint a second extension, which can return nil in the
+# jailed Filza host even after the exploit already succeeded.
 python3 - "$MOND_ROOT" "$MOND_BQ_C" "$MOND_BQ_H" <<'PY'
 from pathlib import Path
 import sys
@@ -117,9 +107,6 @@ cmg = root / "exploit_cmg.swift"
 sbx = root / "helpers_sbx.swift"
 settings = root / "views_App_SettingsView.swift"
 
-# CMG: container_object_get_sandbox_token returns a C string. Upstream prints
-# the pointer itself (0x...) and then activates the result object. Copy the
-# string while the object is alive so Settings can expose the real token.
 text = cmg.read_text(encoding="utf-8")
 if "mondCurrentCMGSandboxToken" not in text:
     anchor = "var g_fd: Int32 = -1\n"
@@ -134,8 +121,6 @@ if "mondCurrentCMGSandboxToken" not in text:
     text = text.replace(old, new, 1)
     cmg.write_text(text, encoding="utf-8")
 
-# bad_query: preserve only the token obtained for the MobileGestalt SystemGroup.
-# grant_pb() runs after grant_mg(), so a generic last-token cache would be wrong.
 text = bq_c.read_text(encoding="utf-8")
 if "g_last_mg_token" not in text:
     anchor = "static int g_fd = -1;\n"
@@ -164,15 +149,12 @@ if "mond_bad_query_copy_last_mg_token" not in text:
     text = text.replace(anchor, "char *mond_bad_query_copy_last_mg_token(void);\n" + anchor, 1)
     bq_h.write_text(text, encoding="utf-8")
 
-# Settings helper: try upstream's direct issuer first. If the jailed host is not
-# allowed to mint a second extension, return the token captured from the exploit
-# selected in Mond settings.
 text = sbx.read_text(encoding="utf-8")
 if "mondCurrentCapturedExploitToken" not in text:
     issue_anchor = "func mondCurrentSandboxExtensionIssueFile(path: String) -> String? {"
     if issue_anchor not in text:
         raise SystemExit("Mond token overlay failed: sandbox issue helper anchor changed")
-    helper = '''func mondCurrentCapturedExploitToken() -> String? {\n    let method = UserDefaults.standard.string(forKey: "method") ?? "bad_query"\n    if method == "cmg" {\n        return mondCurrentCMGSandboxToken\n    }\n\n    guard let ptr = mond_bad_query_copy_last_mg_token() else { return nil }\n    defer { free(ptr) }\n    let value = String(cString: ptr)\n    return value.isEmpty ? nil : value\n}\n\n'''
+    helper = '''func mondCurrentCapturedExploitToken() -> String? {\n    let method = UserDefaults.standard.string(forKey: "method") ?? "mond_bad_query"\n    if method == "cmg" {\n        return mondCurrentCMGSandboxToken\n    }\n\n    guard let ptr = mond_bad_query_copy_last_mg_token() else { return nil }\n    defer { free(ptr) }\n    let value = String(cString: ptr)\n    return value.isEmpty ? nil : value\n}\n\n'''
     text = text.replace(issue_anchor, helper + issue_anchor, 1)
 
     old = '''    guard let ptr = issue("com.apple.app-sandbox.read-write", path, 0, 0) else { return nil }\n    defer { free(ptr) }\n\n    return String(cString: ptr)'''
@@ -182,12 +164,10 @@ if "mondCurrentCapturedExploitToken" not in text:
     text = text.replace(old, new, 1)
     sbx.write_text(text, encoding="utf-8")
 
-# Make exploit state visible. The original button has no success UI, which made
-# successful handles look like a no-op even when exploit_succeeded was true.
 text = settings.read_text(encoding="utf-8")
 if "Exploit access is active" not in text:
-    anchor = '''                } footer: {\n                    Text(method == "cmg" ? "**CMG:** Supports iOS 27.0 b1 - b4. PosterBoard wont work with this method. Only use this when bad_query isnt working for you." : "**bad_query:** Supports iOS 27.0 b1 - b4. By [forcequit](https://github.com/forcequitOS).")\n                }'''
-    replacement = '''                } footer: {\n                    VStack(alignment: .leading, spacing: 6) {\n                        Text(method == "cmg" ? "**CMG:** Supports iOS 27.0 b1 - b4. PosterBoard wont work with this method. Only use this when bad_query isnt working for you." : "**bad_query:** Supports iOS 27.0 b1 - b4. By [forcequit](https://github.com/forcequitOS).")\n                        if state.exploit_succeeded {\n                            Text("Exploit access is active.")\n                                .foregroundStyle(.green)\n                        }\n                    }\n                }'''
+    anchor = '''                } footer: {\n                    Text(method == "cmg" ? "**CMG:** Supports iOS 27.0 b1 - b4. PosterBoard wont work with this method. Only use this when mond_bad_query isnt working for you." : "**mond_bad_query:** Supports iOS 27.0 b1 - b4. By [forcequit](https://github.com/forcequitOS).")\n                }'''
+    replacement = '''                } footer: {\n                    VStack(alignment: .leading, spacing: 6) {\n                        Text(method == "cmg" ? "**CMG:** Supports iOS 27.0 b1 - b4. PosterBoard wont work with this method. Only use this when mond_bad_query isnt working for you." : "**mond_bad_query:** Supports iOS 27.0 b1 - b4. By [forcequit](https://github.com/forcequitOS).")\n                        if state.exploit_succeeded {\n                            Text("Exploit access is active.")\n                                .foregroundStyle(.green)\n                        }\n                    }\n                }'''
     if anchor not in text:
         raise SystemExit("Mond token overlay failed: Settings exploit footer anchor changed")
     text = text.replace(anchor, replacement, 1)
