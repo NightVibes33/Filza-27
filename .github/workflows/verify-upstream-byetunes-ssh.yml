@@ -145,7 +145,8 @@ jobs:
           grep -aFq 'inline SSH SERVER preferences installed after WebDAV with listener-backed toggle state' "$DYLIB"
           grep -aFq 'password verifier updated using PBKDF2-HMAC-SHA256' "$DYLIB"
           grep -aFq 'subsystem rejected because it is not implemented yet:' "$DYLIB"
-          nm "$DYLIB" | grep -Eq '[_ ]ssh_bind_new$'
+          nm "$DYLIB" > .theos/FilzaApplySandboxExt.nm
+          grep -Eq '[_ ]ssh_bind_new$' .theos/FilzaApplySandboxExt.nm
           ! otool -L "$DYLIB" | grep -qi 'libssh'
 
           # Exact pinned upstream ByeTunes metadata/search path. The host repair
@@ -229,8 +230,10 @@ jobs:
           grep -aFq 'embedded libssh server listening address=' "$DYLIB"
           grep -aFq 'Restored upstream provider state once:' "$DYLIB"
           ! grep -aFq 'retrying through WebKit network process' "$DYLIB"
-          plutil -extract NSBonjourServices json -o - "$APP/Info.plist" | grep -Fq '_ssh._tcp'
-          plutil -extract NSLocalNetworkUsageDescription raw -o - "$APP/Info.plist" | grep -Fq 'SSH server'
+          BONJOUR_JSON="$(plutil -extract NSBonjourServices json -o - "$APP/Info.plist")"
+          grep -Fq '_ssh._tcp' <<<"$BONJOUR_JSON"
+          LOCAL_NETWORK_USAGE="$(plutil -extract NSLocalNetworkUsageDescription raw -o - "$APP/Info.plist")"
+          grep -Fq 'SSH server' <<<"$LOCAL_NETWORK_USAGE"
           test -s "$APP/Filza3105.bundle/UpstreamAppInfo.plist"
           test -x "$APP/helpers/FilzaWebDAVServer"
           otool -L "$APP/$EXECUTABLE" | grep -F 'FilzaApplySandboxExt.dylib'
