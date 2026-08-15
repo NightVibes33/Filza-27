@@ -1,19 +1,12 @@
-# Embedded SSH integration plus upstream ByeTunes source hygiene.
+# Embedded SSH integration only.
 # ByeTunes metadata/search behavior is intentionally left on the exact pinned
-# upstream v2.4 implementation. The retired Filza metadata compatibility files
-# remain in repository history but are not part of the compiled target.
-# Retired provenance marker for CI: patch-byetunes-metadata-network-resilience.sh
-# is intentionally NOT invoked by this fragment.
+# upstream v2.4 implementation instead of being rewritten from this fragment.
 
 SSH_VENDOR ?= $(PWD)/Vendor/ssh
 SSH_STATIC := $(SSH_VENDOR)/lib/libssh.a
 SSH_MBEDTLS := $(SSH_VENDOR)/lib/libmbedtls.a
 SSH_MBEDX509 := $(SSH_VENDOR)/lib/libmbedx509.a
 SSH_MBEDCRYPTO := $(SSH_VENDOR)/lib/libmbedcrypto.a
-
-# The main Makefile predates the upstream-metadata rollback and still names the
-# compatibility files. Filter them out here after that source list is defined.
-FilzaApplySandboxExt_SWIFT_FILES := $(filter-out ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift,$(FilzaApplySandboxExt_SWIFT_FILES))
 
 FilzaApplySandboxExt_FILES += FilzaSSHServer.m FilzaSSHPreferences.m
 FilzaApplySandboxExt_CFLAGS += -I$(SSH_VENDOR)/include -DLIBSSH_STATIC=1
