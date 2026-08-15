@@ -119,10 +119,9 @@ compat.write_text(ct)
 #
 # Device logs show CFNetwork/URLSession returning NSURLErrorCannotFindHost for
 # music.apple.com, itunes.apple.com and api.deezer.com while the Wi-Fi path is
-# satisfied. Keep URLSession as the primary transport. For metadata-only GETs,
-# retry DNS lookup failures through WebKit's separate networking process. This
-# is a real second transport, not fabricated metadata; if WebKit cannot resolve
-# the host either, the original failure is preserved and logged.
+# satisfied. Keep the upstream background-session path unchanged. Foreground
+# metadata requests use an isolated ephemeral URLSession first, then retry only
+# DNS-resolution failures through WebKit's separate networking process.
 # ---------------------------------------------------------------------------
 nt = network.read_text()
 nt = replace_once(nt, "import Foundation\n", "import Foundation\nimport WebKit\n", "WebKit import")
@@ -146,7 +145,8 @@ private final class MetadataWebKitRequest: NSObject, WKNavigationDelegate {
             webView.navigationDelegate = self
             webView.load(request)
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 18) { [weak self] in
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 18_000_000_000)
                 guard let self, !self.finished else { return }
                 self.finish(.failure(URLError(.timedOut)))
             }
@@ -162,8 +162,10 @@ private final class MetadataWebKitRequest: NSObject, WKNavigationDelegate {
         let continuation = self.continuation
         self.continuation = nil
         switch result {
-        case .success(let value): continuation?.resume(returning: value)
-        case .failure(let error): continuation?.resume(throwing: error)
+        case .success(let value):
+            continuation?.resume(returning: value)
+        case .failure(let error):
+            continuation?.resume(throwing: error)
         }
     }
 
@@ -178,30 +180,36 @@ private final class MetadataWebKitRequest: NSObject, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard !finished else { return }
-        let response = self.response ?? URLResponse(
-            url: webView.url ?? URL(string: "about:blank")!,
-            mimeType: "text/plain",
-            expectedContentLength: -1,
-            textEncodingName: "utf-8"
-        )
-        let isHTML = response.mimeType?.lowercased().contains("html") == true
-        let script = isHTML
-            ? "document.documentElement ? document.documentElement.outerHTML : ''"
-            : "document.body ? document.body.innerText : (document.documentElement ? document.documentElement.innerText : '')"
-        let delay: TimeInterval = isHTML ? 0.35 : 0.0
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak webView] in
+        Task { @MainActor [weak self, weak webView] in
             guard let self, let webView, !self.finished else { return }
-            webView.evaluateJavaScript(script) { value, error in
-                if let error {
-                    self.finish(.failure(error))
-                    return
-                }
+
+            let isHTML = self.response?.mimeType?.lowercased().contains("html") == true
+            if isHTML {
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                guard !self.finished else { return }
+            }
+
+            let script = isHTML
+                ? "document.documentElement ? document.documentElement.outerHTML : ''"
+                : "document.body ? document.body.innerText : (document.documentElement ? document.documentElement.innerText : '')"
+
+            do {
+                let value = try await webView.evaluateJavaScript(script)
                 guard let text = value as? String,
                       let data = text.data(using: .utf8) else {
                     self.finish(.failure(URLError(.cannotDecodeContentData)))
                     return
                 }
+
+                let response = self.response ?? URLResponse(
+                    url: webView.url ?? URL(string: "about:blank")!,
+                    mimeType: isHTML ? "text/html" : "text/plain",
+                    expectedContentLength: data.count,
+                    textEncodingName: "utf-8"
+                )
                 self.finish(.success((data, response)))
+            } catch {
+                self.finish(.failure(error))
             }
         }
     }
@@ -225,11 +233,7 @@ private enum MetadataWebKitTransport {
 enum SongMetadataNetworking {
     @TaskLocal static var useBackgroundSession: Bool = false
 
-    private static func urlSessionData(for request: URLRequest) async throws -> (Data, URLResponse) {
-        if useBackgroundSession {
-            return try await MetadataBackgroundURLSession.shared.data(for: request)
-        }
-
+    private static func foregroundData(for request: URLRequest) async throws -> (Data, URLResponse) {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.waitsForConnectivity = true
         configuration.allowsExpensiveNetworkAccess = true
@@ -258,16 +262,21 @@ enum SongMetadataNetworking {
     }
 
     static func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        // Preserve the upstream background-session route exactly. Keeping this
+        // direct call avoids moving URLRequest across a helper isolation domain.
+        if useBackgroundSession {
+            return try await MetadataBackgroundURLSession.shared.data(for: request)
+        }
+
         do {
-            return try await urlSessionData(for: request)
+            return try await foregroundData(for: request)
         } catch {
             guard shouldRetryThroughWebKit(request, error: error) else { throw error }
             let host = request.url?.host ?? "unknown"
             Logger.shared.log("[MetadataNetwork] URLSession DNS failed for \\(host); retrying through WebKit network process")
             do {
                 let result = try await MetadataWebKitTransport.data(for: request)
-                let status = (result.1 as? HTTPURLResponse)?.statusCode ?? -1
-                Logger.shared.log("[MetadataNetwork] WebKit fallback succeeded host=\\(host) status=\\(status) bytes=\\(result.0.count)")
+                Logger.shared.log("[MetadataNetwork] WebKit fallback succeeded host=\\(host) bytes=\\(result.0.count)")
                 return result
             } catch let fallbackError {
                 Logger.shared.log("[MetadataNetwork] WebKit fallback failed host=\\(host): \\(fallbackError)")
@@ -277,7 +286,12 @@ enum SongMetadataNetworking {
     }
 
     static func data(from url: URL) async throws -> (Data, URLResponse) {
-        try await data(for: URLRequest(url: url))
+        // Preserve upstream background behavior here too rather than wrapping it
+        // in a foreground helper.
+        if useBackgroundSession {
+            return try await MetadataBackgroundURLSession.shared.data(from: url)
+        }
+        return try await data(for: URLRequest(url: url))
     }
 }
 '''
@@ -292,5 +306,6 @@ grep -Fq 'retrying through WebKit network process' "$NETWORK"
 grep -Fq 'URLSessionConfiguration.ephemeral' "$NETWORK"
 grep -Fq 'connectionProxyDictionary = [:]' "$NETWORK"
 grep -Fq 'MetadataWebKitRequest' "$NETWORK"
+grep -Fq 'Preserve the upstream background-session route exactly' "$NETWORK"
 
 echo "Verified ByeTunes metadata provider-state repair and DNS-resilient transport"
