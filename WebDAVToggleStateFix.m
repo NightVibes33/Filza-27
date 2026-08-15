@@ -99,7 +99,43 @@ static void FilzaWebDAVToggleCallLifecycle(id preferences, BOOL shouldRun)
     ((void (*)(id, SEL))objc_msgSend)(preferences, selector);
 }
 
-static void FilzaWebDAVToggleFinishTransition(id preferences, BOOL shouldRun, NSInteger attempt)
+static void FilzaWebDAVToggleReloadSettings(id controller, BOOL running)
+{
+    if (!controller) return;
+
+    UITableView *tableView = nil;
+    SEL tableSelector = NSSelectorFromString(@"tableView");
+    if ([controller respondsToSelector:tableSelector]) {
+        tableView = ((id (*)(id, SEL))objc_msgSend)(controller, tableSelector);
+    }
+
+    if ([tableView isKindOfClass:UITableView.class]) {
+        [tableView reloadData];
+        FilzaDiagnosticsAppend(@"WebDAV",
+            [NSString stringWithFormat:@"settings table redrawn from settled listener state=%@",
+             running ? @"ON" : @"OFF"]);
+        return;
+    }
+
+    SEL viewSelector = NSSelectorFromString(@"view");
+    UIView *view = [controller respondsToSelector:viewSelector]
+        ? ((id (*)(id, SEL))objc_msgSend)(controller, viewSelector)
+        : nil;
+    if ([view isKindOfClass:UITableView.class]) {
+        [(UITableView *)view reloadData];
+        FilzaDiagnosticsAppend(@"WebDAV",
+            [NSString stringWithFormat:@"settings root table redrawn from settled listener state=%@",
+             running ? @"ON" : @"OFF"]);
+    } else {
+        FilzaDiagnosticsAppend(@"WebDAV",
+            @"settled listener state recorded but settings table could not be resolved for redraw");
+    }
+}
+
+static void FilzaWebDAVToggleFinishTransition(id controller,
+                                               id preferences,
+                                               BOOL shouldRun,
+                                               NSInteger attempt)
 {
     BOOL running = FilzaWebDAVToggleInProcessServerRunning(preferences);
     if (running != shouldRun && attempt == 0) {
@@ -109,7 +145,7 @@ static void FilzaWebDAVToggleFinishTransition(id preferences, BOOL shouldRun, NS
         FilzaWebDAVToggleCallLifecycle(preferences, shouldRun);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
-            FilzaWebDAVToggleFinishTransition(preferences, shouldRun, 1);
+            FilzaWebDAVToggleFinishTransition(controller, preferences, shouldRun, 1);
         });
         return;
     }
@@ -120,6 +156,12 @@ static void FilzaWebDAVToggleFinishTransition(id preferences, BOOL shouldRun, NS
         [NSString stringWithFormat:@"toggle transition complete desired=%@ observed=%@ preference=%@",
          shouldRun ? @"ON" : @"OFF", running ? @"ON" : @"OFF",
          running ? @"YES" : @"NO"]);
+
+    // Filza reloads the section synchronously inside its checkbox action. The
+    // in-process listener binds/unbinds asynchronously, so that first reload can
+    // observe the old state. Redraw again only after the listener and preference
+    // have been reconciled to the settled state.
+    FilzaWebDAVToggleReloadSettings(controller, running);
 }
 
 static void FilzaWebDAVToggleCheckbox(id controller, SEL selector)
@@ -145,7 +187,7 @@ static void FilzaWebDAVToggleCheckbox(id controller, SEL selector)
     // is written only after this transition, never from the getter.
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.08 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-        FilzaWebDAVToggleFinishTransition(preferences, shouldRun, 0);
+        FilzaWebDAVToggleFinishTransition(controller, preferences, shouldRun, 0);
     });
 }
 
@@ -183,7 +225,7 @@ static void FilzaInstallWebDAVToggleStateFix(void)
 
     FilzaWebDAVToggleStateInstalled = YES;
     FilzaDiagnosticsAppend(@"WebDAV",
-        @"toggle-state fix installed: listener getter is observation-only and OFF transitions are explicit");
+        @"toggle-state fix installed: settled listener redraw is enabled");
 }
 
 __attribute__((constructor)) static void FilzaWebDAVToggleStateInit(void)
