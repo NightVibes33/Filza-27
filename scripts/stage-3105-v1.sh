@@ -71,7 +71,8 @@ grep -Fq 'FileOperationCoordinator' "$ROOT/Sources/FileBrowserView.swift"
 grep -Fq 'importPackage(from:' "$ROOT/Sources/PatchProjectsView.swift"
 grep -Fq 'PatchImportSource' "$ROOT/Sources/PatchDraftCoordinator.swift"
 grep -Fq 'ZIPArchiveWriter' "$ROOT/Sources/FileManagerService.swift"
-grep -Fq 'bulk' "$ROOT/Resources/Filza3105.bundle/en.lproj/Localizable.strings"
+grep -Fq '"cleaner.select_all_results"' "$ROOT/Resources/Filza3105.bundle/en.lproj/Localizable.strings"
+grep -Fq '"browser.copy"' "$ROOT/Resources/Filza3105.bundle/en.lproj/Localizable.strings"
 plutil -lint "$ROOT/Resources/Filza3105.bundle/UpstreamAppInfo.plist" >/dev/null
 
 echo "Staged 3105 1.0 from ${UPSTREAM_OWNER}/${UPSTREAM_REPO}@${UPSTREAM_COMMIT}"
