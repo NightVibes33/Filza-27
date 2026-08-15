@@ -187,4 +187,5 @@ before-FilzaApplySandboxExt-all::
 	@test -f "$(GCDWEBSERVER_ROOT)/GCDWebDAVServer/GCDWebDAVServer.m" || (echo "Missing pinned GCDWebDAVServer" >&2; exit 1)
 	@test -f "$(GCDWEBSERVER_ROOT)/LICENSE" || (echo "Missing GCDWebServer license" >&2; exit 1)
 
+include FilzaSSHMetadata.mk
 include $(THEOS_MAKE_PATH)/tweak.mk
