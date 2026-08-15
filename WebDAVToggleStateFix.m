@@ -13,6 +13,11 @@
 // preference: doing so from a state getter creates a feedback loop where an
 // in-flight stop is observed as still-running and the preference is forced
 // back to YES before the server has finished stopping.
+//
+// The stock settings controller can also reload its switch before the
+// in-process listener has finished binding/unbinding.  After a verified
+// transition, explicitly reload the preferences table so the visible switch is
+// rendered from the final listener-backed state instead of a stale cell value.
 
 static BOOL (*FilzaPreviousIsServerStarted)(id, SEL) = NULL;
 static void (*FilzaPreviousWebDAVCheckbox)(id, SEL) = NULL;
@@ -99,7 +104,39 @@ static void FilzaWebDAVToggleCallLifecycle(id preferences, BOOL shouldRun)
     ((void (*)(id, SEL))objc_msgSend)(preferences, selector);
 }
 
-static void FilzaWebDAVToggleFinishTransition(id preferences, BOOL shouldRun, NSInteger attempt)
+static void FilzaWebDAVToggleRefreshVisibleSettings(id controller, BOOL running)
+{
+    if (!controller) return;
+
+    UITableView *tableView = nil;
+    if ([controller isKindOfClass:UITableViewController.class]) {
+        tableView = ((UITableViewController *)controller).tableView;
+    } else {
+        SEL tableViewSelector = NSSelectorFromString(@"tableView");
+        if ([controller respondsToSelector:tableViewSelector]) {
+            id candidate = ((id (*)(id, SEL))objc_msgSend)(controller, tableViewSelector);
+            if ([candidate isKindOfClass:UITableView.class]) tableView = candidate;
+        }
+    }
+
+    if (!tableView) {
+        FilzaDiagnosticsAppend(@"WebDAV",
+            @"settings UI refresh skipped; preferences table unavailable");
+        return;
+    }
+
+    [tableView reloadData];
+    [tableView setNeedsLayout];
+    [tableView layoutIfNeeded];
+    FilzaDiagnosticsAppend(@"WebDAV",
+        [NSString stringWithFormat:@"settings UI refreshed from listener state=%@",
+         running ? @"ON" : @"OFF"]);
+}
+
+static void FilzaWebDAVToggleFinishTransition(id preferences,
+                                               id controller,
+                                               BOOL shouldRun,
+                                               NSInteger attempt)
 {
     BOOL running = FilzaWebDAVToggleInProcessServerRunning(preferences);
     if (running != shouldRun && attempt == 0) {
@@ -109,13 +146,14 @@ static void FilzaWebDAVToggleFinishTransition(id preferences, BOOL shouldRun, NS
         FilzaWebDAVToggleCallLifecycle(preferences, shouldRun);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
-            FilzaWebDAVToggleFinishTransition(preferences, shouldRun, 1);
+            FilzaWebDAVToggleFinishTransition(preferences, controller, shouldRun, 1);
         });
         return;
     }
 
     running = FilzaWebDAVToggleInProcessServerRunning(preferences);
     FilzaWebDAVToggleSetEnabledPreference(preferences, running);
+    FilzaWebDAVToggleRefreshVisibleSettings(controller, running);
     FilzaDiagnosticsAppend(@"WebDAV",
         [NSString stringWithFormat:@"toggle transition complete desired=%@ observed=%@ preference=%@",
          shouldRun ? @"ON" : @"OFF", running ? @"ON" : @"OFF",
@@ -142,10 +180,10 @@ static void FilzaWebDAVToggleCheckbox(id controller, SEL selector)
     // Give GCDWebServer one run-loop turn to bind/unbind.  If the listener did
     // not reach the state implied by the user's tap, call the already-hooked
     // TGPreferences lifecycle method once and verify again.  Preference state
-    // is written only after this transition, never from the getter.
+    // and the visible table are synchronized only after this transition.
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.08 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-        FilzaWebDAVToggleFinishTransition(preferences, shouldRun, 0);
+        FilzaWebDAVToggleFinishTransition(preferences, controller, shouldRun, 0);
     });
 }
 
@@ -183,7 +221,7 @@ static void FilzaInstallWebDAVToggleStateFix(void)
 
     FilzaWebDAVToggleStateInstalled = YES;
     FilzaDiagnosticsAppend(@"WebDAV",
-        @"toggle-state fix installed: listener getter is observation-only and OFF transitions are explicit");
+        @"toggle-state fix installed: listener-backed state plus post-transition UI refresh");
 }
 
 __attribute__((constructor)) static void FilzaWebDAVToggleStateInit(void)
