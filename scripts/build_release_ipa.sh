@@ -31,6 +31,17 @@ make package FINALPACKAGE=1
 DYLIB="$REPO_ROOT/.theos/obj/FilzaApplySandboxExt.dylib"
 [[ -f "$DYLIB" ]] || { echo "built dylib not found: $DYLIB" >&2; exit 70; }
 
+# Keep the standalone release path identical to the verified Actions package:
+# stage v2.4 runtime files plus the exact pre-v2.4 YouTubeKit JS resources that
+# SignatureSolver resolves from Bundle.main.
+bash "$REPO_ROOT/scripts/stage-byetunes-resources.sh" "$REPO_ROOT/.theos/byetunes-resources"
+for resource in AppIconImage.png ByeTunes-Info.plist Config.plist meriyah.umd.js astring.umd.js yt_ejs_helper.js; do
+  [[ -s "$REPO_ROOT/.theos/byetunes-resources/$resource" ]] || {
+    echo "staged ByeTunes resource missing: $resource" >&2
+    exit 70
+  }
+done
+
 STAGE_ROOT="$(mktemp -d /tmp/FilzaSlop-release.XXXXXX)"
 trap 'trash "$STAGE_ROOT"' EXIT
 unzip -q "$BASE_IPA" -d "$STAGE_ROOT/stage"
@@ -52,6 +63,13 @@ fi
 cp "$DYLIB" "$APP/Frameworks/FilzaApplySandboxExt.dylib"
 codesign --remove-signature "$APP/Frameworks/FilzaApplySandboxExt.dylib"
 
+cp "$REPO_ROOT/.theos/byetunes-resources/AppIconImage.png" "$APP/AppIconImage.png"
+cp "$REPO_ROOT/.theos/byetunes-resources/ByeTunes-Info.plist" "$APP/ByeTunes-Info.plist"
+cp "$REPO_ROOT/.theos/byetunes-resources/Config.plist" "$APP/Config.plist"
+cp "$REPO_ROOT/.theos/byetunes-resources/meriyah.umd.js" "$APP/meriyah.umd.js"
+cp "$REPO_ROOT/.theos/byetunes-resources/astring.umd.js" "$APP/astring.umd.js"
+cp "$REPO_ROOT/.theos/byetunes-resources/yt_ejs_helper.js" "$APP/yt_ejs_helper.js"
+
 rm -rf "$APP/Filza3105.bundle"
 cp -R "$REPO_ROOT/ThirdParty/3105/Resources/Filza3105.bundle" "$APP/Filza3105.bundle"
 bash "$REPO_ROOT/scripts/merge-3105-app-metadata.sh" "$APP/Info.plist"
@@ -62,6 +80,10 @@ elif [[ -e "$APP/MCMIdentifiers.plist" ]]; then
   trash "$APP/MCMIdentifiers.plist"
 fi
 
+for resource in meriyah.umd.js astring.umd.js yt_ejs_helper.js; do
+  [[ -s "$APP/$resource" ]] || { echo "YouTubeKit app resource missing: $resource" >&2; exit 70; }
+done
+
 if [[ -e "$OUTPUT_IPA" ]]; then
   trash "$OUTPUT_IPA"
 fi
@@ -69,5 +91,10 @@ fi
   cd "$STAGE_ROOT/stage"
   zip -qry "$OUTPUT_IPA" Payload
 )
+
+unzip -tq "$OUTPUT_IPA"
+for resource in meriyah.umd.js astring.umd.js yt_ejs_helper.js; do
+  unzip -l "$OUTPUT_IPA" | grep -F "$resource" >/dev/null
+ done
 
 shasum -a 256 "$OUTPUT_IPA"
