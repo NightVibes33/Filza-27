@@ -77,14 +77,19 @@ jobs:
           grep -Fq "MOND_COMMIT=\"$MOND_COMMIT\"" scripts/stage-mond-current.sh
           grep -Fq "$MOND_COMMIT" ThirdParty/mond/UPSTREAM.md
           grep -Fq 'no Filza behavior/UI patches applied' scripts/stage-mond-current.sh
+          test -f scripts/verify-mond-source-completeness.sh
+          test -f scripts/stage-mond-embedded-resources.sh
           test -f scripts/patch-mond-embedded-parity.sh
+          grep -Fq 'verify-mond-source-completeness.sh' FilzaByeTunesNetwork.mk
+          grep -Fq 'stage-mond-embedded-resources.sh' FilzaByeTunesNetwork.mk
+          grep -Fq 'patch-mond-embedded-parity.sh' FilzaByeTunesNetwork.mk
           grep -Fq 'MondCurrentAppState.shared' FilzaMondCurrentHost.swift
           grep -Fq 'MondEmbeddedParity.defaults.register(defaults: ["method": "bad_query"])' FilzaMondCurrentHost.swift
           grep -Fq 'UserDefaults(suiteName: "com.roooot.mond")' FilzaMondCurrentHost.swift
+          grep -Fq 'Bundle.main.url(forResource: "MondEmbedded", withExtension: "bundle")' FilzaMondCurrentHost.swift
           grep -Fq 'red: 0.28529' FilzaMondCurrentHost.swift
           grep -Fq 'green: 0.44118' FilzaMondCurrentHost.swift
           grep -Fq 'blue: 0.92451' FilzaMondCurrentHost.swift
-          grep -Fq 'patch-mond-embedded-parity.sh' FilzaByeTunesNetwork.mk
           grep -Fq 'grant_all(state: state)' FilzaMondCurrentHost.swift
           grep -Fq 'full Mond 2.1 route installed commit=500d76082f0ca021ddd591c05d129ebbc26c20df' FilzaMondBridge.m
           ! test -e MondIOS27KeySupport.swift
@@ -182,13 +187,28 @@ jobs:
           grep -Fq 'Text("HouseArrest")' ThirdParty/mond-current/Upstream/views/app/ContentView.swift
           grep -Fq 'Explore Tendies' ThirdParty/mond-current/Upstream/views/tweaks/posterboard/PosterView.swift
           grep -Fq 'Color("AccentColor")' ThirdParty/mond-current/Upstream/views/tweaks/GestaltView.swift
+          grep -Fq 'Bundle.main.infoDictionary' ThirdParty/mond-current/Upstream/views/app/SettingsView.swift
+
+          bash scripts/verify-mond-source-completeness.sh
+          test -s ThirdParty/mond-current/Resources/MondEmbedded.bundle/Info.plist
+          test -s ThirdParty/mond-current/Resources/MondEmbedded.bundle/MondEmbeddedIcon.png
+          plutil -lint ThirdParty/mond-current/Resources/MondEmbedded.bundle/Info.plist
+          test "$(plutil -extract CFBundleDisplayName raw -o - ThirdParty/mond-current/Resources/MondEmbedded.bundle/Info.plist)" = "mond"
+          test "$(plutil -extract CFBundleShortVersionString raw -o - ThirdParty/mond-current/Resources/MondEmbedded.bundle/Info.plist)" = "2.0"
+          test "$(plutil -extract CFBundleIdentifier raw -o - ThirdParty/mond-current/Resources/MondEmbedded.bundle/Info.plist)" = "com.roooot.mond"
+
           grep -Fq 'private static func cache_extra' ThirdParty/mond-current/Generated/Mond/helpers_mg.swift
           grep -Fq 'state.pb_granted = false' ThirdParty/mond-current/Generated/Mond/exploit_unsbx.swift
           grep -Fq 'MondEmbeddedParity.accentColor' ThirdParty/mond-current/Generated/Mond/views_tweaks_GestaltView.swift
           grep -Fq '@AppStorage("method", store: MondEmbeddedParity.defaults)' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
           grep -Fq 'MondEmbeddedParity.defaults.string(forKey: "method")' ThirdParty/mond-current/Generated/Mond/exploit_unsbx.swift
+          grep -Fq 'MondEmbeddedParity.bundle.infoDictionary' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
+          grep -Fq 'UIImage(named: icon, in: MondEmbeddedParity.bundle, compatibleWith: nil)' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
+          grep -Fq 'MondEmbeddedParity.bundle.infoDictionary' ThirdParty/mond-current/Generated/PartyUI/Utilities_Helpers.swift
           ! grep -R -Fq 'Color("AccentColor")' ThirdParty/mond-current/Generated/Mond
           ! grep -R -Fq 'UserDefaults.standard' ThirdParty/mond-current/Generated/Mond
+          ! grep -R -Fq 'Bundle.main' ThirdParty/mond-current/Generated/Mond
+          ! grep -Fq 'Bundle.main' ThirdParty/mond-current/Generated/PartyUI/Utilities_Helpers.swift
           ! grep -R -Fq 'FILZA_IOS27_GESTALT_KEYS_BEGIN' ThirdParty/mond-current/Generated/Mond
           ! grep -R -Fq 'lastFreshToken' ThirdParty/mond-current/Generated/Mond
           ! grep -R -Fq 'Fresh sandbox token issued successfully. Mond has not consumed it.' ThirdParty/mond-current/Generated/Mond
@@ -219,7 +239,7 @@ jobs:
 
           grep -aFq 'MondEmbeddedHostFactory' "$DYLIB"
           grep -aFq 'constructed pinned Mond root at 500d76082f0ca021ddd591c05d129ebbc26c20df' "$DYLIB"
-          grep -aFq 'embedded-parity=accent+defaults' "$DYLIB"
+          grep -aFq 'embedded-parity=accent+defaults+bundle' "$DYLIB"
           grep -aFq 'full Mond 2.1 route installed commit=500d76082f0ca021ddd591c05d129ebbc26c20df' "$DYLIB"
           ! grep -aFq 'waiting for Run Exploit' "$DYLIB"
           grep -aFq 'Filza3105HostFactory' "$DYLIB"
@@ -272,6 +292,15 @@ jobs:
           cp .theos/byetunes-resources/meriyah.umd.js "$APP/meriyah.umd.js"
           cp .theos/byetunes-resources/astring.umd.js "$APP/astring.umd.js"
           cp .theos/byetunes-resources/yt_ejs_helper.js "$APP/yt_ejs_helper.js"
+
+          rm -rf "$APP/MondEmbedded.bundle"
+          cp -R ThirdParty/mond-current/Resources/MondEmbedded.bundle "$APP/MondEmbedded.bundle"
+          plutil -lint "$APP/MondEmbedded.bundle/Info.plist"
+          test "$(plutil -extract CFBundleDisplayName raw -o - "$APP/MondEmbedded.bundle/Info.plist")" = "mond"
+          test "$(plutil -extract CFBundleShortVersionString raw -o - "$APP/MondEmbedded.bundle/Info.plist")" = "2.0"
+          test "$(plutil -extract CFBundleIdentifier raw -o - "$APP/MondEmbedded.bundle/Info.plist")" = "com.roooot.mond"
+          test -s "$APP/MondEmbedded.bundle/MondEmbeddedIcon.png"
+
           rm -rf "$APP/Filza3105.bundle"
           cp -R ThirdParty/3105/Resources/Filza3105.bundle "$APP/Filza3105.bundle"
           if test -d .theos/byetunes-appintents/Metadata.appintents; then
@@ -299,7 +328,7 @@ jobs:
           grep -aFq 'All Sources' "$DYLIB"
           grep -aFq 'YouTube' "$DYLIB"
           grep -aFq 'constructed pinned Mond root at 500d76082f0ca021ddd591c05d129ebbc26c20df' "$DYLIB"
-          grep -aFq 'embedded-parity=accent+defaults' "$DYLIB"
+          grep -aFq 'embedded-parity=accent+defaults+bundle' "$DYLIB"
           test -s "$APP/meriyah.umd.js"
           test -s "$APP/astring.umd.js"
           test -s "$APP/yt_ejs_helper.js"
@@ -318,6 +347,8 @@ jobs:
           test -s "$OUTPUT"
           unzip -tq "$OUTPUT"
           unzip -l "$OUTPUT" | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
+          unzip -l "$OUTPUT" | grep -F 'MondEmbedded.bundle/Info.plist'
+          unzip -l "$OUTPUT" | grep -F 'MondEmbedded.bundle/MondEmbeddedIcon.png'
           unzip -l "$OUTPUT" | grep -F 'meriyah.umd.js'
           unzip -l "$OUTPUT" | grep -F 'astring.umd.js'
           unzip -l "$OUTPUT" | grep -F 'yt_ejs_helper.js'
@@ -334,6 +365,8 @@ jobs:
             .theos/byetunes-resources/**
             .theos/byetunes-appintents/Metadata.appintents/**
             ThirdParty/3105/Resources/Filza3105.bundle/UpstreamAppInfo.plist
+            ThirdParty/mond-current/Resources/**
+            ThirdParty/mond-current/UpstreamProject.pbxproj
             ThirdParty/mond/UPSTREAM.md
           if-no-files-found: error
           include-hidden-files: true
