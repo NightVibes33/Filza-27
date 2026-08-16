@@ -10,8 +10,11 @@ CONST_VALUES="$OUTPUT_ROOT/FilzaApplySandboxExt.swiftconstvalues"
 METADATA_OUT="$OUTPUT_ROOT/Metadata.appintents"
 PROCESSOR_STDERR="$OUTPUT_ROOT/appintentsmetadataprocessor.stderr"
 MODULE_NAME="FilzaApplySandboxExt"
-DEPLOYMENT_TARGET="16.0"
-TARGET_TRIPLE="arm64-apple-ios16.0"
+# Keep the metadata processor aligned with Makefile's current Mond 2.1 module
+# deployment target. Mixing an iOS 16 metadata pass with an iOS 17 Swift module
+# can make the standalone frontend/processor reject otherwise valid sources.
+DEPLOYMENT_TARGET="17.0"
+TARGET_TRIPLE="arm64-apple-ios17.0"
 
 rm -rf "$OUTPUT_ROOT"
 mkdir -p "$OUTPUT_ROOT"
