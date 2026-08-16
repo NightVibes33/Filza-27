@@ -115,7 +115,7 @@ if ! xcrun --sdk iphoneos swift-frontend \
   -swift-version 5 \
   -default-isolation MainActor \
   -solver-expression-time-threshold=300 \
-  -target arm64-apple-ios16.0 \
+  -target arm64-apple-ios17.0 \
   -sdk "$SDK_ROOT" \
   -module-cache-path "$MODULE_CACHE" \
   -import-objc-header "$ROOT/FilzaApplySandboxExt-Bridging-Header.h" \
