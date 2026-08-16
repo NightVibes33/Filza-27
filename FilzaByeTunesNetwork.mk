@@ -48,10 +48,6 @@ FilzaApplySandboxExt_FILES += XPF/external/ChOma/src/PatchFinder_arm64.c
 # ABI bridge without changing the staged Mond source or behavior.
 FilzaApplySandboxExt_FILES += MondSandboxSPICompat.c
 
-# Match the verified branch's compiler-only SwiftUI constraint-solver guard.
-# This changes compile budgeting only; runtime source and behavior are unchanged.
-FilzaApplySandboxExt_SWIFTFLAGS += -Xfrontend -solver-expression-time-threshold=300
-
 before-FilzaApplySandboxExt-all::
 	@bash scripts/stage-byetunes-youtubekit.sh
 	@bash scripts/patch-byetunes-youtubekit-primary.sh

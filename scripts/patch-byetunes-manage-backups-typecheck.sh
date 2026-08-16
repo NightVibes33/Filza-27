@@ -41,9 +41,13 @@ db_pos = zblock.index(db_marker)
 playlist_pos = zblock.index(playlist_marker, db_pos)
 playlist_end = zblock.index(outer_vstack_close, playlist_pos)
 
+# Keep the exact original section source. Only move each section into a
+# separate opaque SwiftUI expression so Swift's constraint solver does not
+# have to solve the entire screen as one expression.
 db_block = zblock[db_pos:playlist_pos].rstrip() + "\n"
 playlist_block = zblock[playlist_pos:playlist_end].rstrip() + "\n"
 
+# Prove key user-visible/action statements are present before moving them.
 required_db = [
     'Text("DATABASE SNAPSHOTS")',
     'restoreSnapshot(named: snap.folderName)',
@@ -70,6 +74,8 @@ compact_zblock = (
     + zblock[playlist_end:]
 )
 
+# Convert the original section indentation (20 spaces at the outer VStack) to
+# the normal 8-space indentation inside each computed property.
 def property_body(block: str) -> str:
     return textwrap.indent(textwrap.dedent(block).rstrip() + "\n", "        ")
 
@@ -91,6 +97,8 @@ helpers = (
 new_body_prefix = body_decl + "        backupsContent\n"
 text = text[:body_pos] + helpers + new_body_prefix + text[nav_pos:]
 
+# Postconditions: all original behavior markers and every downstream modifier
+# remain in place, while body now starts from the opaque backupsContent value.
 postconditions = [
     marker,
     "private var databaseSnapshotsSection: some View",
