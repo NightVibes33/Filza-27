@@ -1,7 +1,6 @@
 @import UIKit;
 @import SafariServices;
 #import <objc/runtime.h>
-#import "FilzaSupportProfileData.h"
 
 static NSString * const kFilzaSupportURLString = @"https://buymeacoffee.com/zyn3";
 
@@ -9,12 +8,6 @@ static NSString * const kFilzaSupportURLString = @"https://buymeacoffee.com/zyn3
 @end
 
 @implementation FilzaSupportViewController
-
-static UIImage *FilzaSupportProfileImage(void) {
-    NSData *data = [[NSData alloc] initWithBase64EncodedString:kFilzaSupportProfileJPEGBase64 options:0];
-    if (!data.length) return nil;
-    return [UIImage imageWithData:data scale:UIScreen.mainScreen.scale];
-}
 
 - (void)viewDidLoad {
     [super viewDidLoad];
@@ -31,16 +24,6 @@ static UIImage *FilzaSupportProfileImage(void) {
     UIView *content = [UIView new];
     content.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:content];
-
-    UIImageView *profile = [[UIImageView alloc] initWithImage:FilzaSupportProfileImage()];
-    profile.translatesAutoresizingMaskIntoConstraints = NO;
-    profile.contentMode = UIViewContentModeScaleAspectFill;
-    profile.clipsToBounds = YES;
-    profile.layer.cornerRadius = 58.0;
-    profile.layer.cornerCurve = kCACornerCurveCircular;
-    profile.layer.borderWidth = 2.0;
-    profile.layer.borderColor = [UIColor.separatorColor colorWithAlphaComponent:0.45].CGColor;
-    profile.backgroundColor = UIColor.secondarySystemGroupedBackgroundColor;
 
     UILabel *title = [UILabel new];
     title.translatesAutoresizingMaskIntoConstraints = NO;
@@ -75,31 +58,25 @@ static UIImage *FilzaSupportProfileImage(void) {
     coffee.configuration.contentInsets = NSDirectionalEdgeInsetsMake(0, 18, 0, 18);
     [coffee addTarget:self action:@selector(openCoffee) forControlEvents:UIControlEventTouchUpInside];
 
-    [content addSubview:profile];
     [content addSubview:title];
     [content addSubview:handle];
     [content addSubview:coffee];
 
     [NSLayoutConstraint activateConstraints:@[
-        [content.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:18.0],
+        [content.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:28.0],
         [content.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:24.0],
         [content.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-24.0],
-        [content.bottomAnchor constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-16.0],
+        [content.bottomAnchor constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-18.0],
 
-        [profile.topAnchor constraintEqualToAnchor:content.topAnchor],
-        [profile.centerXAnchor constraintEqualToAnchor:content.centerXAnchor],
-        [profile.widthAnchor constraintEqualToConstant:116.0],
-        [profile.heightAnchor constraintEqualToConstant:116.0],
-
-        [title.topAnchor constraintEqualToAnchor:profile.bottomAnchor constant:16.0],
+        [title.topAnchor constraintEqualToAnchor:content.topAnchor],
         [title.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
         [title.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
 
-        [handle.topAnchor constraintEqualToAnchor:title.bottomAnchor constant:4.0],
+        [handle.topAnchor constraintEqualToAnchor:title.bottomAnchor constant:5.0],
         [handle.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
         [handle.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
 
-        [coffee.topAnchor constraintEqualToAnchor:handle.bottomAnchor constant:22.0],
+        [coffee.topAnchor constraintEqualToAnchor:handle.bottomAnchor constant:24.0],
         [coffee.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
         [coffee.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
         [coffee.heightAnchor constraintEqualToConstant:56.0],
@@ -209,7 +186,7 @@ static UIViewController *FilzaSupportNavigationController(void) {
         UISheetPresentationControllerDetent *compact = [UISheetPresentationControllerDetent
             customDetentWithIdentifier:@"FilzaSupportCompact"
             resolver:^CGFloat(id<UISheetPresentationControllerDetentResolutionContext> context) {
-                return MIN(430.0, context.maximumDetentValue);
+                return MIN(310.0, context.maximumDetentValue);
             }];
         sheet.detents = @[compact];
         sheet.prefersGrabberVisible = YES;
