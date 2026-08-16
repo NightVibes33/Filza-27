@@ -49,6 +49,7 @@ jobs:
           test -f scripts/patch-byetunes-download-provider-parity.sh
           test -f scripts/stage-byetunes-youtubekit.sh
           test -f scripts/patch-byetunes-youtubekit-primary.sh
+          test -f scripts/patch-byetunes-manage-backups-typecheck.sh
           grep -Fq 'case youtube' ByeTunesMetadataCompat.swift
           grep -Fq 'defaultSources' ByeTunesMetadataCompat.swift
           grep -Fq 'All Sources' scripts/restore-byetunes-v24-metadata-compat.sh
@@ -61,6 +62,9 @@ jobs:
           ! grep -Fq 'filter-out ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift' FilzaSSHMetadata.mk
           grep -Fq 'include FilzaSSHMetadata.mk' Makefile
           grep -Fq 'include FilzaByeTunesNetwork.mk' Makefile
+          grep -Fq 'PatchFinder_arm64.c' FilzaByeTunesNetwork.mk
+          grep -Fq 'MondSandboxSPICompat.c' FilzaByeTunesNetwork.mk
+          grep -Fq 'libsystem_sandbox.dylib' MondSandboxSPICompat.c
           grep -Fq 'return try await URLSession.shared.data(for: request)' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
           grep -Fq 'return try await URLSession.shared.data(from: url)' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
           ! grep -Fq 'MetadataWebKitRequest' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
@@ -157,8 +161,6 @@ jobs:
           set -euxo pipefail
           export PATH="/opt/procursus/bin:$PATH"
           gmake clean || true
-          # Mond 2.1 upstream uses iOS 17 APIs. This compiler/deployment target
-          # does not alter Filza's CFBundleShortVersionString.
           gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:17.0
 
           grep -Fxq "mond=$MOND_COMMIT" ThirdParty/mond-current/PINNED.txt
@@ -168,10 +170,16 @@ jobs:
           grep -Fq 'func cache_data_safe_offset' ThirdParty/mond-current/Upstream/helpers/mg.swift
           grep -Fq 'state.pb_granted = false' ThirdParty/mond-current/Upstream/exploit/unsbx.swift
           grep -Fq 'static let shared = AppState()' ThirdParty/mond-current/Upstream/helpers/utils.swift
+          grep -Fq 'Text("Run Exploit")' ThirdParty/mond-current/Upstream/views/app/SettingsView.swift
+          grep -Fq 'Text("Generate Token")' ThirdParty/mond-current/Upstream/views/app/SettingsView.swift
+          grep -Fq 'Text("Your sandbox token is invalid.")' ThirdParty/mond-current/Upstream/views/app/SettingsView.swift
+          grep -Fq 'Text("HouseArrest")' ThirdParty/mond-current/Upstream/views/app/ContentView.swift
+          grep -Fq 'Explore Tendies' ThirdParty/mond-current/Upstream/views/tweaks/posterboard/PosterView.swift
           grep -Fq 'private static func cache_extra' ThirdParty/mond-current/Generated/Mond/helpers_mg.swift
           grep -Fq 'state.pb_granted = false' ThirdParty/mond-current/Generated/Mond/exploit_unsbx.swift
           ! grep -R -Fq 'FILZA_IOS27_GESTALT_KEYS_BEGIN' ThirdParty/mond-current/Generated/Mond
           ! grep -R -Fq 'lastFreshToken' ThirdParty/mond-current/Generated/Mond
+          ! grep -R -Fq 'Fresh sandbox token issued successfully. Mond has not consumed it.' ThirdParty/mond-current/Generated/Mond
 
           DYLIB=".theos/obj/FilzaApplySandboxExt.dylib"
           test -s "$DYLIB"
@@ -200,12 +208,6 @@ jobs:
           grep -aFq 'MondEmbeddedHostFactory' "$DYLIB"
           grep -aFq 'constructed exact Mond 2.1 root at 500d76082f0ca021ddd591c05d129ebbc26c20df' "$DYLIB"
           grep -aFq 'full Mond 2.1 route installed commit=500d76082f0ca021ddd591c05d129ebbc26c20df' "$DYLIB"
-          grep -aFq 'Run Exploit' "$DYLIB"
-          grep -aFq 'Generate Token' "$DYLIB"
-          grep -aFq 'Your sandbox token is invalid.' "$DYLIB"
-          grep -aFq 'Explore Tendies' "$DYLIB"
-          grep -aFq 'HouseArrest' "$DYLIB"
-          ! grep -aFq 'Fresh sandbox token issued successfully. Mond has not consumed it.' "$DYLIB"
           ! grep -aFq 'waiting for Run Exploit' "$DYLIB"
           grep -aFq 'Filza3105HostFactory' "$DYLIB"
           grep -aFq 'ByeTunesEmbeddedHostFactory' "$DYLIB"
@@ -275,7 +277,6 @@ jobs:
           plutil -replace NSBonjourServices -json '["_http._tcp","_ssh._tcp"]' "$APP/Info.plist"
           bash scripts/merge-3105-app-metadata.sh "$APP/Info.plist"
 
-          # Keep the Filza host app version anchored independently of Mond 2.1.
           test "$(plutil -extract CFBundleShortVersionString raw -o - "$APP/Info.plist")" = "4.11"
 
           DYLIB="$APP/Frameworks/FilzaApplySandboxExt.dylib"
