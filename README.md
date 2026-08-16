@@ -113,32 +113,6 @@ The MobileGestalt cache used by the editor is:
 
 The editor includes newer iOS 27 capability mappings alongside the existing Dynamic Island, Always-On Display, Camera Control, Action Button, Stage Manager, Apple Intelligence eligibility, internal-feature, and related controls.
 
-### WebDAV
-
-Enable WebDAV from:
-
-**Preferences → Advanced options → Enable WebDAV server**
-
-Default port:
-
-```text
-11111
-```
-
-Accept the iOS Local Network permission prompt when requested. Because this is an app-hosted service, iOS may suspend it when the app is backgrounded.
-
-### SSH
-
-Open **Preferences → SSH SERVER** to configure the in-process libssh server.
-
-Default port:
-
-```text
-2222
-```
-
-Set a password before enabling public-facing authentication. Filesystem permissions over SSH are the same permissions the FilzaSlop process itself has.
-
 ## Logs
 
 Runtime logs are stored under:
