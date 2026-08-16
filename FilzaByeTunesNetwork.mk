@@ -42,6 +42,12 @@ FilzaApplySandboxExt_SWIFT_FILES += $(BYETUNES_YTK_SWIFT_FILES)
 # the existing upstream implementation linked as its own translation unit.
 FilzaApplySandboxExt_FILES += XPF/external/ChOma/src/PatchFinder_arm64.c
 
+# Upstream Mond resolves these private Sandbox SPI calls from
+# libsystem_sandbox.dylib with dlopen/dlsym. The combined Theos Swift target
+# emits C ABI link references for the same names, so expose a thin forwarding
+# ABI bridge without changing the staged Mond source or behavior.
+FilzaApplySandboxExt_FILES += MondSandboxSPICompat.c
+
 before-FilzaApplySandboxExt-all::
 	@bash scripts/stage-byetunes-youtubekit.sh
 	@bash scripts/patch-byetunes-youtubekit-primary.sh
