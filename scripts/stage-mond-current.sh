@@ -4,11 +4,11 @@ set -euo pipefail
 ROOT="ThirdParty/mond-current"
 GEN="$ROOT/Generated"
 UPSTREAM="$ROOT/Upstream"
-MOND_COMMIT="87b38b2726160c6d1cfacbbfa834a2572d7ca333"
+MOND_COMMIT="500d76082f0ca021ddd591c05d129ebbc26c20df"
 PARTYUI_COMMIT="830eaac8ebf8a4cbcec08d49e8746033574d1903"
 ZIPFOUNDATION_COMMIT="22787ffb59de99e5dc1fbfe80b19c97a904ad48d"
 
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/filza-mond-2.0.XXXXXX")"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/filza-mond-2.1.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 
 fetch_archive() {
@@ -29,7 +29,7 @@ tar -xzf "$TMP/zipfoundation.tar.gz" -C "$TMP/zipfoundation" --strip-components=
 rm -rf "$GEN" "$UPSTREAM"
 mkdir -p "$GEN/Mond" "$GEN/PartyUI" "$GEN/ZIPFoundation" "$ROOT/Licenses"
 
-# Keep an untouched copy of the complete upstream 2.0 app source tree for
+# Keep an untouched copy of the complete upstream 2.1 app source tree for
 # provenance. Only Generated/ is mechanically adapted for compilation inside
 # Filza's existing UIApplication/module.
 cp -R "$TMP/mond/mond" "$UPSTREAM"
@@ -53,7 +53,7 @@ MOND_FILES=(
 )
 
 for rel in "${MOND_FILES[@]}"; do
-  test -f "$UPSTREAM/$rel" || { echo "Missing Mond 2.0 source: $rel" >&2; exit 1; }
+  test -f "$UPSTREAM/$rel" || { echo "Missing Mond 2.1 source: $rel" >&2; exit 1; }
   dest="$GEN/Mond/${rel//\//_}"
   cp "$UPSTREAM/$rel" "$dest"
 done
@@ -86,7 +86,7 @@ import sys
 
 root = Path(sys.argv[1])
 
-# These are module-collision adaptations only. The untouched Mond 2.0 source is
+# These are module-collision adaptations only. The untouched Mond 2.1 source is
 # retained under ThirdParty/mond-current/Upstream and no behavioral/UI patch is
 # applied to it or to the generated copy.
 mond_map = {
@@ -266,12 +266,14 @@ EOF
 require_contains() {
   local path="$1" marker="$2" label="$3"
   grep -Fq "$marker" "$path" || {
-    echo "Mond 2.0 staging check failed: ${label} marker '${marker}' missing from ${path}" >&2
+    echo "Mond 2.1 staging check failed: ${label} marker '${marker}' missing from ${path}" >&2
     exit 1
   }
 }
 
-# Prove the full upstream 2.0 surface is staged.
+# Prove the full upstream 2.1 surface and its release fixes are staged.
+require_contains "$UPSTREAM/mond.swift" '@StateObject private var state = AppState.shared' 'upstream shared AppState lifecycle'
+require_contains "$UPSTREAM/mond.swift" 'UserDefaults.standard.register(defaults: ["method": "bad_query"])' 'upstream 2.1 method default'
 require_contains "$UPSTREAM/mond.swift" 'grant_all(state: state)' 'upstream automatic exploit lifecycle'
 require_contains "$UPSTREAM/views/app/SettingsView.swift" 'Your sandbox token is invalid.' 'upstream token validation UI'
 require_contains "$UPSTREAM/views/app/SettingsView.swift" '.onChange(of: ka_on) { _, enabled in' 'upstream iOS 17 Keep Alive form'
@@ -279,7 +281,10 @@ require_contains "$UPSTREAM/views/tweaks/posterboard/PosterView.swift" '"Explore
 require_contains "$UPSTREAM/views/tweaks/posterboard/TendiesView.swift" 'struct TendiesView' 'Tendies UI'
 require_contains "$UPSTREAM/helpers/posterboard/tendies.swift" '@Observable' 'Tendies model'
 require_contains "$UPSTREAM/views/tweaks/SantanderView.swift" 'struct SantanderView' 'HouseArrest browser'
-require_contains "$UPSTREAM/helpers/mg.swift" 'Security Research Device Mode' 'Mond 2.0 MobileGestalt catalog'
+require_contains "$UPSTREAM/helpers/mg.swift" 'private static func cache_extra' '2.1 tweak CacheExtra fix'
+require_contains "$UPSTREAM/helpers/mg.swift" 'func cache_data_safe_offset' '2.1 safe MobileGestalt offset fix'
+require_contains "$UPSTREAM/exploit/unsbx.swift" 'state.pb_granted = false' '2.1 CMG grant state fix'
+require_contains "$UPSTREAM/helpers/utils.swift" 'static let shared = AppState()' '2.1 shared app state'
 
 # Prove the mechanically namespaced copy still contains those exact behaviors.
 require_contains "$GEN/Mond/views_app_ContentView.swift" 'navigationTitle("mond")' 'root title'
@@ -296,6 +301,10 @@ require_contains "$GEN/Mond/views_tweaks_posterboard_PosterView.swift" '"Explore
 require_contains "$GEN/Mond/views_tweaks_posterboard_TendiesView.swift" 'struct MondCurrentTendiesView' 'Tendies UI'
 require_contains "$GEN/Mond/helpers_posterboard_tendies.swift" '@Observable' 'Tendies model'
 require_contains "$GEN/Mond/views_tweaks_SantanderView.swift" 'struct MondCurrentSantanderView' 'HouseArrest browser'
+require_contains "$GEN/Mond/helpers_mg.swift" 'private static func cache_extra' 'namespaced 2.1 tweak CacheExtra fix'
+require_contains "$GEN/Mond/helpers_mg.swift" 'func cache_data_safe_offset' 'namespaced 2.1 safe offset fix'
+require_contains "$GEN/Mond/exploit_unsbx.swift" 'state.pb_granted = false' 'namespaced 2.1 CMG state fix'
+require_contains "$GEN/Mond/helpers_utils.swift" 'static let shared = MondCurrentAppState()' 'namespaced 2.1 shared app state'
 require_contains "$GEN/mond_bad_query.c" 'mond_bad_query' 'namespaced Mond bad_query'
 require_contains "$GEN/ZIPFoundation/Entry.swift" 'public struct MondZIPEntry' 'namespaced ZIPFoundation Entry'
 
@@ -306,13 +315,14 @@ require_contains "$GEN/ZIPFoundation/Entry.swift" 'public struct MondZIPEntry' '
 ! grep -R -Fq 'Color(red: 0.28529, green: 0.44118, blue: 0.92451)' "$GEN/Mond"
 
 require_contains Makefile '$(MOND_SWIFT_FILES)' 'Mond source graph in build'
+require_contains FilzaMondCurrentHost.swift 'MondCurrentAppState.shared' '2.1 shared host state'
 require_contains FilzaMondCurrentHost.swift 'grant_all(state: state)' 'upstream automatic onAppear behavior'
-require_contains FilzaMondBridge.m 'full Mond 2.0 route installed commit=87b38b2726160c6d1cfacbbfa834a2572d7ca333' 'Mond 2.0 bridge provenance'
+require_contains FilzaMondBridge.m 'full Mond 2.1 route installed commit=500d76082f0ca021ddd591c05d129ebbc26c20df' 'Mond 2.1 bridge provenance'
 
 ZIP_SWIFT_COUNT="$(find "$GEN/ZIPFoundation" -type f -name '*.swift' | wc -l | tr -d ' ')"
 test "$ZIP_SWIFT_COUNT" -ge 20 || {
-  echo "Mond 2.0 staging check failed: expected >=20 ZIPFoundation Swift sources, got $ZIP_SWIFT_COUNT" >&2
+  echo "Mond 2.1 staging check failed: expected >=20 ZIPFoundation Swift sources, got $ZIP_SWIFT_COUNT" >&2
   exit 1
 }
 
-echo "Staged exact Mond 2.0 ${MOND_COMMIT} with PartyUI ${PARTYUI_COMMIT} and ZIPFoundation ${ZIPFOUNDATION_COMMIT}; no Filza behavior/UI patches applied"
+echo "Staged exact Mond 2.1 ${MOND_COMMIT} with PartyUI ${PARTYUI_COMMIT} and ZIPFoundation ${ZIPFOUNDATION_COMMIT}; no Filza behavior/UI patches applied"
