@@ -90,10 +90,7 @@ for path in root.glob("*.swift"):
         path.write_text(new, encoding="utf-8")
 PY
 
-# stage-mond-current.sh already invokes this overlay after recreating the pinned
-# upstream Mond source graph. Apply the token ABI/status patch here as part of
-# that same deterministic Mond adaptation pass so the generated sources cannot
-# fall back to upstream's stale token implementation on the next build.
+# Apply the token ABI/status patch in the same deterministic staging pass.
 bash scripts/patch-mond-token-button.sh
 
 grep -Fq '// FILZA_IOS27_GESTALT_KEYS_BEGIN' "$TARGET" || {
@@ -132,8 +129,24 @@ grep -Fq 'Text("Generate Token")' "$MOND_ROOT/views_App_SettingsView.swift" || {
   echo "Mond token integration failed: upstream Generate Token button missing" >&2
   exit 1
 }
-grep -Fq 'token == token_last_issued' "$MOND_ROOT/views_App_SettingsView.swift" || {
-  echo "Mond token integration failed: non-destructive validity check missing" >&2
+grep -Fq 'token == lastFreshToken' "$MOND_ROOT/views_App_SettingsView.swift" || {
+  echo "Mond token integration failed: fresh-token status tracking missing" >&2
+  exit 1
+}
+grep -Fq 'Generate Token preserved fresh sandbox token without consuming it' "$MOND_ROOT/views_App_SettingsView.swift" || {
+  echo "Mond token integration failed: generated-token preservation log missing" >&2
+  exit 1
+}
+grep -Fq 'Fresh sandbox token issued successfully. Mond has not consumed it.' "$MOND_ROOT/views_App_SettingsView.swift" || {
+  echo "Mond token integration failed: non-destructive generated-token status missing" >&2
+  exit 1
+}
+! grep -Fq 'mondCurrentSandboxExtensionConsume(token)' "$MOND_ROOT/views_App_SettingsView.swift" || {
+  echo "Mond token integration failed: Settings still consumes displayed tokens" >&2
+  exit 1
+}
+! grep -Fq 'Your sandbox token is invalid.' "$MOND_ROOT/views_App_SettingsView.swift" || {
+  echo "Mond token integration failed: destructive false-invalid status still present" >&2
   exit 1
 }
 grep -Fq 'issue(classPtr, pathPtr, 0)' "$MOND_ROOT/helpers_sbx.swift" || {
@@ -146,9 +159,9 @@ if grep -R -Fq 'Color("AccentColor")' ThirdParty/mond-current/Generated/Mond; th
   exit 1
 fi
 
-# These were old Filza-only token handoff hooks. They must not be regenerated.
+# Old Filza-only token handoff hooks must not be regenerated.
 ! grep -R -Fq 'mondCurrentCapturedExploitToken' "$MOND_ROOT"
 ! grep -R -Fq 'Settings loaded captured exploit token' "$MOND_ROOT"
 ! grep -R -Fq 'Run Exploit populated captured token' "$MOND_ROOT"
 
-echo "Patched current upstream Mond with iOS 27 keys, token ABI/status correctness, and embedded appearance; exploit remains manual"
+echo "Patched current upstream Mond with iOS 27 keys, preserved token semantics, and embedded appearance; exploit remains manual"
