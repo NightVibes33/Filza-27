@@ -49,6 +49,15 @@ FilzaApplySandboxExt_FILES += XPF/external/ChOma/src/PatchFinder_arm64.c
 FilzaApplySandboxExt_FILES += MondSandboxSPICompat.c
 
 before-FilzaApplySandboxExt-all::
+	# stage-mond-current.sh runs in the main Makefile hook before this included
+	# fragment. Adapt only the generated copy for resources/preferences that the
+	# standalone Mond Xcode app target normally supplies.
+	@bash scripts/patch-mond-embedded-parity.sh
+	@test -f scripts/patch-mond-embedded-parity.sh || (echo "Missing Mond embedded parity adapter" >&2; exit 1)
+	@grep -Fq 'MondEmbeddedParity.accentColor' ThirdParty/mond-current/Generated/Mond/views_tweaks_GestaltView.swift
+	@grep -Fq '@AppStorage("method", store: MondEmbeddedParity.defaults)' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
+	@grep -Fq 'Color("AccentColor")' ThirdParty/mond-current/Upstream/views/tweaks/GestaltView.swift
+
 	@bash scripts/stage-byetunes-youtubekit.sh
 	@bash scripts/patch-byetunes-youtubekit-primary.sh
 	@bash scripts/patch-byetunes-manage-backups-typecheck.sh
