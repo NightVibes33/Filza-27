@@ -13,27 +13,69 @@ INTENTS_SOURCE="$(python3 -c 'import os; print(os.path.realpath("ByeTunes/MusicM
 
 mkdir -p "$OUTPUT_ROOT" "$MODULE_CACHE"
 
-# Match the Swift source graph in Makefile exactly. The standalone @main and
-# splash owners are intentionally excluded because Filza owns the lifecycle.
+realpath_source() {
+  local file="$1"
+  if ! test -s "$file"; then
+    echo "ERROR: AppIntents source graph is missing required Swift source: $file" >&2
+    exit 1
+  fi
+  python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$file"
+}
+
+append_swift_tree() {
+  local directory="$1"
+  if ! test -d "$directory"; then
+    echo "ERROR: AppIntents source graph is missing required Swift source directory: $directory" >&2
+    exit 1
+  fi
+  while IFS= read -r file; do
+    realpath_source "$file"
+  done < <(find "$directory" -type f -name '*.swift' -print | sort)
+}
+
+# Keep the AppIntents extraction module aligned with the Swift graph that is
+# actually linked into FilzaApplySandboxExt. The standalone ByeTunes @main and
+# splash owners remain excluded because Filza owns UIApplication lifecycle.
+#
+# Mond 2.1 and the pinned pre-v2.4 YouTubeKit are staged by the normal Theos
+# pre-build hooks. The metadata pass runs after the successful arm64 build, so
+# those generated trees must be present and must participate in this frontend
+# invocation just as they do in the real module build.
 {
-  for file in ByeTunesEmbeddedHost.swift ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift MondGestaltView.swift Filza3105Host.swift; do
-    python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$file"
+  for file in \
+    ByeTunesEmbeddedHost.swift \
+    ByeTunesMetadataCompat.swift \
+    ByeTunesDownloadParityCompat.swift \
+    FilzaMondCurrentHost.swift \
+    Filza3105Host.swift; do
+    realpath_source "$file"
   done
-  find ThirdParty/3105/Sources -type f -name '*.swift' -print | sort | while IFS= read -r file; do
-    python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$file"
-  done
+
+  append_swift_tree ThirdParty/mond-current/Generated/Mond
+  append_swift_tree ThirdParty/mond-current/Generated/PartyUI
+  append_swift_tree ThirdParty/mond-current/Generated/ZIPFoundation
+  append_swift_tree ThirdParty/3105/Sources
+
   find ByeTunes/MusicManager -type f -name '*.swift' \
     ! -name 'MusicManagerApp.swift' ! -name 'SplashView.swift' -print | sort | while IFS= read -r file; do
-    python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$file"
+    realpath_source "$file"
   done
-  python3 -c 'import os; print(os.path.realpath("ByeTunes/MusicManagerActivityShared/DownloadLiveActivityAttributes.swift"))'
+
+  realpath_source ByeTunes/MusicManagerActivityShared/DownloadLiveActivityAttributes.swift
+  append_swift_tree ThirdParty/byetunes-youtubekit/Generated
 } > "$SOURCE_LIST"
 
 test -s "$SOURCE_LIST"
 grep -Fq '/ByeTunesMetadataCompat.swift' "$SOURCE_LIST"
 grep -Fq '/ByeTunesDownloadParityCompat.swift' "$SOURCE_LIST"
+grep -Fq '/FilzaMondCurrentHost.swift' "$SOURCE_LIST"
+grep -Fq '/mond-current/Generated/Mond/views_app_ContentView.swift' "$SOURCE_LIST"
+grep -Fq '/mond-current/Generated/PartyUI/Containers_TerminalPlatter.swift' "$SOURCE_LIST"
+grep -Fq '/mond-current/Generated/ZIPFoundation/Archive.swift' "$SOURCE_LIST"
 grep -Fq '/MusicManagerIntents.swift' "$SOURCE_LIST"
 grep -Fq '/DownloadLiveActivityAttributes.swift' "$SOURCE_LIST"
+grep -Fq '/byetunes-youtubekit/Generated/YouTube.swift' "$SOURCE_LIST"
+! grep -Fq '/MondGestaltView.swift' "$SOURCE_LIST"
 ! grep -Fq '/MusicManagerApp.swift' "$SOURCE_LIST"
 ! grep -Fq '/SplashView.swift' "$SOURCE_LIST"
 
@@ -43,7 +85,10 @@ test -s "$PROTOCOL_LIST"
 SOURCES=()
 FRONTEND_SOURCES=()
 while IFS= read -r file; do
-  test -s "$file"
+  if ! test -s "$file"; then
+    echo "ERROR: AppIntents source list contains a missing source: $file" >&2
+    exit 1
+  fi
   SOURCES+=("$file")
   if test "$file" = "$INTENTS_SOURCE"; then
     FRONTEND_SOURCES+=(-primary-file "$file")
@@ -69,6 +114,7 @@ if ! xcrun --sdk iphoneos swift-frontend \
   -parse-as-library \
   -swift-version 5 \
   -default-isolation MainActor \
+  -solver-expression-time-threshold=300 \
   -target arm64-apple-ios16.0 \
   -sdk "$SDK_ROOT" \
   -module-cache-path "$MODULE_CACHE" \
@@ -83,6 +129,7 @@ if ! xcrun --sdk iphoneos swift-frontend \
   -Xcc -I"$ROOT/Vendor/idevice/include" \
   -Xcc -I"$ROOT/ThirdParty/bad_query/bad_query" \
   -Xcc -I"$ROOT/ThirdParty/3105/Sources" \
+  -Xcc -I"$ROOT/ThirdParty/mond-current/Generated" \
   -Xcc -I"$SDK_ROOT/usr/include/libxml2" \
   -o "$OBJECT_OUT" 2>"$FRONTEND_STDERR"; then
   echo "ERROR: Swift AppIntents constant-value extraction failed. Compiler diagnostics:"
