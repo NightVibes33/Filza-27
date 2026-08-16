@@ -119,12 +119,13 @@ private struct MondEmbeddedRoot: View {
                     )
                 }
 
-                // This is upstream mond's App-root access initialization. Do
-                // not replace it with a Filza-specific approximation.
-                grant_all(state: state)
+                // The standalone upstream app auto-runs grant_all() from its
+                // App-root onAppear. In the embedded Filza host we deliberately
+                // leave exploit execution to Mond's real Settings -> Run Exploit
+                // button so opening Mond cannot silently change exploit state.
                 FilzaDiagnosticsAppend(
                     "mond",
-                    "current upstream ContentView appeared full-screen; upstream grant_all started"
+                    "current upstream ContentView appeared full-screen; waiting for Run Exploit"
                 )
             }
             .overlay {
@@ -175,7 +176,7 @@ public final class MondEmbeddedHostFactory: NSObject {
         controller.modalPresentationStyle = .fullScreen
         FilzaDiagnosticsAppend(
             "mond",
-            "constructed full-screen current mond root at 4a37bfca5cb4abb2c99891972365d872d700525e with upstream App bootstrap parity"
+            "constructed full-screen current mond root at 4a37bfca5cb4abb2c99891972365d872d700525e with manual exploit entry"
         )
         return controller
     }
