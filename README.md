@@ -6,7 +6,7 @@ A jailed, sideloadable Filza fork for modern iOS with extra container access, ap
 
 [**Download the current green `Filza-27.ipa` Release**](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza-27.ipa)
 
-**Current verified Release:** `filza-27-51` — built from `740115322ff90b68cafb49420f75008492f2d467` after workflow run `31918082498` completed successfully.
+**Current verified Release:** `filza-27-55` — built from `c13f74542135c59a1528b04695aba44779a936bd` after workflow run `31921387884` completed successfully.
 
 **Release rule:** `Filza-27.ipa` is published only after the full IPA workflow finishes green on `main`.
 
@@ -18,8 +18,8 @@ A jailed, sideloadable Filza fork for modern iOS with extra container access, ap
 | --- | --- |
 | Latest Release IPA | ✅ Published only from a green verified build |
 | Filza file browser | ✅ Included |
-| Apps Manager / app containers | ✅ Integrated |
-| Portable `.3105` patches | ✅ Integrated |
+| Apps Manager / app containers | ✅ 3105 1.0.1 integrated |
+| Portable `.3105` patches | ✅ 3105 1.0.1 Patch Workspace v2 integrated |
 | Music Library / ByeTunes | ✅ Integrated |
 | YouTube metadata provider | ✅ Restored and bundled |
 | MobileGestalt editor / Mond | ✅ Integrated |
@@ -64,31 +64,41 @@ The main Filza toolbar and Home Screen quick actions expose the four main additi
 
 ### Apps Manager
 
-Apps Manager opens the integrated 3105 workspace and can browse applications and the containers that are actually reachable from the current process.
+Apps Manager opens the embedded **3105 1.0.1** workspace and can browse applications and the containers that are actually reachable from the current process.
+
+The 1.0.1 integration is pinned to `NightVibes33/3105@90ab4dd35823d58de10e6b8b78236e0e7e1ad32b`, matching the upstream 3105 1.0.1 release. Its complete changed source graph is staged before compilation rather than only bumping a version string.
 
 It includes:
 
 - application search;
 - app icons and disk-size recovery where available;
-- foreign app data-container fallback;
+- foreign app data-container fallback and container identity recovery;
+- independent Files tabs with per-tab navigation state;
 - file preview;
-- create, rename, import, replace, and delete operations;
-- Cleaner and Wallpaper Lab tools;
+- create, rename, import, replace, delete, ZIP creation, and ZIP extraction operations;
+- ZIP extraction checks for traversal paths, symbolic links, CRC failures, and available space;
+- responsive iPad / landscape navigation using the 1.0.1 split-view layout;
+- optional Cleaner and Wallpaper tabs controlled from Home;
 - direct handoff from Files into portable patch projects.
 
 A container is only treated as available after real directory access succeeds.
 
 ### Patches
 
-The Patches page uses the same 3105 workspace as Apps Manager.
+The Patches page uses the same embedded **3105 1.0.1 Patch Workspace v2** as Apps Manager.
 
 It supports portable `.3105` projects with:
 
-- create, edit, import, and export;
+- create, edit, import, export, and workspace synchronization;
+- a real app Documents/Patches workspace for schema-v2 projects;
+- legacy v1 `.3105` decoding alongside the newer v2 workspace/package format;
 - bundle-ID based targets so projects are not tied to one container UUID;
-- optional password protection;
-- backups and receipts;
-- apply and restore flows.
+- directory-only bundle targets in addition to file targets;
+- optional password protection and stored content keys;
+- Files and HTTPS import routes;
+- backups, receipts, and transaction journals;
+- restore behavior that restores original items, removes patch-added files, and removes empty directories created by the patch;
+- apply and restore flows through the retained Filza container-access path.
 
 ### Music Library
 
@@ -233,9 +243,15 @@ The current installable IPA workflow is:
 .github/workflows/verify-upstream-byetunes-ssh.yml
 ```
 
-It verifies the pinned dependencies, builds the arm64 runtime, generates ByeTunes AppIntents metadata, stages the required Music Library and YouTubeKit resources, injects everything into the pinned unsigned Filza base IPA, verifies the final package, and uploads the artifact.
+It verifies the pinned dependencies, stages the pinned 3105 1.0.1 source changes, builds the arm64 runtime, generates ByeTunes AppIntents metadata, stages the required Music Library and YouTubeKit resources, injects everything into the pinned unsigned Filza base IPA, verifies the final package, and uploads the artifact.
 
-After that workflow finishes successfully, `.github/workflows/publish-green-ipa-release.yml` republishes that exact verified artifact to GitHub Releases as:
+The 3105 staging source is pinned to:
+
+```text
+NightVibes33/3105@90ab4dd35823d58de10e6b8b78236e0e7e1ad32b
+```
+
+After the verifier finishes successfully, `.github/workflows/publish-green-ipa-release.yml` republishes that exact verified artifact to GitHub Releases as:
 
 ```text
 Filza-27.ipa
