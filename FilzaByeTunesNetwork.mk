@@ -72,10 +72,12 @@ before-FilzaApplySandboxExt-all::
 	@grep -Fq 'Bundle.main.infoDictionary' ThirdParty/mond-current/Upstream/views/app/SettingsView.swift
 
 	@test -f FilzaSupportPrompt.m || (echo "Missing Filza Buy Me a Coffee support replacement" >&2; exit 1)
+	@test -s FilzaSupportProfileData.h || (echo "Missing embedded Filza support profile image" >&2; exit 1)
 	@grep -Fq 'https://buymeacoffee.com/zyn3' FilzaSupportPrompt.m
-	@grep -Fq 'https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png' FilzaSupportPrompt.m
+	@grep -Fq 'kFilzaSupportProfileJPEGBase64' FilzaSupportPrompt.m
+	@grep -Fq 'UIViewContentModeScaleAspectFill' FilzaSupportPrompt.m
+	@grep -Fq 'cornerRadius = 58.0' FilzaSupportPrompt.m
 	@grep -Fq 'Activate Filza' FilzaSupportPrompt.m
-	@grep -Fq 'Support is optional.' FilzaSupportPrompt.m
 
 	@bash scripts/stage-byetunes-youtubekit.sh
 	@bash scripts/patch-byetunes-youtubekit-primary.sh
