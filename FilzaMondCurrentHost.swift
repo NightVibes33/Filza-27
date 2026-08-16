@@ -4,12 +4,49 @@ import UIKit
 import UniformTypeIdentifiers
 import ObjectiveC.runtime
 
-// Mond 2.1 is compiled into Filza's process, so its standalone App entry point
-// cannot be used directly. These globals mirror mond.swift exactly where the
-// upstream source expects process-global state.
+// Mond is compiled into Filza's process, so its standalone App entry point
+// cannot be used directly. These globals mirror mond.swift where the upstream
+// source expects process-global state.
 var pipe = Pipe()
 var sema = DispatchSemaphore(value: 0)
 var fm = FileManager.default
+
+// Standalone Mond receives these values from its app target rather than from
+// Swift source: AccentColor comes from Assets.xcassets and UserDefaults.standard
+// belongs to com.roooot.mond. When Mond is hosted inside Filza, make those two
+// pieces of app-target environment explicit so the generated upstream source
+// sees the same color and a dedicated Mond preferences domain.
+enum MondEmbeddedParity {
+    static let accentColor = Color(
+        red: 0.28529,
+        green: 0.44118,
+        blue: 0.92451,
+        opacity: 1.0
+    )
+
+    static let defaults: UserDefaults = {
+        let legacy = UserDefaults.standard
+        let store = UserDefaults(suiteName: "com.roooot.mond") ?? legacy
+
+        // Preserve state created by older embedded Filza builds once, then keep
+        // Mond isolated in the same logical defaults domain as the standalone app.
+        let keys = [
+            "method",
+            "ka_on",
+            "token",
+            "dismiss_after_import",
+            "mg_device_name"
+        ]
+
+        for key in keys where store.object(forKey: key) == nil {
+            if let value = legacy.object(forKey: key) {
+                store.set(value, forKey: key)
+            }
+        }
+
+        return store
+    }()
+}
 
 var mondCurrentTestPath: String {
     let url = FileManager.default
@@ -23,7 +60,7 @@ var mondCurrentTestPath: String {
     return url.path
 }
 
-// Mechanical selector namespace only; behavior matches Mond 2.1's
+// Mechanical selector namespace only; behavior matches Mond's
 // UIDocumentPickerViewController.fix_init implementation.
 extension UIDocumentPickerViewController {
     @objc(filzaMond2_fix_initForOpeningContentTypes:asCopy:)
@@ -49,9 +86,9 @@ private enum MondEmbeddedRuntime {
             dup2(pipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
         }
 
-        UserDefaults.standard.register(defaults: ["method": "bad_query"])
+        MondEmbeddedParity.defaults.register(defaults: ["method": "bad_query"])
 
-        if UserDefaults.standard.bool(forKey: "ka_on") {
+        if MondEmbeddedParity.defaults.bool(forKey: "ka_on") {
             keep_alive()
         }
 
@@ -59,7 +96,7 @@ private enum MondEmbeddedRuntime {
 
         FilzaDiagnosticsAppend(
             "mond",
-            "Mond 2.1 runtime configured commit=500d76082f0ca021ddd591c05d129ebbc26c20df"
+            "Mond runtime configured commit=500d76082f0ca021ddd591c05d129ebbc26c20df embedded-parity=accent+defaults"
         )
     }
 
@@ -94,7 +131,7 @@ private enum MondEmbeddedRuntime {
 
 private struct MondEmbeddedRoot: View {
     @StateObject private var state = MondCurrentAppState.shared
-    @AppStorage("ka_on") private var ka_on = true
+    @AppStorage("ka_on", store: MondEmbeddedParity.defaults) private var ka_on = true
 
     var body: some View {
         MondCurrentContentView()
@@ -148,14 +185,14 @@ public final class MondEmbeddedHostFactory: NSObject {
 
         FilzaDiagnosticsAppend(
             "mond",
-            "constructed exact Mond 2.1 root at 500d76082f0ca021ddd591c05d129ebbc26c20df"
+            "constructed pinned Mond root at 500d76082f0ca021ddd591c05d129ebbc26c20df"
         )
         return controller
     }
 }
 
-// Preserve the older Filza bridge ABI only as a mechanical host alias. It
-// returns the same unmodified Mond 2.1 root.
+// Preserve the older Filza bridge ABI only as a host alias. It returns the same
+// pinned Mond root with only the explicit embedded-environment parity adapters.
 @objc(MondGestaltHostFactory)
 public final class MondGestaltHostFactory: NSObject {
     @objc(makeViewControllerWithPath:)
