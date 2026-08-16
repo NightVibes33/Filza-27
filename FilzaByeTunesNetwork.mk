@@ -50,13 +50,21 @@ FilzaApplySandboxExt_FILES += MondSandboxSPICompat.c
 
 before-FilzaApplySandboxExt-all::
 	# stage-mond-current.sh runs in the main Makefile hook before this included
-	# fragment. Adapt only the generated copy for resources/preferences that the
-	# standalone Mond Xcode app target normally supplies.
+	# fragment. First prove the pinned functional Swift graph is complete; then
+	# stage the app-target resources and adapt only the generated embedded copy.
+	@bash scripts/verify-mond-source-completeness.sh
+	@bash scripts/stage-mond-embedded-resources.sh
 	@bash scripts/patch-mond-embedded-parity.sh
+	@test -f scripts/verify-mond-source-completeness.sh || (echo "Missing Mond completeness verifier" >&2; exit 1)
+	@test -f scripts/stage-mond-embedded-resources.sh || (echo "Missing Mond resource staging script" >&2; exit 1)
 	@test -f scripts/patch-mond-embedded-parity.sh || (echo "Missing Mond embedded parity adapter" >&2; exit 1)
+	@test -s ThirdParty/mond-current/Resources/MondEmbedded.bundle/Info.plist
+	@test -s ThirdParty/mond-current/Resources/MondEmbedded.bundle/MondEmbeddedIcon.png
 	@grep -Fq 'MondEmbeddedParity.accentColor' ThirdParty/mond-current/Generated/Mond/views_tweaks_GestaltView.swift
 	@grep -Fq '@AppStorage("method", store: MondEmbeddedParity.defaults)' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
+	@grep -Fq 'MondEmbeddedParity.bundle.infoDictionary' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
 	@grep -Fq 'Color("AccentColor")' ThirdParty/mond-current/Upstream/views/tweaks/GestaltView.swift
+	@grep -Fq 'Bundle.main.infoDictionary' ThirdParty/mond-current/Upstream/views/app/SettingsView.swift
 
 	@bash scripts/stage-byetunes-youtubekit.sh
 	@bash scripts/patch-byetunes-youtubekit-primary.sh
