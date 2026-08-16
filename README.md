@@ -2,7 +2,6 @@
 
 A jailed, sideloadable Filza fork for modern iOS that combines Filza with app/container management, ByeTunes music tools, Mond 2.1, WebDAV, SSH, and the 3105 patch workspace in one IPA.
 
-[![Verified IPA](https://github.com/NightVibes33/Filza-27/actions/workflows/verify-upstream-byetunes-ssh.yml/badge.svg?branch=main)](https://github.com/NightVibes33/Filza-27/actions/workflows/verify-upstream-byetunes-ssh.yml)
 [![Release](https://img.shields.io/github/v/release/NightVibes33/Filza-27?display_name=tag&label=latest)](https://github.com/NightVibes33/Filza-27/releases/latest)
 
 ## Download
