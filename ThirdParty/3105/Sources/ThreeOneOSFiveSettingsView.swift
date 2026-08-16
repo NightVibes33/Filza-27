@@ -53,15 +53,9 @@ struct ThreeOneOSFiveSettingsView: View {
                         Text("iOS 27.0")
                             .font(.body)
                         ForEach(ExploitSupportPolicy.verifiedIOS27Builds, id: \.build) { version in
-                            Text(
-                                language.text(
-                                    "settings.beta_build",
-                                    Int64(version.beta),
-                                    version.build
-                                )
-                            )
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
+                            Text(versionLabel(version))
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
                         }
                     }
                     .padding(.vertical, 2)
@@ -114,7 +108,25 @@ struct ThreeOneOSFiveSettingsView: View {
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "AppReleaseDisplayVersion") as? String
             ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "1.0"
+            ?? "1.0.1"
+    }
+
+    private func versionLabel(
+        _ version: (beta: Int, publicBeta: Int?, build: String)
+    ) -> String {
+        if let publicBeta = version.publicBeta {
+            return language.text(
+                "settings.developer_public_beta_build",
+                Int64(version.beta),
+                Int64(publicBeta),
+                version.build
+            )
+        }
+        return language.text(
+            "settings.developer_beta_build",
+            Int64(version.beta),
+            version.build
+        )
     }
 
     @ViewBuilder
@@ -132,8 +144,9 @@ struct ThreeOneOSFiveSettingsView: View {
                     }
                     Spacer()
                     Image(systemName: "arrow.up.right")
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(AppTheme.accent)
-                        .frame(width: 44, height: 44)
+                        .frame(width: 28, height: 28)
                 }
                 .contentShape(Rectangle())
             }
