@@ -1,5 +1,5 @@
-# Build against the modern iOS SDK because Mond 2.0 and the complete ByeTunes app use
-# modern SwiftUI APIs. Mond 2.0's upstream deployment target is iOS 17.
+# Build against the modern iOS SDK because Mond 2.1 and the complete ByeTunes app use
+# modern SwiftUI APIs. Mond 2.1's upstream deployment target is iOS 17.
 TARGET := iphone:clang:latest:17.0
 ARCHS = arm64
 
@@ -30,7 +30,7 @@ FilzaApplySandboxExt_FILES += kexploit/kexploit_opa334.m kexploit/krw.m kexploit
 FilzaApplySandboxExt_FILES += utils/file.c utils/hexdump.c utils/process.c
 FilzaApplySandboxExt_FILES += kpf/patchfinder.m
 FilzaApplySandboxExt_FILES += XPF/src/xpf.c XPF/src/common.c XPF/src/decompress.c XPF/src/bad_recovery.c XPF/src/non_ppl.c XPF/src/ppl.c
-FilzaApplySandboxExt_FILES += XPF/external/ChOma/src/arm64.c XPF/external/ChOma/src/Base64.c XPF/external/ChOma/src/BufferedStream.c XPF/external/ChOma/src/CodeDirectory.c XPF/external/ChOma/src/CSBlob.c XPF/external/ChOma/src/DER.c XPF/external/ChOma/src/DyldSharedCache.c XPF/external/ChOma/src/Entitlements.c XPF/external/ChOma/src/Fat.c XPF/external/ChOma/src/FileStream.c XPF/external/ChOma/src/Host.c XPF/external/ChOma/src/MachO.c XPF/external/ChOma/src/MachOLoadCommand.c XPF/external/ChOma/src/MemoryStream.c XPF/external/ChOma/src/PatchFinder.c XPF/external/ChOma/src/PatchFinder_arm64.c XPF/external/ChOma/src/Util.c
+FilzaApplySandboxExt_FILES += XPF/external/ChOma/src/arm64.c XPF/external/ChOma/src/Base64.c XPF/external/ChOma/src/BufferedStream.c XPF/external/ChOma/src/CodeDirectory.c XPF/external/ChOma/src/CSBlob.c XPF/external/ChOma/src/DER.c XPF/external/ChOma/src/DyldSharedCache.c XPF/external/ChOma/src/Entitlements.c XPF/external/ChOma/src/Fat.c XPF/external/ChOma/src/FileStream.c XPF/external/ChOma/src/Host.c XPF/external/ChOma/src/MachO.c XPF/external/ChOma/src/MachOLoadCommand.c XPF/external/ChOma/src/MemoryStream.c XPF/external/ChOma/src/PatchFinder.c XPF/external/ChOma/src/Util.c
 
 # Full ByeTunes v2.4 source tree, with the old provider state machine restored
 # by explicit build-time parity patches. MusicManagerApp.swift is omitted
@@ -42,7 +42,7 @@ BYETUNES_SWIFT_FILES := $(shell find $(BYETUNES_ROOT) -type f -name '*.swift' ! 
 # Filza-only root/settings namespace and host glue.
 THREEONE_SWIFT_FILES := $(shell find $(THREEONE_ROOT)/Sources -type f -name '*.swift' -print)
 
-# Mond 2.0 is fetched from its immutable upstream commit and mechanically
+# Mond 2.1 is fetched from its immutable upstream commit and mechanically
 # namespaced so it can coexist in Filza's Swift module. No Mond behavior/UI
 # patch is applied.
 MOND_SWIFT_FILES := \
@@ -151,18 +151,18 @@ before-FilzaApplySandboxExt-all::
 	@test -f "GestaltManager.m" || (echo "Missing GestaltManager.m" >&2; exit 1)
 	@test -f "FilzaMondBridge.m" || (echo "Missing FilzaMondBridge.m" >&2; exit 1)
 	@test -f "FilzaMainToolbarGestalt.m" || (echo "Missing FilzaMainToolbarGestalt.m" >&2; exit 1)
-	@test -f "FilzaMondCurrentHost.swift" || (echo "Missing Mond 2.0 source host" >&2; exit 1)
-	@test -f "scripts/stage-mond-current.sh" || (echo "Missing pinned Mond 2.0 staging script" >&2; exit 1)
-	@test -f "$(MOND_GEN)/Mond/views_app_ContentView.swift" || (echo "Missing Mond 2.0 ContentView" >&2; exit 1)
-	@test -f "$(MOND_GEN)/Mond/views_app_SettingsView.swift" || (echo "Missing Mond 2.0 SettingsView" >&2; exit 1)
-	@test -f "$(MOND_GEN)/Mond/views_tweaks_GestaltView.swift" || (echo "Missing Mond 2.0 GestaltView" >&2; exit 1)
-	@test -f "$(MOND_GEN)/Mond/views_tweaks_SantanderView.swift" || (echo "Missing Mond 2.0 SantanderView" >&2; exit 1)
-	@test -f "$(MOND_GEN)/Mond/views_tweaks_posterboard_PosterView.swift" || (echo "Missing Mond 2.0 PosterView" >&2; exit 1)
-	@test -f "$(MOND_GEN)/Mond/views_tweaks_posterboard_TendiesView.swift" || (echo "Missing Mond 2.0 TendiesView" >&2; exit 1)
-	@test -f "$(MOND_GEN)/Mond/helpers_posterboard_tendies.swift" || (echo "Missing Mond 2.0 Tendies model" >&2; exit 1)
-	@test -f "$(MOND_GEN)/mond_bad_query.c" || (echo "Missing Mond 2.0 bad_query implementation" >&2; exit 1)
-	@test -f "$(MOND_GEN)/PartyUI/Containers_TerminalPlatter.swift" || (echo "Missing Mond 2.0 PartyUI" >&2; exit 1)
-	@test -f "$(MOND_GEN)/ZIPFoundation/Archive.swift" || (echo "Missing Mond 2.0 ZIPFoundation" >&2; exit 1)
+	@test -f "FilzaMondCurrentHost.swift" || (echo "Missing Mond 2.1 source host" >&2; exit 1)
+	@test -f "scripts/stage-mond-current.sh" || (echo "Missing pinned Mond 2.1 staging script" >&2; exit 1)
+	@test -f "$(MOND_GEN)/Mond/views_app_ContentView.swift" || (echo "Missing Mond 2.1 ContentView" >&2; exit 1)
+	@test -f "$(MOND_GEN)/Mond/views_app_SettingsView.swift" || (echo "Missing Mond 2.1 SettingsView" >&2; exit 1)
+	@test -f "$(MOND_GEN)/Mond/views_tweaks_GestaltView.swift" || (echo "Missing Mond 2.1 GestaltView" >&2; exit 1)
+	@test -f "$(MOND_GEN)/Mond/views_tweaks_SantanderView.swift" || (echo "Missing Mond 2.1 SantanderView" >&2; exit 1)
+	@test -f "$(MOND_GEN)/Mond/views_tweaks_posterboard_PosterView.swift" || (echo "Missing Mond 2.1 PosterView" >&2; exit 1)
+	@test -f "$(MOND_GEN)/Mond/views_tweaks_posterboard_TendiesView.swift" || (echo "Missing Mond 2.1 TendiesView" >&2; exit 1)
+	@test -f "$(MOND_GEN)/Mond/helpers_posterboard_tendies.swift" || (echo "Missing Mond 2.1 Tendies model" >&2; exit 1)
+	@test -f "$(MOND_GEN)/mond_bad_query.c" || (echo "Missing Mond 2.1 bad_query implementation" >&2; exit 1)
+	@test -f "$(MOND_GEN)/PartyUI/Containers_TerminalPlatter.swift" || (echo "Missing Mond 2.1 PartyUI" >&2; exit 1)
+	@test -f "$(MOND_GEN)/ZIPFoundation/Archive.swift" || (echo "Missing Mond 2.1 ZIPFoundation" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/Sources/AppDataBrowserView.swift" || (echo "Missing 3105 Apps Manager" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/Sources/PatchProjectsView.swift" || (echo "Missing 3105 Patches" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/Sources/ThreeOneOSFiveContentView.swift" || (echo "Missing complete 3105 root navigation" >&2; exit 1)
