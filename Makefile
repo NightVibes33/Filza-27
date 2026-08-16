@@ -1,6 +1,6 @@
-# Build against the modern iOS SDK because the complete ByeTunes app uses
-# iOS 16+ SwiftUI/AppIntents APIs. The upstream jailed Filza host is arm64-only.
-TARGET := iphone:clang:latest:16.0
+# Build against the modern iOS SDK because Mond 2.0 and the complete ByeTunes app use
+# modern SwiftUI APIs. Mond 2.0's upstream deployment target is iOS 17.
+TARGET := iphone:clang:latest:17.0
 ARCHS = arm64
 
 include $(THEOS)/makefiles/common.mk
@@ -42,23 +42,25 @@ BYETUNES_SWIFT_FILES := $(shell find $(BYETUNES_ROOT) -type f -name '*.swift' ! 
 # Filza-only root/settings namespace and host glue.
 THREEONE_SWIFT_FILES := $(shell find $(THREEONE_ROOT)/Sources -type f -name '*.swift' -print)
 
-# Current mond is staged from immutable upstream revisions before compilation.
-# Paths are explicit because GNU make expands source lists before the staging
-# hook runs.
+# Mond 2.0 is fetched from its immutable upstream commit and mechanically
+# namespaced so it can coexist in Filza's Swift module. No Mond behavior/UI
+# patch is applied.
 MOND_SWIFT_FILES := \
     $(MOND_GEN)/Mond/exploit_cmg.swift \
     $(MOND_GEN)/Mond/exploit_unsbx.swift \
     $(MOND_GEN)/Mond/helpers_keepalive.swift \
     $(MOND_GEN)/Mond/helpers_mg.swift \
-    $(MOND_GEN)/Mond/helpers_poster.swift \
+    $(MOND_GEN)/Mond/helpers_posterboard_poster.swift \
+    $(MOND_GEN)/Mond/helpers_posterboard_tendies.swift \
     $(MOND_GEN)/Mond/helpers_sbx.swift \
     $(MOND_GEN)/Mond/helpers_utils.swift \
-    $(MOND_GEN)/Mond/views_App_ContentView.swift \
-    $(MOND_GEN)/Mond/views_App_LogView.swift \
-    $(MOND_GEN)/Mond/views_App_SettingsView.swift \
-    $(MOND_GEN)/Mond/views_Tweaks_GestaltView.swift \
-    $(MOND_GEN)/Mond/views_Tweaks_PosterView.swift \
-    $(MOND_GEN)/Mond/views_Tweaks_SantanderView.swift
+    $(MOND_GEN)/Mond/views_app_ContentView.swift \
+    $(MOND_GEN)/Mond/views_app_LogView.swift \
+    $(MOND_GEN)/Mond/views_app_SettingsView.swift \
+    $(MOND_GEN)/Mond/views_tweaks_GestaltView.swift \
+    $(MOND_GEN)/Mond/views_tweaks_SantanderView.swift \
+    $(MOND_GEN)/Mond/views_tweaks_posterboard_PosterView.swift \
+    $(MOND_GEN)/Mond/views_tweaks_posterboard_TendiesView.swift
 
 MOND_PARTYUI_SWIFT_FILES := \
     $(MOND_GEN)/PartyUI/Containers_TerminalPlatter.swift \
@@ -92,9 +94,7 @@ MOND_ZIP_SWIFT_FILES := \
     $(MOND_GEN)/ZIPFoundation/FileManager+ZIPDeprecated.swift \
     $(MOND_GEN)/ZIPFoundation/URL+ZIP.swift
 
-# MondFullRootHost.swift is now only a compatibility/provenance shim for the
-# newer main branch ABI. The actual UI is the staged upstream source graph.
-FilzaApplySandboxExt_SWIFT_FILES = ByeTunesEmbeddedHost.swift ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift MondFullRootHost.swift FilzaMondCurrentHost.swift Filza3105Host.swift $(MOND_SWIFT_FILES) $(MOND_PARTYUI_SWIFT_FILES) $(MOND_ZIP_SWIFT_FILES) $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
+FilzaApplySandboxExt_SWIFT_FILES = ByeTunesEmbeddedHost.swift ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift FilzaMondCurrentHost.swift Filza3105Host.swift $(MOND_SWIFT_FILES) $(MOND_PARTYUI_SWIFT_FILES) $(MOND_ZIP_SWIFT_FILES) $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
 
 FilzaApplySandboxExt_CFLAGS = -I$(PWD)/compat -I$(PWD) -I$(PWD)/XPF/src -I$(PWD)/XPF/external/ChOma/include -I$(IDEVICE_VENDOR)/include -I$(PWD)/$(BAD_QUERY_ROOT)/bad_query -I$(PWD)/$(THREEONE_ROOT)/Sources -I$(PWD)/$(MOND_GEN) \
     -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Core -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Requests -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Responses -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebDAVServer \
@@ -110,7 +110,7 @@ FilzaApplySandboxExt_OBJCCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 FilzaApplySandboxExt_SWIFTFLAGS += -swift-version 5 -default-isolation MainActor -Xcc -I$(IDEVICE_VENDOR)/include -Xcc -I$(PWD)/$(MOND_GEN)
 FilzaApplySandboxExt_LDFLAGS += $(IDEVICE_STATIC)
 
-FilzaApplySandboxExt_FRAMEWORKS = UIKit Foundation SwiftUI Combine AVFoundation CoreMedia AudioToolbox CryptoKit Security UniformTypeIdentifiers PhotosUI JavaScriptCore AppIntents ActivityKit SafariServices CFNetwork MobileCoreServices WebKit QuickLook
+FilzaApplySandboxExt_FRAMEWORKS = UIKit Foundation SwiftUI Combine AVFoundation AVKit CoreMedia AudioToolbox CryptoKit Security UniformTypeIdentifiers PhotosUI JavaScriptCore AppIntents ActivityKit SafariServices CFNetwork MobileCoreServices WebKit QuickLook ImageIO
 FilzaApplySandboxExt_PRIVATE_FRAMEWORKS = IOSurface
 FilzaApplySandboxExt_LIBRARIES = z xml2 sandbox sqlite3
 FilzaApplySandboxExt_INSTALL_TARGET_PROCESSES = Filza
@@ -151,20 +151,18 @@ before-FilzaApplySandboxExt-all::
 	@test -f "GestaltManager.m" || (echo "Missing GestaltManager.m" >&2; exit 1)
 	@test -f "FilzaMondBridge.m" || (echo "Missing FilzaMondBridge.m" >&2; exit 1)
 	@test -f "FilzaMainToolbarGestalt.m" || (echo "Missing FilzaMainToolbarGestalt.m" >&2; exit 1)
-	@test -f "MondFullRootHost.swift" || (echo "Missing mond compatibility host" >&2; exit 1)
-	@test -f "FilzaMondCurrentHost.swift" || (echo "Missing current mond source host" >&2; exit 1)
-	@test -f "scripts/stage-mond-current.sh" || (echo "Missing pinned current mond staging script" >&2; exit 1)
-	@test -f "$(MOND_GEN)/Mond/views_App_ContentView.swift" || (echo "Missing current mond ContentView" >&2; exit 1)
-	@test -f "$(MOND_GEN)/Mond/views_App_SettingsView.swift" || (echo "Missing current mond SettingsView" >&2; exit 1)
-	@test -f "$(MOND_GEN)/Mond/views_Tweaks_GestaltView.swift" || (echo "Missing current mond GestaltView" >&2; exit 1)
-	@test -f "$(MOND_GEN)/Mond/views_Tweaks_PosterView.swift" || (echo "Missing current mond PosterView" >&2; exit 1)
-	@test -f "$(MOND_GEN)/Mond/views_Tweaks_SantanderView.swift" || (echo "Missing current mond SantanderView" >&2; exit 1)
-	@test -f "$(MOND_GEN)/mond_bad_query.c" || (echo "Missing current mond bad_query implementation" >&2; exit 1)
-	@test -f "$(MOND_GEN)/PartyUI/Containers_TerminalPlatter.swift" || (echo "Missing current mond PartyUI" >&2; exit 1)
-	@test -f "$(MOND_GEN)/ZIPFoundation/Archive.swift" || (echo "Missing current mond ZIPFoundation" >&2; exit 1)
-	@test -f "Filza3105Host.swift" || (echo "Missing Filza3105Host.swift" >&2; exit 1)
-	@test -f "Filza3105Bridge.m" || (echo "Missing Filza3105Bridge.m" >&2; exit 1)
-	@test -f "scripts/stage-3105-v1.sh" || (echo "Missing pinned 3105 1.0 staging script" >&2; exit 1)
+	@test -f "FilzaMondCurrentHost.swift" || (echo "Missing Mond 2.0 source host" >&2; exit 1)
+	@test -f "scripts/stage-mond-current.sh" || (echo "Missing pinned Mond 2.0 staging script" >&2; exit 1)
+	@test -f "$(MOND_GEN)/Mond/views_app_ContentView.swift" || (echo "Missing Mond 2.0 ContentView" >&2; exit 1)
+	@test -f "$(MOND_GEN)/Mond/views_app_SettingsView.swift" || (echo "Missing Mond 2.0 SettingsView" >&2; exit 1)
+	@test -f "$(MOND_GEN)/Mond/views_tweaks_GestaltView.swift" || (echo "Missing Mond 2.0 GestaltView" >&2; exit 1)
+	@test -f "$(MOND_GEN)/Mond/views_tweaks_SantanderView.swift" || (echo "Missing Mond 2.0 SantanderView" >&2; exit 1)
+	@test -f "$(MOND_GEN)/Mond/views_tweaks_posterboard_PosterView.swift" || (echo "Missing Mond 2.0 PosterView" >&2; exit 1)
+	@test -f "$(MOND_GEN)/Mond/views_tweaks_posterboard_TendiesView.swift" || (echo "Missing Mond 2.0 TendiesView" >&2; exit 1)
+	@test -f "$(MOND_GEN)/Mond/helpers_posterboard_tendies.swift" || (echo "Missing Mond 2.0 Tendies model" >&2; exit 1)
+	@test -f "$(MOND_GEN)/mond_bad_query.c" || (echo "Missing Mond 2.0 bad_query implementation" >&2; exit 1)
+	@test -f "$(MOND_GEN)/PartyUI/Containers_TerminalPlatter.swift" || (echo "Missing Mond 2.0 PartyUI" >&2; exit 1)
+	@test -f "$(MOND_GEN)/ZIPFoundation/Archive.swift" || (echo "Missing Mond 2.0 ZIPFoundation" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/Sources/AppDataBrowserView.swift" || (echo "Missing 3105 Apps Manager" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/Sources/PatchProjectsView.swift" || (echo "Missing 3105 Patches" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/Sources/ThreeOneOSFiveContentView.swift" || (echo "Missing complete 3105 root navigation" >&2; exit 1)

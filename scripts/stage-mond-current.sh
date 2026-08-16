@@ -3,11 +3,12 @@ set -euo pipefail
 
 ROOT="ThirdParty/mond-current"
 GEN="$ROOT/Generated"
-MOND_COMMIT="4a37bfca5cb4abb2c99891972365d872d700525e"
+UPSTREAM="$ROOT/Upstream"
+MOND_COMMIT="87b38b2726160c6d1cfacbbfa834a2572d7ca333"
 PARTYUI_COMMIT="830eaac8ebf8a4cbcec08d49e8746033574d1903"
 ZIPFOUNDATION_COMMIT="22787ffb59de99e5dc1fbfe80b19c97a904ad48d"
 
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/filza-mond-current.XXXXXX")"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/filza-mond-2.0.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 
 fetch_archive() {
@@ -25,33 +26,40 @@ tar -xzf "$TMP/mond.tar.gz" -C "$TMP/mond" --strip-components=1
 tar -xzf "$TMP/partyui.tar.gz" -C "$TMP/partyui" --strip-components=1
 tar -xzf "$TMP/zipfoundation.tar.gz" -C "$TMP/zipfoundation" --strip-components=1
 
-rm -rf "$GEN"
+rm -rf "$GEN" "$UPSTREAM"
 mkdir -p "$GEN/Mond" "$GEN/PartyUI" "$GEN/ZIPFoundation" "$ROOT/Licenses"
+
+# Keep an untouched copy of the complete upstream 2.0 app source tree for
+# provenance. Only Generated/ is mechanically adapted for compilation inside
+# Filza's existing UIApplication/module.
+cp -R "$TMP/mond/mond" "$UPSTREAM"
 
 MOND_FILES=(
   exploit/cmg.swift
   exploit/unsbx.swift
   helpers/keepalive.swift
   helpers/mg.swift
-  helpers/poster.swift
+  helpers/posterboard/poster.swift
+  helpers/posterboard/tendies.swift
   helpers/sbx.swift
   helpers/utils.swift
-  views/App/ContentView.swift
-  views/App/LogView.swift
-  views/App/SettingsView.swift
-  views/Tweaks/GestaltView.swift
-  views/Tweaks/PosterView.swift
-  views/Tweaks/SantanderView.swift
+  views/app/ContentView.swift
+  views/app/LogView.swift
+  views/app/SettingsView.swift
+  views/tweaks/GestaltView.swift
+  views/tweaks/SantanderView.swift
+  views/tweaks/posterboard/PosterView.swift
+  views/tweaks/posterboard/TendiesView.swift
 )
 
 for rel in "${MOND_FILES[@]}"; do
-  test -f "$TMP/mond/mond/$rel" || { echo "Missing mond source: $rel" >&2; exit 1; }
+  test -f "$UPSTREAM/$rel" || { echo "Missing Mond 2.0 source: $rel" >&2; exit 1; }
   dest="$GEN/Mond/${rel//\//_}"
-  cp "$TMP/mond/mond/$rel" "$dest"
+  cp "$UPSTREAM/$rel" "$dest"
 done
 
-cp "$TMP/mond/mond/exploit/bad_query/bad_query.c" "$GEN/mond_bad_query.c"
-cp "$TMP/mond/mond/exploit/bad_query/bad_query.h" "$GEN/mond_bad_query.h"
+cp "$UPSTREAM/exploit/bad_query/bad_query.c" "$GEN/mond_bad_query.c"
+cp "$UPSTREAM/exploit/bad_query/bad_query.h" "$GEN/mond_bad_query.h"
 
 PARTY_FILES=(
   Containers/TerminalPlatter.swift
@@ -78,6 +86,9 @@ import sys
 
 root = Path(sys.argv[1])
 
+# These are module-collision adaptations only. The untouched Mond 2.0 source is
+# retained under ThirdParty/mond-current/Upstream and no behavioral/UI patch is
+# applied to it or to the generated copy.
 mond_map = {
     'ContentView': 'MondCurrentContentView',
     'AppState': 'MondCurrentAppState',
@@ -85,8 +96,19 @@ mond_map = {
     'SettingsView': 'MondCurrentSettingsView',
     'CreditsRow': 'MondCurrentCreditsRow',
     'GestaltView': 'MondCurrentGestaltView',
+    'TweakToggle': 'MondCurrentTweakToggle',
     'PosterView': 'MondCurrentPosterView',
+    'TendiesView': 'MondCurrentTendiesView',
+    'TendiesDetail': 'MondCurrentTendiesDetail',
+    'TendiesVM': 'MondCurrentTendiesVM',
+    'tendies_service': 'MondCurrentTendiesService',
+    'tendies': 'MondCurrentTendies',
     'SafariView': 'MondCurrentSafariView',
+    'SantanderPath': 'MondCurrentSantanderPath',
+    'SantanderView': 'MondCurrentSantanderView',
+    'SantanderDirectoryView': 'MondCurrentSantanderDirectoryView',
+    'SantanderFileView': 'MondCurrentSantanderFileView',
+    'MediaPlayerView': 'MondCurrentMediaPlayerView',
     'AppPaths': 'MondCurrentAppPaths',
     'TweakPaths': 'MondCurrentTweakPaths',
     'RespringView': 'MondCurrentRespringView',
@@ -98,9 +120,6 @@ mond_map = {
     'doubleSystemVersion': 'mondCurrentSystemVersion',
     'sandbox_extension_consume': 'mondCurrentSandboxExtensionConsume',
     'sandbox_extension_issue_file': 'mondCurrentSandboxExtensionIssueFile',
-    'bad_query_release': 'mond_bad_query_release',
-    'bad_query_list': 'mond_bad_query_list',
-    'bad_query': 'mond_bad_query',
     'pb_error': 'MondCurrentPosterError',
     'pb': 'MondCurrentPosterBackend',
 }
@@ -120,12 +139,94 @@ party_map = {
 
 zip_map = {'Entry': 'MondZIPEntry'}
 
+def protect_strings_and_comments(text: str, mapping: dict[str, str]) -> str:
+    """Rename Swift identifiers without changing string/comment contents."""
+    out = []
+    i = 0
+    n = len(text)
+    while i < n:
+        if text.startswith('//', i):
+            end = text.find('\n', i)
+            if end < 0:
+                out.append(text[i:])
+                break
+            out.append(text[i:end + 1])
+            i = end + 1
+            continue
+
+        if text.startswith('/*', i):
+            depth = 1
+            j = i + 2
+            while j < n and depth:
+                if text.startswith('/*', j):
+                    depth += 1
+                    j += 2
+                elif text.startswith('*/', j):
+                    depth -= 1
+                    j += 2
+                else:
+                    j += 1
+            out.append(text[i:j])
+            i = j
+            continue
+
+        if text.startswith('"""', i):
+            j = i + 3
+            while j < n:
+                if text.startswith('"""', j):
+                    j += 3
+                    break
+                j += 1
+            out.append(text[i:j])
+            i = j
+            continue
+
+        if text[i] == '"':
+            j = i + 1
+            escaped = False
+            while j < n:
+                ch = text[j]
+                if escaped:
+                    escaped = False
+                elif ch == '\\':
+                    escaped = True
+                elif ch == '"':
+                    j += 1
+                    break
+                j += 1
+            out.append(text[i:j])
+            i = j
+            continue
+
+        ch = text[i]
+        if ch.isalpha() or ch == '_':
+            j = i + 1
+            while j < n and (text[j].isalnum() or text[j] == '_'):
+                j += 1
+            token = text[i:j]
+            out.append(mapping.get(token, token))
+            i = j
+            continue
+
+        out.append(ch)
+        i += 1
+    return ''.join(out)
+
 def rewrite(path: Path, mapping: dict[str, str], strip_imports=()):
     text = path.read_text(encoding='utf-8')
     for module in strip_imports:
         text = re.sub(rf'^import\s+{re.escape(module)}\s*\n', '', text, flags=re.M)
-    for old in sorted(mapping, key=len, reverse=True):
-        text = re.sub(rf'\b{re.escape(old)}\b', mapping[old], text)
+    text = protect_strings_and_comments(text, mapping)
+
+    # bad_query is also a user-visible method/tag string. Namespace only actual
+    # C/Swift symbol calls, never the string value "bad_query".
+    for old, new in (
+        ('bad_query_release', 'mond_bad_query_release'),
+        ('bad_query_list', 'mond_bad_query_list'),
+        ('bad_query', 'mond_bad_query'),
+    ):
+        text = re.sub(rf'\b{old}\b(?=\s*\()', new, text)
+
     path.write_text(text, encoding='utf-8')
 
 for path in sorted((root / 'Mond').glob('*.swift')):
@@ -135,14 +236,6 @@ for path in sorted((root / 'PartyUI').glob('*.swift')):
 for path in sorted((root / 'ZIPFoundation').glob('*.swift')):
     rewrite(path, zip_map)
 
-settings = root / 'Mond' / 'views_App_SettingsView.swift'
-settings_text = settings.read_text(encoding='utf-8')
-old_on_change = '.onChange(of: ka_on) { _, enabled in'
-new_on_change = '.onChange(of: ka_on) { enabled in'
-if old_on_change not in settings_text:
-    raise SystemExit('Current mond staging check failed: expected Keep Alive iOS 17 onChange form not found')
-settings.write_text(settings_text.replace(old_on_change, new_on_change, 1), encoding='utf-8')
-
 for name in ('mond_bad_query.c', 'mond_bad_query.h'):
     path = root / name
     text = path.read_text(encoding='utf-8')
@@ -151,7 +244,7 @@ for name in ('mond_bad_query.c', 'mond_bad_query.h'):
         ('bad_query_list', 'mond_bad_query_list'),
         ('bad_query', 'mond_bad_query'),
     ):
-        text = re.sub(rf'\b{old}\b', new, text)
+        text = re.sub(rf'\b{old}\b(?=\s*\()', new, text)
     text = text.replace('bad_query_h', 'mond_bad_query_h')
     path.write_text(text, encoding='utf-8')
 PY
@@ -173,71 +266,53 @@ EOF
 require_contains() {
   local path="$1" marker="$2" label="$3"
   grep -Fq "$marker" "$path" || {
-    echo "Current mond staging check failed: ${label} marker '${marker}' missing from ${path}" >&2
+    echo "Mond 2.0 staging check failed: ${label} marker '${marker}' missing from ${path}" >&2
     exit 1
   }
 }
 
-require_contains "$GEN/Mond/views_App_ContentView.swift" 'navigationTitle("mond")' 'root title'
-require_contains "$GEN/Mond/views_App_ContentView.swift" 'MondCurrentTerminalPlatter' 'real terminal platter'
-require_contains "$GEN/Mond/views_App_ContentView.swift" '"MobileGestalt"' 'MobileGestalt route'
-require_contains "$GEN/Mond/views_App_ContentView.swift" '"PosterBoard"' 'PosterBoard route'
-require_contains "$GEN/Mond/views_App_ContentView.swift" '"HouseArrest"' 'current HouseArrest route'
-require_contains "$GEN/Mond/views_App_SettingsView.swift" '"Run Exploit"' 'exploit action'
-require_contains "$GEN/Mond/views_App_SettingsView.swift" '"Generate Token"' 'token action'
-require_contains "$GEN/Mond/views_App_SettingsView.swift" '"Keep Alive"' 'keep-alive setting'
-require_contains "$GEN/Mond/views_App_SettingsView.swift" '.onChange(of: ka_on) { enabled in' 'iOS 16 Keep Alive onChange compatibility'
-require_contains "$GEN/Mond/views_App_SettingsView.swift" '"Respring"' 'respring action'
-require_contains "$GEN/Mond/helpers_sbx.swift" 'func mondCurrentSandboxExtensionConsume' 'namespaced sandbox consume helper'
-require_contains "$GEN/Mond/helpers_sbx.swift" 'func mondCurrentSandboxExtensionIssueFile' 'namespaced sandbox issue helper'
-require_contains "$GEN/Mond/views_Tweaks_SantanderView.swift" 'struct SantanderView' 'current Santander view'
-require_contains "$GEN/mond_bad_query.c" 'mond_bad_query' 'namespaced mond bad_query'
-require_contains "$GEN/ZIPFoundation/Entry.swift" 'public struct MondZIPEntry' 'namespaced ZIPFoundation Entry type'
+# Prove the full upstream 2.0 surface is staged.
+require_contains "$UPSTREAM/mond.swift" 'grant_all(state: state)' 'upstream automatic exploit lifecycle'
+require_contains "$UPSTREAM/views/app/SettingsView.swift" 'Your sandbox token is invalid.' 'upstream token validation UI'
+require_contains "$UPSTREAM/views/app/SettingsView.swift" '.onChange(of: ka_on) { _, enabled in' 'upstream iOS 17 Keep Alive form'
+require_contains "$UPSTREAM/views/tweaks/posterboard/PosterView.swift" '"Explore Tendies"' 'Tendies explorer'
+require_contains "$UPSTREAM/views/tweaks/posterboard/TendiesView.swift" 'struct TendiesView' 'Tendies UI'
+require_contains "$UPSTREAM/helpers/posterboard/tendies.swift" '@Observable' 'Tendies model'
+require_contains "$UPSTREAM/views/tweaks/SantanderView.swift" 'struct SantanderView' 'HouseArrest browser'
+require_contains "$UPSTREAM/helpers/mg.swift" 'Security Research Device Mode' 'Mond 2.0 MobileGestalt catalog'
 
-require_contains Makefile 'FilzaMondCurrentHost.swift' 'current mond host in Swift build graph'
-require_contains Makefile '$(MOND_SWIFT_FILES)' 'current mond upstream sources in Swift build graph'
-require_contains Makefile '$(MOND_PARTYUI_SWIFT_FILES)' 'current mond PartyUI sources in Swift build graph'
-require_contains Makefile '$(MOND_ZIP_SWIFT_FILES)' 'current mond ZIPFoundation sources in Swift build graph'
-require_contains FilzaMondCurrentHost.swift '@objc(MondEmbeddedHostFactory)' 'full mond host factory'
-require_contains FilzaMondCurrentHost.swift 'MondCurrentContentView()' 'current mond root hosted by Filza'
-require_contains MondFullRootHost.swift 'current mond compatibility shim' 'retired custom root replaced by forwarding shim'
-require_contains FilzaMondBridge.m 'full current mond route installed commit=4a37bfca5cb4abb2c99891972365d872d700525e' 'full mond bridge route'
-require_contains scripts/patch-mond-ios27-keys.sh 'FILZA_IOS27_GESTALT_KEYS_BEGIN' 'iOS 27 Mond overlay patch'
-require_contains MondIOS27KeySupport.swift 'DeviceSupportsInstructionFollowingPruningModels' 'iOS 27 key support table'
+# Prove the mechanically namespaced copy still contains those exact behaviors.
+require_contains "$GEN/Mond/views_app_ContentView.swift" 'navigationTitle("mond")' 'root title'
+require_contains "$GEN/Mond/views_app_ContentView.swift" 'MondCurrentTerminalPlatter' 'terminal UI'
+require_contains "$GEN/Mond/views_app_ContentView.swift" '"MobileGestalt"' 'MobileGestalt route'
+require_contains "$GEN/Mond/views_app_ContentView.swift" '"PosterBoard"' 'PosterBoard route'
+require_contains "$GEN/Mond/views_app_ContentView.swift" '"HouseArrest"' 'HouseArrest route'
+require_contains "$GEN/Mond/views_app_SettingsView.swift" '"Run Exploit"' 'Run Exploit action'
+require_contains "$GEN/Mond/views_app_SettingsView.swift" '"Generate Token"' 'Generate Token action'
+require_contains "$GEN/Mond/views_app_SettingsView.swift" 'Your sandbox token is invalid.' 'upstream token validation UI'
+require_contains "$GEN/Mond/views_app_SettingsView.swift" '.onChange(of: ka_on) { _, enabled in' 'upstream iOS 17 Keep Alive form'
+require_contains "$GEN/Mond/helpers_sbx.swift" 'issue("com.apple.app-sandbox.read-write", path, 0, 0)' 'upstream SandboxSPI call'
+require_contains "$GEN/Mond/views_tweaks_posterboard_PosterView.swift" '"Explore Tendies"' 'Tendies explorer'
+require_contains "$GEN/Mond/views_tweaks_posterboard_TendiesView.swift" 'struct MondCurrentTendiesView' 'Tendies UI'
+require_contains "$GEN/Mond/helpers_posterboard_tendies.swift" '@Observable' 'Tendies model'
+require_contains "$GEN/Mond/views_tweaks_SantanderView.swift" 'struct MondCurrentSantanderView' 'HouseArrest browser'
+require_contains "$GEN/mond_bad_query.c" 'mond_bad_query' 'namespaced Mond bad_query'
+require_contains "$GEN/ZIPFoundation/Entry.swift" 'public struct MondZIPEntry' 'namespaced ZIPFoundation Entry'
 
-if grep -Fq 'MondGestaltView.swift' Makefile; then
-  echo "Current mond staging check failed: retired MondGestaltView.swift is back in the build graph" >&2
-  exit 1
-fi
-if grep -Fq 'struct MondEmbeddedLogView' MondFullRootHost.swift; then
-  echo "Current mond staging check failed: hand-built MondFullRootHost UI is back" >&2
-  exit 1
-fi
-if grep -Fq 'FilzaGestaltResolvePath' FilzaMondBridge.m; then
-  echo "Current mond staging check failed: bridge still pre-gates presentation on MobileGestalt" >&2
-  exit 1
-fi
-if grep -Fq '.onChange(of: ka_on) { _, enabled in' "$GEN/Mond/views_App_SettingsView.swift"; then
-  echo "Current mond staging check failed: iOS 17-only Keep Alive onChange form survived adaptation" >&2
-  exit 1
-fi
-if grep -Fq 'public struct Entry' "$GEN/ZIPFoundation/Entry.swift"; then
-  echo "Current mond staging check failed: unnamespaced ZIPFoundation Entry survived adaptation" >&2
-  exit 1
-fi
+# There must be no old Filza-only Mond behavior patches in the staging path.
+! grep -R -Fq 'FILZA_IOS27_GESTALT_KEYS_BEGIN' "$GEN/Mond"
+! grep -R -Fq 'lastFreshToken' "$GEN/Mond"
+! grep -R -Fq 'Fresh sandbox token issued successfully. Mond has not consumed it.' "$GEN/Mond"
+! grep -R -Fq 'Color(red: 0.28529, green: 0.44118, blue: 0.92451)' "$GEN/Mond"
+
+require_contains Makefile '$(MOND_SWIFT_FILES)' 'Mond source graph in build'
+require_contains FilzaMondCurrentHost.swift 'grant_all(state: state)' 'upstream automatic onAppear behavior'
+require_contains FilzaMondBridge.m 'full Mond 2.0 route installed commit=87b38b2726160c6d1cfacbbfa834a2572d7ca333' 'Mond 2.0 bridge provenance'
 
 ZIP_SWIFT_COUNT="$(find "$GEN/ZIPFoundation" -type f -name '*.swift' | wc -l | tr -d ' ')"
 test "$ZIP_SWIFT_COUNT" -ge 20 || {
-  echo "Current mond staging check failed: expected >=20 ZIPFoundation Swift sources, got $ZIP_SWIFT_COUNT" >&2
+  echo "Mond 2.0 staging check failed: expected >=20 ZIPFoundation Swift sources, got $ZIP_SWIFT_COUNT" >&2
   exit 1
 }
 
-# Layer the project-specific iOS 27 key editor and Mond asset-color parity onto
-# the freshly staged immutable upstream source. The patch aborts if upstream's
-# structural anchor changes instead of silently building a partial Mond port.
-bash scripts/patch-mond-ios27-keys.sh
-
-require_contains "$GEN/Mond/views_Tweaks_GestaltView.swift" 'FILZA_IOS27_GESTALT_KEYS_BEGIN' 'compiled iOS 27 key section'
-require_contains "$GEN/Mond/views_Tweaks_GestaltView.swift" 'DeviceSupportsHighLuminanceAlwaysOnDisplay' 'compiled iOS 27 keys'
-
-echo "Staged current mond ${MOND_COMMIT} with PartyUI ${PARTYUI_COMMIT} and ZIPFoundation ${ZIPFOUNDATION_COMMIT}"
+echo "Staged exact Mond 2.0 ${MOND_COMMIT} with PartyUI ${PARTYUI_COMMIT} and ZIPFoundation ${ZIPFOUNDATION_COMMIT}; no Filza behavior/UI patches applied"

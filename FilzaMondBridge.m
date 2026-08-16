@@ -54,7 +54,7 @@ static UIViewController *FMCreateHost(void)
     Class factory = NSClassFromString(@"MondEmbeddedHostFactory");
     SEL selector = NSSelectorFromString(@"makeViewController");
     if (!factory || ![factory respondsToSelector:selector]) {
-        FilzaDiagnosticsAppend(@"mond", @"current embedded mond host factory unavailable");
+        FilzaDiagnosticsAppend(@"mond", @"Mond 2.0 embedded host factory unavailable");
         return nil;
     }
 
@@ -62,13 +62,13 @@ static UIViewController *FMCreateHost(void)
         UIViewController *controller =
             ((UIViewController *(*)(id, SEL))objc_msgSend)(factory, selector);
         if (![controller isKindOfClass:UIViewController.class]) {
-            FilzaDiagnosticsAppend(@"mond", @"current embedded mond host returned no controller");
+            FilzaDiagnosticsAppend(@"mond", @"Mond 2.0 embedded host returned no controller");
             return nil;
         }
         return controller;
     } @catch (NSException *exception) {
         FilzaDiagnosticsAppend(@"mond", [NSString stringWithFormat:
-            @"current embedded mond host exception: %@",
+            @"Mond 2.0 embedded host exception: %@",
             exception.reason ?: exception.name]);
         return nil;
     }
@@ -78,7 +78,7 @@ static BOOL FMPresentHost(UIViewController *source)
 {
     UIViewController *controller = FMCreateHost();
     if (!controller) {
-        FMShowUnavailable(source, @"The current mond interface could not be created.");
+        FMShowUnavailable(source, @"The Mond 2.0 interface could not be created.");
         return NO;
     }
 
@@ -88,7 +88,7 @@ static BOOL FMPresentHost(UIViewController *source)
             target = target.presentedViewController;
         [target presentViewController:controller animated:YES completion:^{
             FilzaDiagnosticsAppend(@"mond",
-                @"presented full current mond root directly");
+                @"presented exact Mond 2.0 root directly");
         }];
     });
     return YES;
@@ -114,5 +114,5 @@ void FilzaMondPresent(void)
 __attribute__((constructor)) static void FilzaMondInstall(void)
 {
     FilzaDiagnosticsAppend(@"mond",
-        @"full current mond route installed commit=4a37bfca5cb4abb2c99891972365d872d700525e");
+        @"full Mond 2.0 route installed commit=87b38b2726160c6d1cfacbbfa834a2572d7ca333");
 }
