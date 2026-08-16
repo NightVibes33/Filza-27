@@ -51,10 +51,8 @@ def replace_swift_function(text: str, signature: str, replacement: str) -> str:
         raise SystemExit(f"Mond token patch failed: closing brace missing: {signature}")
     return text[:start] + replacement + text[end:]
 
-# sandbox_extension_issue_file is a 3-argument SandboxSPI call:
-# (extension_class, path, uint32_t flags). Upstream Mond's pinned revision still
-# declares the older 4-argument shape, which can mint an unusable token on the
-# current runtime. Keep the exact ABI and explicit C-string lifetimes here.
+# Current SandboxSPI ABI from WebKit is:
+# sandbox_extension_issue_file(extension_class, path, uint32_t flags).
 issue = '''func mondCurrentSandboxExtensionIssueFile(path: String) -> String? {
     typealias sbx_issue_func = @convention(c) (
         UnsafePointer<CChar>?,
@@ -102,66 +100,117 @@ text = replace_swift_function(
 )
 sbx.write_text(text, encoding="utf-8")
 
-# Do not use sandbox_extension_consume() as a SwiftUI computed validity check.
-# `body` may evaluate repeatedly; consuming the token is stateful and also leaks
-# the returned extension handle when used only as a boolean probe. Record the
-# exact token successfully issued by this Mond instance and compare against it.
+# Upstream Mond used sandbox_extension_consume(token) inside a SwiftUI computed
+# property. SwiftUI may evaluate body repeatedly, so the UI itself could consume
+# the displayed token multiple times and then render it as invalid. Never consume
+# the user's token merely to paint status text. Track only a token freshly issued
+# by this visible Settings instance; older/pasted tokens are shown as present,
+# not falsely declared invalid.
 settings_text = settings.read_text(encoding="utf-8")
-storage_anchor = '@AppStorage("token") private var token: String = ""'
-storage_replacement = storage_anchor + '\n    @AppStorage("token_last_issued") private var token_last_issued: String = ""'
-if '@AppStorage("token_last_issued")' not in settings_text:
-    if storage_anchor not in settings_text:
-        raise SystemExit("Mond token patch failed: token AppStorage anchor missing")
-    settings_text = settings_text.replace(storage_anchor, storage_replacement, 1)
 
-old_valid = '''var valid: Bool {
+# Remove the earlier persistent bookkeeping variant if this patch is applied on
+# top of an already-adapted generated tree.
+settings_text = settings_text.replace(
+    '\n    @AppStorage("token_last_issued") private var token_last_issued: String = ""',
+    '',
+    1,
+)
+
+state_anchor = '@State private var show_confirm: Bool = false'
+state_line = '@State private var lastFreshToken: String = ""'
+if state_line not in settings_text:
+    if state_anchor not in settings_text:
+        raise SystemExit("Mond token patch failed: Settings state anchor missing")
+    settings_text = settings_text.replace(
+        state_anchor,
+        state_anchor + '\n    ' + state_line,
+        1,
+    )
+
+old_valid_upstream = '''var valid: Bool {
         (mondCurrentSandboxExtensionConsume(token) ?? -1) >= 0
     }'''
-new_valid = '''var valid: Bool {
+old_valid_previous = '''var valid: Bool {
         !token.isEmpty && token != "Failed to get token." && token == token_last_issued
     }'''
-if old_valid in settings_text:
-    settings_text = settings_text.replace(old_valid, new_valid, 1)
-elif new_valid not in settings_text:
-    raise SystemExit("Mond token patch failed: validity block anchor changed")
+new_status = '''var tokenWasFreshlyIssued: Bool {
+        !token.isEmpty && token != "Failed to get token." && token == lastFreshToken
+    }'''
+if old_valid_upstream in settings_text:
+    settings_text = settings_text.replace(old_valid_upstream, new_status, 1)
+elif old_valid_previous in settings_text:
+    settings_text = settings_text.replace(old_valid_previous, new_status, 1)
+elif new_status not in settings_text:
+    raise SystemExit("Mond token patch failed: token status block anchor changed")
 
-old_generate = 'token = mondCurrentSandboxExtensionIssueFile(path: MondCurrentTweakPaths.gestalt_dir) ?? "Failed to get token."'
-new_generate = '''if let generated = mondCurrentSandboxExtensionIssueFile(path: MondCurrentTweakPaths.gestalt_dir) {
+old_generate_upstream = 'token = mondCurrentSandboxExtensionIssueFile(path: MondCurrentTweakPaths.gestalt_dir) ?? "Failed to get token."'
+old_generate_previous = '''if let generated = mondCurrentSandboxExtensionIssueFile(path: MondCurrentTweakPaths.gestalt_dir) {
                             token = generated
                             token_last_issued = generated
                         } else {
                             token = "Failed to get token."
                             token_last_issued = ""
                         }'''
-if old_generate in settings_text:
-    settings_text = settings_text.replace(old_generate, new_generate, 1)
+new_generate = '''if let generated = mondCurrentSandboxExtensionIssueFile(path: MondCurrentTweakPaths.gestalt_dir) {
+                            token = generated
+                            lastFreshToken = generated
+                            print("(mond) Generate Token preserved fresh sandbox token without consuming it")
+                        } else {
+                            token = "Failed to get token."
+                            lastFreshToken = ""
+                        }'''
+if old_generate_upstream in settings_text:
+    settings_text = settings_text.replace(old_generate_upstream, new_generate, 1)
+elif old_generate_previous in settings_text:
+    settings_text = settings_text.replace(old_generate_previous, new_generate, 1)
 elif new_generate not in settings_text:
     raise SystemExit("Mond token patch failed: Generate Token action anchor changed")
+
+old_footer = '''if !token.isEmpty && token != "Failed to get token." {
+                        if valid {
+                            Text("Your sandbox token is valid.")
+                        } else {
+                            Text("Your sandbox token is invalid.")
+                        }
+                    }'''
+new_footer = '''if !token.isEmpty && token != "Failed to get token." {
+                        if tokenWasFreshlyIssued {
+                            Text("Fresh sandbox token issued successfully. Mond has not consumed it.")
+                        } else {
+                            Text("Sandbox token present. Mond will not consume it just to validate the UI.")
+                        }
+                    }'''
+if old_footer in settings_text:
+    settings_text = settings_text.replace(old_footer, new_footer, 1)
+elif new_footer not in settings_text:
+    raise SystemExit("Mond token patch failed: token footer anchor changed")
 
 settings.write_text(settings_text, encoding="utf-8")
 PY
 
-# Preserve the real upstream Settings button semantics. The staging namespace
-# changes function/type names only; these actions should otherwise remain the
-# same as rooootdev/mond.
+# Preserve upstream actions while enforcing a non-destructive token UI.
 grep -Fq 'grant_all(state: state)' "$SETTINGS"
 grep -Fq 'Text("Run Exploit")' "$SETTINGS"
 grep -Fq 'Text("Generate Token")' "$SETTINGS"
 grep -Fq '.disabled(!state.exploit_succeeded)' "$SETTINGS"
 
-# Verify the current SandboxSPI ABI and the non-destructive validity path.
 grep -Fq 'UInt32' "$SBX"
 grep -Fq 'issue(classPtr, pathPtr, 0)' "$SBX"
 ! grep -Fq 'issue("com.apple.app-sandbox.read-write", path, 0, 0)' "$SBX"
-grep -Fq '@AppStorage("token_last_issued")' "$SETTINGS"
-grep -Fq 'token_last_issued = generated' "$SETTINGS"
-grep -Fq 'token == token_last_issued' "$SETTINGS"
-! grep -Fq '(mondCurrentSandboxExtensionConsume(token) ?? -1) >= 0' "$SETTINGS"
 
-# Block the old Filza-specific captured-token UI plumbing from returning.
+grep -Fq '@State private var lastFreshToken: String = ""' "$SETTINGS"
+grep -Fq 'token == lastFreshToken' "$SETTINGS"
+grep -Fq 'Generate Token preserved fresh sandbox token without consuming it' "$SETTINGS"
+grep -Fq 'Fresh sandbox token issued successfully. Mond has not consumed it.' "$SETTINGS"
+grep -Fq 'Sandbox token present. Mond will not consume it just to validate the UI.' "$SETTINGS"
+! grep -Fq 'mondCurrentSandboxExtensionConsume(token)' "$SETTINGS"
+! grep -Fq 'Your sandbox token is invalid.' "$SETTINGS"
+! grep -Fq '@AppStorage("token_last_issued")' "$SETTINGS"
+
+# Block old captured-token UI plumbing from returning.
 ! grep -Fq 'Generate Token loaded captured exploit token' "$SETTINGS"
 ! grep -Fq 'Run Exploit populated captured token' "$SETTINGS"
 ! grep -Fq 'Settings loaded captured exploit token' "$SETTINGS"
 ! grep -Fq 'Generate Token using captured exploit token' "$SBX"
 
-echo "Patched Mond fresh-token issuance and non-destructive token status validation"
+echo "Patched Mond to preserve generated sandbox tokens and never consume them for UI validation"
