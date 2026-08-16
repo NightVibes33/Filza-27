@@ -15,13 +15,17 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/patch-mond-token-button.sh
 	@grep -Fq 'grant_all(state: state)' ThirdParty/mond-current/Generated/Mond/views_App_SettingsView.swift
 	@grep -Fq 'Text("Run Exploit")' ThirdParty/mond-current/Generated/Mond/views_App_SettingsView.swift
-	@grep -Fq 'token = mondCurrentSandboxExtensionIssueFile(path: MondCurrentTweakPaths.gestalt_dir) ?? "Failed to get token."' ThirdParty/mond-current/Generated/Mond/views_App_SettingsView.swift
 	@grep -Fq 'Text("Generate Token")' ThirdParty/mond-current/Generated/Mond/views_App_SettingsView.swift
 	@grep -Fq '.disabled(!state.exploit_succeeded)' ThirdParty/mond-current/Generated/Mond/views_App_SettingsView.swift
+	@grep -Fq 'token == lastFreshToken' ThirdParty/mond-current/Generated/Mond/views_App_SettingsView.swift
+	@grep -Fq 'Generate Token preserved fresh sandbox token without consuming it' ThirdParty/mond-current/Generated/Mond/views_App_SettingsView.swift
+	@grep -Fq 'Fresh sandbox token issued successfully. Mond has not consumed it.' ThirdParty/mond-current/Generated/Mond/views_App_SettingsView.swift
+	@! grep -Fq 'mondCurrentSandboxExtensionConsume(token)' ThirdParty/mond-current/Generated/Mond/views_App_SettingsView.swift
+	@! grep -Fq 'Your sandbox token is invalid.' ThirdParty/mond-current/Generated/Mond/views_App_SettingsView.swift
 	@! grep -Fq 'Generate Token loaded captured exploit token' ThirdParty/mond-current/Generated/Mond/views_App_SettingsView.swift
 	@! grep -Fq 'Run Exploit populated captured token' ThirdParty/mond-current/Generated/Mond/views_App_SettingsView.swift
 	@! grep -Fq 'Settings loaded captured exploit token' ThirdParty/mond-current/Generated/Mond/views_App_SettingsView.swift
-	@grep -Fq 'issue("com.apple.app-sandbox.read-write", path, 0)' ThirdParty/mond-current/Generated/Mond/helpers_sbx.swift
+	@grep -Fq 'issue(classPtr, pathPtr, 0)' ThirdParty/mond-current/Generated/Mond/helpers_sbx.swift
 	@! grep -Fq 'issue("com.apple.app-sandbox.read-write", path, 0, 0)' ThirdParty/mond-current/Generated/Mond/helpers_sbx.swift
 	@test -f "FilzaSSHServer.h" || (echo "Missing FilzaSSHServer.h" >&2; exit 1)
 	@test -f "FilzaSSHServer.m" || (echo "Missing FilzaSSHServer.m" >&2; exit 1)
