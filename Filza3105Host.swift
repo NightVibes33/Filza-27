@@ -57,11 +57,11 @@ private struct Filza3105EmbeddedRoot: View {
             )
             FilzaDiagnosticsAppend(
                 "3105",
-                "full upstream 3105 1.0 workspace appeared initialTab=\(initialTab)"
+                "full upstream 3105 1.0.1 workspace appeared initialTab=\(initialTab)"
             )
             FilzaDiagnosticsAppend(
                 "3105",
-                "complete tabs linked Home/Files/Patches/Cleaner/Wallpapers/Settings/Logs"
+                "1.0.1 navigation active: responsive layout, independent Files tabs, Patch Workspace v2"
             )
         }
     }
@@ -97,7 +97,7 @@ public final class Filza3105HostFactory: NSObject {
         makeController(
             initialTab: 0,
             title: "3105",
-            diagnostic: "constructing full upstream 3105 1.0 workspace"
+            diagnostic: "constructing full upstream 3105 1.0.1 workspace"
         )
     }
 
@@ -105,7 +105,7 @@ public final class Filza3105HostFactory: NSObject {
         makeController(
             initialTab: 1,
             title: "Apps Manager",
-            diagnostic: "constructing complete 3105 1.0 Apps Manager"
+            diagnostic: "constructing complete 3105 1.0.1 Apps Manager"
         )
     }
 
@@ -113,7 +113,7 @@ public final class Filza3105HostFactory: NSObject {
         makeController(
             initialTab: 2,
             title: "Patches",
-            diagnostic: "constructing complete 3105 1.0 Patches"
+            diagnostic: "constructing complete 3105 1.0.1 Patches"
         )
     }
 
@@ -122,7 +122,7 @@ public final class Filza3105HostFactory: NSObject {
         makeController(
             initialTab: 2,
             title: "Patches",
-            diagnostic: "constructing 3105 1.0 Patches for external import",
+            diagnostic: "constructing 3105 1.0.1 Patches for external import",
             initialImportURL: url
         )
     }
