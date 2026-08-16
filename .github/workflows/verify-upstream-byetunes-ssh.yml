@@ -71,14 +71,20 @@ jobs:
           ! grep -Fq 'FilzaMetadataWebRequest' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
           ! grep -Fq 'bash scripts/patch-byetunes-metadata-network-resilience.sh' FilzaByeTunesNetwork.mk
 
-      - name: Verify exact Mond 2.1 source contract
+      - name: Verify exact Mond source + embedded parity contract
         run: |
           set -euxo pipefail
           grep -Fq "MOND_COMMIT=\"$MOND_COMMIT\"" scripts/stage-mond-current.sh
           grep -Fq "$MOND_COMMIT" ThirdParty/mond/UPSTREAM.md
           grep -Fq 'no Filza behavior/UI patches applied' scripts/stage-mond-current.sh
+          test -f scripts/patch-mond-embedded-parity.sh
           grep -Fq 'MondCurrentAppState.shared' FilzaMondCurrentHost.swift
-          grep -Fq 'UserDefaults.standard.register(defaults: ["method": "bad_query"])' FilzaMondCurrentHost.swift
+          grep -Fq 'MondEmbeddedParity.defaults.register(defaults: ["method": "bad_query"])' FilzaMondCurrentHost.swift
+          grep -Fq 'UserDefaults(suiteName: "com.roooot.mond")' FilzaMondCurrentHost.swift
+          grep -Fq 'red: 0.28529' FilzaMondCurrentHost.swift
+          grep -Fq 'green: 0.44118' FilzaMondCurrentHost.swift
+          grep -Fq 'blue: 0.92451' FilzaMondCurrentHost.swift
+          grep -Fq 'patch-mond-embedded-parity.sh' FilzaByeTunesNetwork.mk
           grep -Fq 'grant_all(state: state)' FilzaMondCurrentHost.swift
           grep -Fq 'full Mond 2.1 route installed commit=500d76082f0ca021ddd591c05d129ebbc26c20df' FilzaMondBridge.m
           ! test -e MondIOS27KeySupport.swift
@@ -175,8 +181,14 @@ jobs:
           grep -Fq 'Text("Your sandbox token is invalid.")' ThirdParty/mond-current/Upstream/views/app/SettingsView.swift
           grep -Fq 'Text("HouseArrest")' ThirdParty/mond-current/Upstream/views/app/ContentView.swift
           grep -Fq 'Explore Tendies' ThirdParty/mond-current/Upstream/views/tweaks/posterboard/PosterView.swift
+          grep -Fq 'Color("AccentColor")' ThirdParty/mond-current/Upstream/views/tweaks/GestaltView.swift
           grep -Fq 'private static func cache_extra' ThirdParty/mond-current/Generated/Mond/helpers_mg.swift
           grep -Fq 'state.pb_granted = false' ThirdParty/mond-current/Generated/Mond/exploit_unsbx.swift
+          grep -Fq 'MondEmbeddedParity.accentColor' ThirdParty/mond-current/Generated/Mond/views_tweaks_GestaltView.swift
+          grep -Fq '@AppStorage("method", store: MondEmbeddedParity.defaults)' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
+          grep -Fq 'MondEmbeddedParity.defaults.string(forKey: "method")' ThirdParty/mond-current/Generated/Mond/exploit_unsbx.swift
+          ! grep -R -Fq 'Color("AccentColor")' ThirdParty/mond-current/Generated/Mond
+          ! grep -R -Fq 'UserDefaults.standard' ThirdParty/mond-current/Generated/Mond
           ! grep -R -Fq 'FILZA_IOS27_GESTALT_KEYS_BEGIN' ThirdParty/mond-current/Generated/Mond
           ! grep -R -Fq 'lastFreshToken' ThirdParty/mond-current/Generated/Mond
           ! grep -R -Fq 'Fresh sandbox token issued successfully. Mond has not consumed it.' ThirdParty/mond-current/Generated/Mond
@@ -206,7 +218,8 @@ jobs:
           ! grep -aFq 'URLSession DNS failed for ' "$DYLIB"
 
           grep -aFq 'MondEmbeddedHostFactory' "$DYLIB"
-          grep -aFq 'constructed exact Mond 2.1 root at 500d76082f0ca021ddd591c05d129ebbc26c20df' "$DYLIB"
+          grep -aFq 'constructed pinned Mond root at 500d76082f0ca021ddd591c05d129ebbc26c20df' "$DYLIB"
+          grep -aFq 'embedded-parity=accent+defaults' "$DYLIB"
           grep -aFq 'full Mond 2.1 route installed commit=500d76082f0ca021ddd591c05d129ebbc26c20df' "$DYLIB"
           ! grep -aFq 'waiting for Run Exploit' "$DYLIB"
           grep -aFq 'Filza3105HostFactory' "$DYLIB"
@@ -285,7 +298,8 @@ jobs:
           grep -aFq 'Reconciled legacy embedded provider state once:' "$DYLIB"
           grep -aFq 'All Sources' "$DYLIB"
           grep -aFq 'YouTube' "$DYLIB"
-          grep -aFq 'constructed exact Mond 2.1 root at 500d76082f0ca021ddd591c05d129ebbc26c20df' "$DYLIB"
+          grep -aFq 'constructed pinned Mond root at 500d76082f0ca021ddd591c05d129ebbc26c20df' "$DYLIB"
+          grep -aFq 'embedded-parity=accent+defaults' "$DYLIB"
           test -s "$APP/meriyah.umd.js"
           test -s "$APP/astring.umd.js"
           test -s "$APP/yt_ejs_helper.js"
