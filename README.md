@@ -4,7 +4,9 @@ A jailed, sideloadable Filza fork for modern iOS with extra container access, ap
 
 [![Verified IPA](https://github.com/NightVibes33/Filza-27/actions/workflows/verify-upstream-byetunes-ssh.yml/badge.svg?branch=main)](https://github.com/NightVibes33/Filza-27/actions/workflows/verify-upstream-byetunes-ssh.yml)
 
-[**Download the latest green `Filza-27.ipa`**](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza-27.ipa)
+[**Download the current green `Filza-27.ipa` Release**](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza-27.ipa)
+
+**Current verified Release:** `filza-27-51` — built from `740115322ff90b68cafb49420f75008492f2d467` after workflow run `31918082498` completed successfully.
 
 **Release rule:** `Filza-27.ipa` is published only after the full IPA workflow finishes green on `main`.
 
@@ -36,7 +38,7 @@ Exact access can vary by device and iOS build, so the app verifies real file or 
 
 ## Download and install
 
-1. Download **[`Filza-27.ipa`](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza-27.ipa)** from the latest GitHub Release.
+1. Download **[`Filza-27.ipa`](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza-27.ipa)** from the latest verified GitHub Release.
 2. Sideload it with your preferred signing method.
 
 The Release asset is created automatically from the newest successful **Verify ByeTunes All Sources + YouTube + SSH IPA** run on `main`, so a failed build is never promoted as the latest IPA.
@@ -130,11 +132,11 @@ Open the gear in Gestalt Editor for Mond settings. The available access methods 
 Typical flow:
 
 1. Choose the access method.
-2. Press **Run Exploit**.
-3. If access succeeds, use **Generate Token** if you need to view or validate the captured sandbox token.
+2. Press **Run Exploit**. Opening Mond by itself does not run the exploit.
+3. After access succeeds, press **Generate Token** if you want Mond to issue and display a fresh MobileGestalt sandbox extension token.
 4. Return to the editor and use Apply / Revert normally.
 
-The token UI uses the MobileGestalt token already captured by the access method when available instead of requiring a second token to be issued.
+The token UI no longer reuses the sandbox token consumed internally by `bad_query`. **Generate Token** requests a fresh read-write sandbox extension after exploit access is active.
 
 The MobileGestalt cache used by the editor is:
 
