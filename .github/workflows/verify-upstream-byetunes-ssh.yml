@@ -20,7 +20,7 @@ jobs:
       LIBSSH_COMMIT: 07430deb9b97b751ec5ea5a7fc307f40bf042e0a
       MBEDTLS_COMMIT: 068ff080b369adfac81509f9b57b2afabaf82dc5
       THEOS_COMMIT: 5280bd038207e14f8bd76f5417aa2fe641c03228
-      MOND_COMMIT: 87b38b2726160c6d1cfacbbfa834a2572d7ca333
+      MOND_COMMIT: 500d76082f0ca021ddd591c05d129ebbc26c20df
       BASE_IPA_SHA256: b11ce30a2db6f6bc77773ed30bdb855d7c847830891b14d21230f2d893d5f223
       BASE_IPA_URL: https://github.com/0xjohnnydev/FilzaSlop/releases/download/v1.0.2/FilzaSlop-v1.0.2-unsigned.ipa
 
@@ -67,12 +67,16 @@ jobs:
           ! grep -Fq 'FilzaMetadataWebRequest' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
           ! grep -Fq 'bash scripts/patch-byetunes-metadata-network-resilience.sh' FilzaByeTunesNetwork.mk
 
-      - name: Verify exact Mond 2.0 source contract
+      - name: Verify exact Mond 2.1 source contract
         run: |
           set -euxo pipefail
           grep -Fq "MOND_COMMIT=\"$MOND_COMMIT\"" scripts/stage-mond-current.sh
           grep -Fq "$MOND_COMMIT" ThirdParty/mond/UPSTREAM.md
           grep -Fq 'no Filza behavior/UI patches applied' scripts/stage-mond-current.sh
+          grep -Fq 'MondCurrentAppState.shared' FilzaMondCurrentHost.swift
+          grep -Fq 'UserDefaults.standard.register(defaults: ["method": "bad_query"])' FilzaMondCurrentHost.swift
+          grep -Fq 'grant_all(state: state)' FilzaMondCurrentHost.swift
+          grep -Fq 'full Mond 2.1 route installed commit=500d76082f0ca021ddd591c05d129ebbc26c20df' FilzaMondBridge.m
           ! test -e MondIOS27KeySupport.swift
           ! test -e scripts/patch-mond-ios27-keys.sh
           ! test -e scripts/patch-mond-token-button.sh
@@ -153,9 +157,21 @@ jobs:
           set -euxo pipefail
           export PATH="/opt/procursus/bin:$PATH"
           gmake clean || true
-          # Mond 2.0 upstream uses iOS 17 APIs. This compiler/deployment target
+          # Mond 2.1 upstream uses iOS 17 APIs. This compiler/deployment target
           # does not alter Filza's CFBundleShortVersionString.
           gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:17.0
+
+          grep -Fxq "mond=$MOND_COMMIT" ThirdParty/mond-current/PINNED.txt
+          grep -Fq '@StateObject private var state = AppState.shared' ThirdParty/mond-current/Upstream/mond.swift
+          grep -Fq 'UserDefaults.standard.register(defaults: ["method": "bad_query"])' ThirdParty/mond-current/Upstream/mond.swift
+          grep -Fq 'private static func cache_extra' ThirdParty/mond-current/Upstream/helpers/mg.swift
+          grep -Fq 'func cache_data_safe_offset' ThirdParty/mond-current/Upstream/helpers/mg.swift
+          grep -Fq 'state.pb_granted = false' ThirdParty/mond-current/Upstream/exploit/unsbx.swift
+          grep -Fq 'static let shared = AppState()' ThirdParty/mond-current/Upstream/helpers/utils.swift
+          grep -Fq 'private static func cache_extra' ThirdParty/mond-current/Generated/Mond/helpers_mg.swift
+          grep -Fq 'state.pb_granted = false' ThirdParty/mond-current/Generated/Mond/exploit_unsbx.swift
+          ! grep -R -Fq 'FILZA_IOS27_GESTALT_KEYS_BEGIN' ThirdParty/mond-current/Generated/Mond
+          ! grep -R -Fq 'lastFreshToken' ThirdParty/mond-current/Generated/Mond
 
           DYLIB=".theos/obj/FilzaApplySandboxExt.dylib"
           test -s "$DYLIB"
@@ -181,15 +197,14 @@ jobs:
           ! grep -aFq 'WebKit fallback succeeded host=' "$DYLIB"
           ! grep -aFq 'URLSession DNS failed for ' "$DYLIB"
 
-          # Exact Mond 2.0 integration evidence. These are upstream 2.0 UI/
-          # behavior strings plus the external Filza host provenance only.
-          grep -aFq 'MondFullHostFactory' "$DYLIB"
-          grep -aFq 'constructed exact Mond 2.0 root at 87b38b2726160c6d1cfacbbfa834a2572d7ca333' "$DYLIB"
+          grep -aFq 'MondEmbeddedHostFactory' "$DYLIB"
+          grep -aFq 'constructed exact Mond 2.1 root at 500d76082f0ca021ddd591c05d129ebbc26c20df' "$DYLIB"
+          grep -aFq 'full Mond 2.1 route installed commit=500d76082f0ca021ddd591c05d129ebbc26c20df' "$DYLIB"
           grep -aFq 'Run Exploit' "$DYLIB"
           grep -aFq 'Generate Token' "$DYLIB"
           grep -aFq 'Your sandbox token is invalid.' "$DYLIB"
           grep -aFq 'Explore Tendies' "$DYLIB"
-          grep -aFq 'Security Research Device Mode' "$DYLIB"
+          grep -aFq 'HouseArrest' "$DYLIB"
           ! grep -aFq 'Fresh sandbox token issued successfully. Mond has not consumed it.' "$DYLIB"
           ! grep -aFq 'waiting for Run Exploit' "$DYLIB"
           grep -aFq 'Filza3105HostFactory' "$DYLIB"
@@ -260,7 +275,7 @@ jobs:
           plutil -replace NSBonjourServices -json '["_http._tcp","_ssh._tcp"]' "$APP/Info.plist"
           bash scripts/merge-3105-app-metadata.sh "$APP/Info.plist"
 
-          # Keep the Filza host app version anchored independently of Mond 2.0.
+          # Keep the Filza host app version anchored independently of Mond 2.1.
           test "$(plutil -extract CFBundleShortVersionString raw -o - "$APP/Info.plist")" = "4.11"
 
           DYLIB="$APP/Frameworks/FilzaApplySandboxExt.dylib"
@@ -269,7 +284,7 @@ jobs:
           grep -aFq 'Reconciled legacy embedded provider state once:' "$DYLIB"
           grep -aFq 'All Sources' "$DYLIB"
           grep -aFq 'YouTube' "$DYLIB"
-          grep -aFq 'constructed exact Mond 2.0 root at 87b38b2726160c6d1cfacbbfa834a2572d7ca333' "$DYLIB"
+          grep -aFq 'constructed exact Mond 2.1 root at 500d76082f0ca021ddd591c05d129ebbc26c20df' "$DYLIB"
           test -s "$APP/meriyah.umd.js"
           test -s "$APP/astring.umd.js"
           test -s "$APP/yt_ejs_helper.js"
