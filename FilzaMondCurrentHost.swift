@@ -12,10 +12,9 @@ var sema = DispatchSemaphore(value: 0)
 var fm = FileManager.default
 
 // Standalone Mond receives these values from its app target rather than from
-// Swift source: AccentColor comes from Assets.xcassets and UserDefaults.standard
-// belongs to com.roooot.mond. When Mond is hosted inside Filza, make those two
-// pieces of app-target environment explicit so the generated upstream source
-// sees the same color and a dedicated Mond preferences domain.
+// Swift source: AccentColor comes from Assets.xcassets, UserDefaults.standard
+// belongs to com.roooot.mond, and Bundle.main identifies Mond itself. When Mond
+// is hosted inside Filza, make that app-target environment explicit.
 enum MondEmbeddedParity {
     static let accentColor = Color(
         red: 0.28529,
@@ -45,6 +44,16 @@ enum MondEmbeddedParity {
         }
 
         return store
+    }()
+
+    static let bundle: Bundle = {
+        guard
+            let url = Bundle.main.url(forResource: "MondEmbedded", withExtension: "bundle"),
+            let bundle = Bundle(url: url)
+        else {
+            return Bundle.main
+        }
+        return bundle
     }()
 }
 
@@ -96,7 +105,7 @@ private enum MondEmbeddedRuntime {
 
         FilzaDiagnosticsAppend(
             "mond",
-            "Mond runtime configured commit=500d76082f0ca021ddd591c05d129ebbc26c20df embedded-parity=accent+defaults"
+            "Mond runtime configured commit=500d76082f0ca021ddd591c05d129ebbc26c20df embedded-parity=accent+defaults+bundle bundle=\(MondEmbeddedParity.bundle.bundleIdentifier ?? \"unknown\")"
         )
     }
 
