@@ -233,8 +233,9 @@ static IMP gOriginalPresentViewController = NULL;
 static void FilzaSupportPresentViewController(id self, SEL _cmd, UIViewController *controller, BOOL animated, void (^completion)(void)) {
     if ([controller isKindOfClass:UIAlertController.class] &&
         FilzaSupportLooksLikeActivationNagAlert((UIAlertController *)controller)) {
-        NSLog(@"[FilzaSupport] Suppressed legacy 'Not activated' nag alert");
-        if (completion) dispatch_async(dispatch_get_main_queue(), completion);
+        NSLog(@"[FilzaSupport] Replacing legacy 'Not activated' nag alert with support sheet");
+        UIViewController *support = FilzaSupportNavigationController();
+        ((void(*)(id, SEL, UIViewController *, BOOL, void (^)(void)))gOriginalPresentViewController)(self, _cmd, support, animated, completion);
         return;
     }
 
@@ -257,8 +258,14 @@ static void FilzaSupportViewDidAppear(id self, SEL _cmd, BOOL animated) {
     if ([controller isKindOfClass:UIAlertController.class] &&
         FilzaSupportLooksLikeActivationNagAlert((UIAlertController *)controller)) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            NSLog(@"[FilzaSupport] Dismissing legacy 'Not activated' nag alert fallback");
-            [controller dismissViewControllerAnimated:NO completion:nil];
+            UIViewController *presenter = controller.presentingViewController;
+            UIViewController *support = FilzaSupportNavigationController();
+            NSLog(@"[FilzaSupport] Replacing already-visible 'Not activated' nag alert with support sheet");
+            [controller dismissViewControllerAnimated:NO completion:^{
+                if (presenter && !presenter.presentedViewController) {
+                    [presenter presentViewController:support animated:YES completion:nil];
+                }
+            }];
         });
         return;
     }
