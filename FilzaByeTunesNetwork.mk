@@ -38,6 +38,10 @@ BYETUNES_YTK_SWIFT_FILES := \
 
 FilzaApplySandboxExt_SWIFT_FILES += $(BYETUNES_YTK_SWIFT_FILES)
 
+# XPF's common/PatchFinder code calls the arm64-specific ChOma helpers. Keep
+# the existing upstream implementation linked as its own translation unit.
+FilzaApplySandboxExt_FILES += XPF/external/ChOma/src/PatchFinder_arm64.c
+
 before-FilzaApplySandboxExt-all::
 	@bash scripts/stage-byetunes-youtubekit.sh
 	@bash scripts/patch-byetunes-youtubekit-primary.sh
