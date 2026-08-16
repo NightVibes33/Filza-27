@@ -14,7 +14,7 @@ Every public `Filza-27.ipa` release is produced from an **exact-SHA green GitHub
 
 ## What's new — Mond 2.1 update
 
-The current production tree now embeds the **full pinned Mond 2.1 source surface** instead of the older Filza-specific Mond implementation.
+The current production tree embeds the **full pinned Mond 2.1 functional source surface** instead of the older Filza-specific Mond implementation.
 
 - Mond pinned to `rooootdev/mond@500d76082f0ca021ddd591c05d129ebbc26c20df`.
 - Full Mond 2.1 navigation and shared `AppState` lifecycle integrated.
@@ -22,9 +22,10 @@ The current production tree now embeds the **full pinned Mond 2.1 source surface
 - **Run Exploit** and **Generate Token** use the upstream Mond 2.1 flow.
 - Mond 2.1 MobileGestalt CacheExtra / safe-offset fixes retained.
 - Mond 2.1 CMG grant-state fix retained.
-- Exact upstream source is preserved under `ThirdParty/mond-current/Upstream` for provenance.
-- Embedded source receives only mechanical module/symbol namespacing required to coexist inside Filza.
-- Sandbox SPI ABI forwarding is handled by `MondSandboxSPICompat.c` without rewriting Mond's behavior.
+- The untouched upstream app source is preserved under `ThirdParty/mond-current/Upstream` for provenance.
+- The compiled copy receives mechanical module/symbol namespacing plus explicit embedded-host adapters for Mond's pinned `AccentColor`, `com.roooot.mond` preferences domain, and Mond app identity/resources. These adapters are applied only to the generated embedded copy; the preserved upstream snapshot is not rewritten.
+- A source-completeness gate compares the pinned functional Swift tree against the compiled Mond source list and fails the build if a future pin would silently omit a new upstream file.
+- Sandbox SPI ABI forwarding is handled by `MondSandboxSPICompat.c` without rewriting Mond's preserved upstream source.
 - The complete arm64 Mond integration and Filza 4.11 IPA packaging are verified in GitHub Actions.
 
 See [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for the release changelog that is automatically included in GitHub Releases.
@@ -39,7 +40,7 @@ See [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for the release changelog that is aut
 | `.3105` Patch Workspace v2 | ✅ Integrated |
 | Music Library / ByeTunes | ✅ Integrated |
 | YouTube metadata provider | ✅ Restored and bundled |
-| Mond | ✅ Full pinned Mond 2.1 integration |
+| Mond | ✅ Full pinned Mond 2.1 functional integration |
 | MobileGestalt editor | ✅ Included through Mond |
 | PosterBoard / Tendies | ✅ Included through Mond |
 | HouseArrest / Santander | ✅ Included through Mond |
@@ -90,7 +91,9 @@ The current build also restores the known working pre-v2.4 YouTubeKit metadata p
 
 ### Mond 2.1 / Gestalt Editor
 
-Mond 2.1 is staged from exact upstream source and embedded into the Filza runtime. Available routes include:
+Mond is staged from the exact pinned upstream commit, then its generated compiled copy is adapted only where embedding inside Filza changes the standalone app environment. The IPA supplies Mond's accent color, isolated preferences domain, and a dedicated Mond resource bundle so SwiftUI controls and Settings identity do not accidentally inherit Filza's app target.
+
+Available routes include:
 
 - MobileGestalt
 - PosterBoard / Tendies
@@ -161,7 +164,7 @@ The installable IPA workflow is:
 .github/workflows/verify-upstream-byetunes-ssh.yml
 ```
 
-It verifies pinned dependencies, stages Mond 2.1 / 3105 / ByeTunes sources and resources, builds the arm64 runtime, packages the anchored Filza base IPA, verifies the package, and uploads the exact artifact.
+It verifies pinned dependencies, checks the Mond functional-source graph for completeness, stages Mond app-target parity resources, stages 3105 / ByeTunes sources and resources, builds the arm64 runtime, packages the anchored Filza base IPA, verifies the package, and uploads the exact artifact.
 
 After that succeeds, the release workflow:
 
