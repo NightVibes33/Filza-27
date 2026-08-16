@@ -6,7 +6,7 @@ A jailed, sideloadable Filza fork for modern iOS with extra container access, ap
 
 [**Download the current green `Filza-27.ipa` Release**](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza-27.ipa)
 
-**Current verified Release:** `filza-27-55` — built from `c13f74542135c59a1528b04695aba44779a936bd` after workflow run `31921387884` completed successfully.
+**Current verified Release:** `filza-27-58` — built from `dae432550c1470e38f31e8411bc53c9392eab2ea` after workflow run `31923399222` completed successfully.
 
 **Release rule:** `Filza-27.ipa` is published only after the full IPA workflow finishes green on `main`.
 
