@@ -87,7 +87,9 @@ jobs:
           mkdir -p .theos
           gmake clean >/dev/null 2>&1 || true
           set -o pipefail
-          gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:16.0 2>&1 | tee .theos/full-build.log
+          # Mond 2.0 upstream uses iOS 17 APIs. This is a compiler/deployment
+          # target only; it does not change Filza's CFBundle app version.
+          gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:17.0 2>&1 | tee .theos/full-build.log
           rc=${PIPESTATUS[0]}
           echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
           echo "===== FAILURE/SUCCESS TAIL ====="
