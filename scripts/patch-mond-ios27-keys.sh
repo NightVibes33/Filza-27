@@ -90,6 +90,12 @@ for path in root.glob("*.swift"):
         path.write_text(new, encoding="utf-8")
 PY
 
+# stage-mond-current.sh already invokes this overlay after recreating the pinned
+# upstream Mond source graph. Apply the token ABI/status patch here as part of
+# that same deterministic Mond adaptation pass so the generated sources cannot
+# fall back to upstream's stale token implementation on the next build.
+bash scripts/patch-mond-token-button.sh
+
 grep -Fq '// FILZA_IOS27_GESTALT_KEYS_BEGIN' "$TARGET" || {
   echo "Mond iOS 27 overlay failed: section marker missing" >&2
   exit 1
@@ -126,6 +132,14 @@ grep -Fq 'Text("Generate Token")' "$MOND_ROOT/views_App_SettingsView.swift" || {
   echo "Mond token integration failed: upstream Generate Token button missing" >&2
   exit 1
 }
+grep -Fq 'token == token_last_issued' "$MOND_ROOT/views_App_SettingsView.swift" || {
+  echo "Mond token integration failed: non-destructive validity check missing" >&2
+  exit 1
+}
+grep -Fq 'issue(classPtr, pathPtr, 0)' "$MOND_ROOT/helpers_sbx.swift" || {
+  echo "Mond token integration failed: corrected SandboxSPI ABI missing" >&2
+  exit 1
+}
 
 if grep -R -Fq 'Color("AccentColor")' ThirdParty/mond-current/Generated/Mond; then
   echo "Mond appearance parity failed: embedded views still resolve Filza AccentColor" >&2
@@ -137,4 +151,4 @@ fi
 ! grep -R -Fq 'Settings loaded captured exploit token' "$MOND_ROOT"
 ! grep -R -Fq 'Run Exploit populated captured token' "$MOND_ROOT"
 
-echo "Patched current upstream Mond with iOS 27 keys and embedded appearance only; exploit remains manual"
+echo "Patched current upstream Mond with iOS 27 keys, token ABI/status correctness, and embedded appearance; exploit remains manual"
