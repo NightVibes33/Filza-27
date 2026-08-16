@@ -17,6 +17,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout release metadata
+        uses: actions/checkout@v4
+
       - name: Wait for exact-SHA verified IPA build
         id: verified
         env:
@@ -94,6 +97,29 @@ jobs:
           unzip -l "release/Filza-27.ipa" | grep -Eq 'Payload/[^/]+\.app/'
           shasum -a 256 "release/Filza-27.ipa" | tee release/Filza-27-SHA256.txt
 
+      - name: Build release notes
+        env:
+          VERIFIED_RUN_ID: ${{ steps.verified.outputs.run_id }}
+          VERIFIED_RUN_NUMBER: ${{ steps.verified.outputs.run_number }}
+          VERIFIED_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s RELEASE_NOTES.md
+          cp RELEASE_NOTES.md release/RELEASE_NOTES.md
+          cat >> release/RELEASE_NOTES.md <<EOF
+
+---
+
+### Verified build metadata
+
+- Workflow run: \`${VERIFIED_RUN_ID}\`
+- Workflow number: \`${VERIFIED_RUN_NUMBER}\`
+- Commit: \`${VERIFIED_SHA}\`
+- Artifact: \`Filza-27.ipa\`
+- Checksum: \`Filza-27-SHA256.txt\`
+EOF
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -104,7 +130,6 @@ jobs:
         run: |
           set -euxo pipefail
           TAG="filza-27-${VERIFIED_RUN_NUMBER}"
-          NOTES="Verified green Filza 27 IPA from workflow run ${VERIFIED_RUN_ID} at commit ${VERIFIED_SHA}."
 
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" \
@@ -112,17 +137,23 @@ jobs:
               "release/Filza-27-SHA256.txt" \
               --clobber \
               --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Filza 27 — Mond 2.1" \
+              --notes-file "release/RELEASE_NOTES.md" \
+              --latest
           else
             gh release create "$TAG" \
               "release/Filza-27.ipa" \
               "release/Filza-27-SHA256.txt" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$VERIFIED_SHA" \
-              --title "Filza 27" \
-              --notes "$NOTES" \
+              --title "Filza 27 — Mond 2.1" \
+              --notes-file "release/RELEASE_NOTES.md" \
               --latest
           fi
 
           FINAL_JSON="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
           test "$(jq -r '.assets[] | select(.name == "Filza-27.ipa") | .name' <<<"$FINAL_JSON")" = "Filza-27.ipa"
-          echo "Release asset filename verified: Filza-27.ipa"
+          test "$(jq -r '.assets[] | select(.name == "Filza-27-SHA256.txt") | .name' <<<"$FINAL_JSON")" = "Filza-27-SHA256.txt"
+          echo "Release assets verified: Filza-27.ipa + Filza-27-SHA256.txt"
