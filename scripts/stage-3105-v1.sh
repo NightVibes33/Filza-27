@@ -21,8 +21,6 @@ SRC="$(find "$TMP" -maxdepth 1 -type d -name '3105-*' -print -quit)"
 test -n "$SRC" || { echo "Could not locate extracted 3105 source tree" >&2; exit 1; }
 UPSTREAM="$SRC/ThreeOneOSFive"
 
-# 1.0.1 introduced these source units. Fail closed if the pinned source is not
-# the release we expect instead of silently building a partial 3105 workspace.
 for required in \
   helpers/AppTabNavigationState.swift \
   helpers/FileOperationCoordinator.swift \
@@ -46,9 +44,6 @@ copy_source() {
   cp "$UPSTREAM/$relative" "$ROOT/Sources/$destination"
 }
 
-# Union of the files needed to move the vendored rollback baseline through the
-# 1.0 release and then through every 1.0.1 functional change. The standalone
-# App.swift remains intentionally excluded because Filza owns UIApplication.
 copy_source helpers/AppIconHelper.m AppIconHelper.m
 copy_source helpers/AppTabNavigationState.swift AppTabNavigationState.swift
 copy_source helpers/CleanerCatalog.swift CleanerCatalog.swift
@@ -81,10 +76,6 @@ copy_source views/PatchProjectEditorView.swift PatchProjectEditorView.swift
 copy_source views/PatchProjectsView.swift PatchProjectsView.swift
 copy_source views/WallpaperLabView.swift WallpaperLabView.swift
 
-# ContentView and SettingsView are real upstream 1.0.1 views with only the
-# minimal namespace/lifecycle adaptations needed to coexist inside Filza's one
-# Swift module. Keep Filza's direct initial-tab entry points while preserving
-# upstream responsive navigation, FilesTabSession and feature toggles.
 copy_source ContentView.swift ThreeOneOSFiveContentView.swift
 copy_source views/SettingsView.swift ThreeOneOSFiveSettingsView.swift
 
@@ -122,33 +113,53 @@ settings_path.write_text(settings, encoding="utf-8")
 PY
 
 for lang in en vi zh-Hans; do
-  test -f "$UPSTREAM/$lang.lproj/Localizable.strings"
+  test -f "$UPSTREAM/$lang.lproj/Localizable.strings" || {
+    echo "3105 1.0.1 localization missing: $lang" >&2
+    exit 1
+  }
   mkdir -p "$ROOT/Resources/Filza3105.bundle/$lang.lproj"
   cp "$UPSTREAM/$lang.lproj/Localizable.strings" \
      "$ROOT/Resources/Filza3105.bundle/$lang.lproj/Localizable.strings"
 done
 
-# Deterministic metadata merge into the host IPA. This must report the actual
-# upstream release, not Filza's own 4.11 app version.
 cp "$UPSTREAM/Info.plist" "$ROOT/Resources/Filza3105.bundle/UpstreamAppInfo.plist"
 
-# 1.0 + 1.0.1 source-contract checks.
-grep -Fq 'FileOperationCoordinator' "$ROOT/Sources/FileBrowserView.swift"
-grep -Fq 'ZIPArchiveWriter' "$ROOT/Sources/FileManagerService.swift"
-grep -Fq 'ZIPArchiveExtractor' "$ROOT/Sources/FileBrowserView.swift"
-grep -Fq 'PatchWorkspaceService' "$ROOT/Sources/PatchProjectsView.swift"
-grep -Fq 'FilesTabSession' "$ROOT/Sources/AppTabNavigationState.swift"
-grep -Fq 'FilesTabSwitcherView' "$ROOT/Sources/FilesTabControls.swift"
-grep -Fq 'FeatureVisibility' "$ROOT/Sources/ThreeOneOSFiveContentView.swift"
-grep -Fq 'NavigationSplitView' "$ROOT/Sources/ThreeOneOSFiveContentView.swift"
-grep -Fq 'ThreeOneOSFiveSettingsView()' "$ROOT/Sources/ThreeOneOSFiveContentView.swift"
-grep -Fq 'struct ThreeOneOSFiveSettingsView: View' "$ROOT/Sources/ThreeOneOSFiveSettingsView.swift"
-grep -Fq 'settings.developer_public_beta_build' "$ROOT/Resources/Filza3105.bundle/en.lproj/Localizable.strings"
-grep -Fq '"browser.tabs"' "$ROOT/Resources/Filza3105.bundle/en.lproj/Localizable.strings"
-grep -Fq '"browser.extract"' "$ROOT/Resources/Filza3105.bundle/en.lproj/Localizable.strings"
+assert_contains() {
+  local needle="$1"
+  local path="$2"
+  local label="$3"
+  grep -Fq "$needle" "$path" || {
+    echo "3105 1.0.1 contract failed: $label ($needle) missing from $path" >&2
+    exit 1
+  }
+}
 
-plutil -lint "$ROOT/Resources/Filza3105.bundle/UpstreamAppInfo.plist" >/dev/null
-test "$(plutil -extract CFBundleShortVersionString raw -o - "$ROOT/Resources/Filza3105.bundle/UpstreamAppInfo.plist")" = "$UPSTREAM_VERSION"
-test "$(plutil -extract AppReleaseDisplayVersion raw -o - "$ROOT/Resources/Filza3105.bundle/UpstreamAppInfo.plist")" = "$UPSTREAM_VERSION"
+assert_contains 'FileOperationCoordinator' "$ROOT/Sources/FileBrowserView.swift" 'coordinated file operations'
+assert_contains 'ZIPArchiveWriter' "$ROOT/Sources/FileManagerService.swift" 'ZIP creation'
+assert_contains 'ZIPArchiveExtractor' "$ROOT/Sources/FileBrowserView.swift" 'ZIP extraction integration'
+assert_contains 'PatchWorkspaceService' "$ROOT/Sources/PatchProjectsView.swift" 'Patch Workspace v2 integration'
+assert_contains 'FilesTabSession' "$ROOT/Sources/AppTabNavigationState.swift" 'independent Files tab state'
+assert_contains 'FilesTabSwitcherView' "$ROOT/Sources/FilesTabControls.swift" 'Files tab switcher'
+assert_contains 'FeatureVisibility' "$ROOT/Sources/ThreeOneOSFiveContentView.swift" 'optional Cleaner/Wallpaper navigation'
+assert_contains 'NavigationSplitView' "$ROOT/Sources/ThreeOneOSFiveContentView.swift" 'responsive iPad navigation'
+assert_contains 'ThreeOneOSFiveSettingsView()' "$ROOT/Sources/ThreeOneOSFiveContentView.swift" 'Filza settings namespace adaptation'
+assert_contains 'struct ThreeOneOSFiveSettingsView: View' "$ROOT/Sources/ThreeOneOSFiveSettingsView.swift" 'Filza Settings type adaptation'
+assert_contains 'settings.developer_public_beta_build' "$ROOT/Resources/Filza3105.bundle/en.lproj/Localizable.strings" 'public beta labeling'
+assert_contains '"browser.tabs"' "$ROOT/Resources/Filza3105.bundle/en.lproj/Localizable.strings" 'Files tab localization'
+assert_contains '"browser.extract_zip"' "$ROOT/Resources/Filza3105.bundle/en.lproj/Localizable.strings" 'ZIP extraction localization'
+
+plutil -lint "$ROOT/Resources/Filza3105.bundle/UpstreamAppInfo.plist" >/dev/null || {
+  echo "3105 1.0.1 upstream Info.plist failed plutil validation" >&2
+  exit 1
+}
+
+test "$(plutil -extract CFBundleShortVersionString raw -o - "$ROOT/Resources/Filza3105.bundle/UpstreamAppInfo.plist")" = "$UPSTREAM_VERSION" || {
+  echo "3105 upstream CFBundleShortVersionString is not $UPSTREAM_VERSION" >&2
+  exit 1
+}
+test "$(plutil -extract AppReleaseDisplayVersion raw -o - "$ROOT/Resources/Filza3105.bundle/UpstreamAppInfo.plist")" = "$UPSTREAM_VERSION" || {
+  echo "3105 upstream AppReleaseDisplayVersion is not $UPSTREAM_VERSION" >&2
+  exit 1
+}
 
 echo "Staged complete 3105 ${UPSTREAM_VERSION} from ${UPSTREAM_OWNER}/${UPSTREAM_REPO}@${UPSTREAM_COMMIT}"
