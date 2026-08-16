@@ -1,16 +1,20 @@
 @import UIKit;
 @import SafariServices;
 #import <objc/runtime.h>
+#import "FilzaSupportProfileData.h"
 
 static NSString * const kFilzaSupportURLString = @"https://buymeacoffee.com/zyn3";
-static NSString * const kFilzaSupportButtonImageURLString = @"https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png";
 
 @interface FilzaSupportViewController : UIViewController
-@property(nonatomic, strong) UIButton *coffeeButton;
-@property(nonatomic, strong) UIActivityIndicatorView *imageSpinner;
 @end
 
 @implementation FilzaSupportViewController
+
+static UIImage *FilzaSupportProfileImage(void) {
+    NSData *data = [[NSData alloc] initWithBase64EncodedString:kFilzaSupportProfileJPEGBase64 options:0];
+    if (!data.length) return nil;
+    return [UIImage imageWithData:data scale:UIScreen.mainScreen.scale];
+}
 
 - (void)viewDidLoad {
     [super viewDidLoad];
@@ -24,157 +28,83 @@ static NSString * const kFilzaSupportButtonImageURLString = @"https://cdn.buymea
         action:@selector(closeTapped)];
     self.navigationItem.leftBarButtonItem = close;
 
-    UIScrollView *scrollView = [UIScrollView new];
-    scrollView.translatesAutoresizingMaskIntoConstraints = NO;
-    scrollView.alwaysBounceVertical = NO;
-    [self.view addSubview:scrollView];
+    UIView *content = [UIView new];
+    content.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:content];
 
-    UIStackView *stack = [UIStackView new];
-    stack.axis = UILayoutConstraintAxisVertical;
-    stack.alignment = UIStackViewAlignmentFill;
-    stack.spacing = 14.0;
-    stack.translatesAutoresizingMaskIntoConstraints = NO;
-    [scrollView addSubview:stack];
-
-    UIView *card = [UIView new];
-    card.translatesAutoresizingMaskIntoConstraints = NO;
-    card.backgroundColor = UIColor.secondarySystemGroupedBackgroundColor;
-    card.layer.cornerRadius = 22.0;
-    card.layer.cornerCurve = kCACornerCurveContinuous;
-    [stack addArrangedSubview:card];
-
-    UIStackView *cardStack = [UIStackView new];
-    cardStack.axis = UILayoutConstraintAxisVertical;
-    cardStack.alignment = UIStackViewAlignmentCenter;
-    cardStack.spacing = 12.0;
-    cardStack.translatesAutoresizingMaskIntoConstraints = NO;
-    [card addSubview:cardStack];
-
-    UIImageView *icon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"cup.and.saucer.fill"]];
-    icon.tintColor = UIColor.blackColor;
-    icon.contentMode = UIViewContentModeScaleAspectFit;
-    icon.backgroundColor = [UIColor colorWithRed:1.0 green:0.867 blue:0.0 alpha:1.0];
-    icon.layer.cornerRadius = 28.0;
-    icon.layer.cornerCurve = kCACornerCurveContinuous;
-    icon.translatesAutoresizingMaskIntoConstraints = NO;
-    [NSLayoutConstraint activateConstraints:@[
-        [icon.widthAnchor constraintEqualToConstant:56.0],
-        [icon.heightAnchor constraintEqualToConstant:56.0]
-    ]];
+    UIImageView *profile = [[UIImageView alloc] initWithImage:FilzaSupportProfileImage()];
+    profile.translatesAutoresizingMaskIntoConstraints = NO;
+    profile.contentMode = UIViewContentModeScaleAspectFill;
+    profile.clipsToBounds = YES;
+    profile.layer.cornerRadius = 58.0;
+    profile.layer.cornerCurve = kCACornerCurveCircular;
+    profile.layer.borderWidth = 2.0;
+    profile.layer.borderColor = [UIColor.separatorColor colorWithAlphaComponent:0.45].CGColor;
+    profile.backgroundColor = UIColor.secondarySystemGroupedBackgroundColor;
 
     UILabel *title = [UILabel new];
+    title.translatesAutoresizingMaskIntoConstraints = NO;
     title.text = @"Support Zyn";
-    title.font = [UIFont systemFontOfSize:26.0 weight:UIFontWeightBold];
+    title.font = [UIFont systemFontOfSize:28.0 weight:UIFontWeightBold];
     title.textAlignment = NSTextAlignmentCenter;
-    title.numberOfLines = 0;
 
-    UILabel *subtitle = [UILabel new];
-    subtitle.text = @"If Filza 27 has been useful, you can support its continued development on Buy Me a Coffee.";
-    subtitle.font = [UIFont systemFontOfSize:15.0 weight:UIFontWeightRegular];
-    subtitle.textColor = UIColor.secondaryLabelColor;
-    subtitle.textAlignment = NSTextAlignmentCenter;
-    subtitle.numberOfLines = 0;
+    UILabel *handle = [UILabel new];
+    handle.translatesAutoresizingMaskIntoConstraints = NO;
+    handle.text = @"buymeacoffee.com/zyn3";
+    handle.font = [UIFont systemFontOfSize:14.0 weight:UIFontWeightRegular];
+    handle.textColor = UIColor.secondaryLabelColor;
+    handle.textAlignment = NSTextAlignmentCenter;
 
-    [cardStack addArrangedSubview:icon];
-    [cardStack addArrangedSubview:title];
-    [cardStack addArrangedSubview:subtitle];
+    UIButton *coffee = [UIButton buttonWithType:UIButtonTypeSystem];
+    coffee.translatesAutoresizingMaskIntoConstraints = NO;
+    coffee.backgroundColor = [UIColor colorWithRed:1.0 green:0.867 blue:0.0 alpha:1.0];
+    coffee.layer.cornerRadius = 14.0;
+    coffee.layer.cornerCurve = kCACornerCurveContinuous;
+    coffee.clipsToBounds = YES;
+    coffee.titleLabel.font = [UIFont systemFontOfSize:18.0 weight:UIFontWeightSemibold];
+    [coffee setTitle:@"Buy me a coffee" forState:UIControlStateNormal];
+    [coffee setTitleColor:UIColor.blackColor forState:UIControlStateNormal];
+    UIImage *cup = [[UIImage systemImageNamed:@"cup.and.saucer.fill"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    [coffee setImage:cup forState:UIControlStateNormal];
+    coffee.tintColor = UIColor.blackColor;
+    coffee.configuration = [UIButtonConfiguration plainButtonConfiguration];
+    coffee.configuration.title = @"Buy me a coffee";
+    coffee.configuration.image = cup;
+    coffee.configuration.imagePadding = 9.0;
+    coffee.configuration.baseForegroundColor = UIColor.blackColor;
+    coffee.configuration.contentInsets = NSDirectionalEdgeInsetsMake(0, 18, 0, 18);
+    [coffee addTarget:self action:@selector(openCoffee) forControlEvents:UIControlEventTouchUpInside];
 
-    [NSLayoutConstraint activateConstraints:@[
-        [cardStack.topAnchor constraintEqualToAnchor:card.topAnchor constant:22.0],
-        [cardStack.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:20.0],
-        [cardStack.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-20.0],
-        [cardStack.bottomAnchor constraintEqualToAnchor:card.bottomAnchor constant:-22.0]
-    ]];
-
-    self.coffeeButton = [UIButton buttonWithType:UIButtonTypeCustom];
-    self.coffeeButton.translatesAutoresizingMaskIntoConstraints = NO;
-    self.coffeeButton.backgroundColor = [UIColor colorWithRed:1.0 green:0.867 blue:0.0 alpha:1.0];
-    self.coffeeButton.layer.cornerRadius = 14.0;
-    self.coffeeButton.layer.cornerCurve = kCACornerCurveContinuous;
-    self.coffeeButton.clipsToBounds = YES;
-    self.coffeeButton.titleLabel.font = [UIFont systemFontOfSize:18.0 weight:UIFontWeightSemibold];
-    [self.coffeeButton setTitle:@"Buy me a coffee" forState:UIControlStateNormal];
-    [self.coffeeButton setTitleColor:UIColor.blackColor forState:UIControlStateNormal];
-    [self.coffeeButton addTarget:self action:@selector(openCoffee) forControlEvents:UIControlEventTouchUpInside];
-    [self.coffeeButton.heightAnchor constraintEqualToConstant:66.0].active = YES;
-    [stack addArrangedSubview:self.coffeeButton];
-
-    self.imageSpinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-    self.imageSpinner.translatesAutoresizingMaskIntoConstraints = NO;
-    self.imageSpinner.color = UIColor.blackColor;
-    self.imageSpinner.hidesWhenStopped = YES;
-    [self.coffeeButton addSubview:self.imageSpinner];
-    [NSLayoutConstraint activateConstraints:@[
-        [self.imageSpinner.centerXAnchor constraintEqualToAnchor:self.coffeeButton.centerXAnchor],
-        [self.imageSpinner.centerYAnchor constraintEqualToAnchor:self.coffeeButton.centerYAnchor]
-    ]];
-    [self.imageSpinner startAnimating];
-
-    UIButton *openButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [openButton setTitle:@"Open buymeacoffee.com/zyn3" forState:UIControlStateNormal];
-    [openButton setImage:[UIImage systemImageNamed:@"safari"] forState:UIControlStateNormal];
-    openButton.configuration = [UIButtonConfiguration plainButtonConfiguration];
-    openButton.configuration.imagePadding = 7.0;
-    [openButton addTarget:self action:@selector(openCoffee) forControlEvents:UIControlEventTouchUpInside];
-    [stack addArrangedSubview:openButton];
-
-    UILabel *disclaimer = [UILabel new];
-    disclaimer.text = @"Support is optional. It does not unlock app features or change Filza access permissions.";
-    disclaimer.font = [UIFont systemFontOfSize:12.5 weight:UIFontWeightRegular];
-    disclaimer.textColor = UIColor.tertiaryLabelColor;
-    disclaimer.textAlignment = NSTextAlignmentCenter;
-    disclaimer.numberOfLines = 0;
-    [stack addArrangedSubview:disclaimer];
+    [content addSubview:profile];
+    [content addSubview:title];
+    [content addSubview:handle];
+    [content addSubview:coffee];
 
     [NSLayoutConstraint activateConstraints:@[
-        [scrollView.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],
-        [scrollView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
-        [scrollView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
-        [scrollView.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
+        [content.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:18.0],
+        [content.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:24.0],
+        [content.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-24.0],
+        [content.bottomAnchor constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-16.0],
 
-        [stack.topAnchor constraintEqualToAnchor:scrollView.contentLayoutGuide.topAnchor constant:18.0],
-        [stack.leadingAnchor constraintEqualToAnchor:scrollView.frameLayoutGuide.leadingAnchor constant:20.0],
-        [stack.trailingAnchor constraintEqualToAnchor:scrollView.frameLayoutGuide.trailingAnchor constant:-20.0],
-        [stack.bottomAnchor constraintEqualToAnchor:scrollView.contentLayoutGuide.bottomAnchor constant:-20.0]
+        [profile.topAnchor constraintEqualToAnchor:content.topAnchor],
+        [profile.centerXAnchor constraintEqualToAnchor:content.centerXAnchor],
+        [profile.widthAnchor constraintEqualToConstant:116.0],
+        [profile.heightAnchor constraintEqualToConstant:116.0],
+
+        [title.topAnchor constraintEqualToAnchor:profile.bottomAnchor constant:16.0],
+        [title.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
+        [title.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
+
+        [handle.topAnchor constraintEqualToAnchor:title.bottomAnchor constant:4.0],
+        [handle.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
+        [handle.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
+
+        [coffee.topAnchor constraintEqualToAnchor:handle.bottomAnchor constant:22.0],
+        [coffee.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
+        [coffee.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
+        [coffee.heightAnchor constraintEqualToConstant:56.0],
+        [coffee.bottomAnchor constraintEqualToAnchor:content.bottomAnchor]
     ]];
-
-    [self loadOfficialButtonArtwork];
-}
-
-- (void)loadOfficialButtonArtwork {
-    NSURL *url = [NSURL URLWithString:kFilzaSupportButtonImageURLString];
-    if (!url) {
-        [self.imageSpinner stopAnimating];
-        return;
-    }
-
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
-    request.cachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
-    request.timeoutInterval = 12.0;
-
-    __weak typeof(self) weakSelf = self;
-    [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        NSHTTPURLResponse *http = [response isKindOfClass:NSHTTPURLResponse.class] ? (NSHTTPURLResponse *)response : nil;
-        UIImage *image = (data.length && (!http || (http.statusCode >= 200 && http.statusCode < 300))) ? [UIImage imageWithData:data] : nil;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            __strong typeof(weakSelf) self = weakSelf;
-            if (!self) return;
-
-            [self.imageSpinner stopAnimating];
-            if (!image) {
-                NSLog(@"[FilzaSupport] Buy Me a Coffee artwork load failed: %@", error.localizedDescription ?: @"unknown error");
-                return;
-            }
-
-            UIImage *original = [image imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
-            [self.coffeeButton setTitle:nil forState:UIControlStateNormal];
-            [self.coffeeButton setImage:original forState:UIControlStateNormal];
-            self.coffeeButton.backgroundColor = UIColor.clearColor;
-            self.coffeeButton.imageView.contentMode = UIViewContentModeScaleAspectFit;
-            self.coffeeButton.imageEdgeInsets = UIEdgeInsetsMake(3.0, 8.0, 3.0, 8.0);
-            NSLog(@"[FilzaSupport] Buy Me a Coffee artwork loaded in original rendering mode");
-        });
-    }] resume];
 }
 
 - (void)openCoffee {
@@ -182,7 +112,7 @@ static NSString * const kFilzaSupportButtonImageURLString = @"https://cdn.buymea
     if (!url) return;
 
     SFSafariViewController *browser = [[SFSafariViewController alloc] initWithURL:url];
-    browser.preferredControlTintColor = [UIColor colorWithRed:0.18 green:0.18 blue:0.18 alpha:1.0];
+    browser.preferredControlTintColor = UIColor.labelColor;
     [self presentViewController:browser animated:YES completion:nil];
 }
 
@@ -202,6 +132,7 @@ static void FilzaSupportCollectText(UIView *view, NSMutableString *out) {
             NSString *text = [button titleForState:state.unsignedIntegerValue];
             if (text.length) [out appendFormat:@" %@", text];
         }
+        if (button.configuration.title.length) [out appendFormat:@" %@", button.configuration.title];
     } else if ([view isKindOfClass:UITextView.class]) {
         NSString *text = ((UITextView *)view).text;
         if (text.length) [out appendFormat:@" %@", text];
@@ -273,13 +204,24 @@ static UIViewController *FilzaSupportNavigationController(void) {
     UINavigationController *navigation = [[UINavigationController alloc] initWithRootViewController:support];
     navigation.modalPresentationStyle = UIModalPresentationPageSheet;
 
-    if (@available(iOS 15.0, *)) {
+    if (@available(iOS 16.0, *)) {
+        UISheetPresentationController *sheet = navigation.sheetPresentationController;
+        UISheetPresentationControllerDetent *compact = [UISheetPresentationControllerDetent
+            customDetentWithIdentifier:@"FilzaSupportCompact"
+            resolver:^CGFloat(id<UISheetPresentationControllerDetentResolutionContext> context) {
+                return MIN(430.0, context.maximumDetentValue);
+            }];
+        sheet.detents = @[compact];
+        sheet.prefersGrabberVisible = YES;
+        sheet.prefersScrollingExpandsWhenScrolledToEdge = NO;
+        sheet.preferredCornerRadius = 24.0;
+        sheet.selectedDetentIdentifier = compact.identifier;
+    } else if (@available(iOS 15.0, *)) {
         UISheetPresentationController *sheet = navigation.sheetPresentationController;
         sheet.detents = @[UISheetPresentationControllerDetent.mediumDetent];
         sheet.prefersGrabberVisible = YES;
         sheet.prefersScrollingExpandsWhenScrolledToEdge = NO;
         sheet.preferredCornerRadius = 24.0;
-        sheet.selectedDetentIdentifier = UISheetPresentationControllerDetentIdentifierMedium;
     }
     return navigation;
 }
@@ -365,6 +307,6 @@ static void FilzaSupportPromptInstall(void) {
             }
         }
 
-        NSLog(@"[FilzaSupport] UI replacement installed -> %@", kFilzaSupportURLString);
+        NSLog(@"[FilzaSupport] Compact support UI installed -> %@", kFilzaSupportURLString);
     });
 }
