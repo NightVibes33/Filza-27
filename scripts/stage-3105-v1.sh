@@ -136,7 +136,8 @@ assert_contains() {
 
 assert_contains 'FileOperationCoordinator' "$ROOT/Sources/FileBrowserView.swift" 'coordinated file operations'
 assert_contains 'ZIPArchiveWriter' "$ROOT/Sources/FileManagerService.swift" 'ZIP creation'
-assert_contains 'ZIPArchiveExtractor' "$ROOT/Sources/FileBrowserView.swift" 'ZIP extraction integration'
+assert_contains 'FileManagerService.extractZIPArchive' "$ROOT/Sources/FileBrowserView.swift" 'FileBrowser ZIP extraction route'
+assert_contains 'ZIPArchiveExtractor.extract' "$ROOT/Sources/FileManagerService.swift" 'ZIP extractor backend route'
 assert_contains 'PatchWorkspaceService' "$ROOT/Sources/PatchProjectsView.swift" 'Patch Workspace v2 integration'
 assert_contains 'FilesTabSession' "$ROOT/Sources/AppTabNavigationState.swift" 'independent Files tab state'
 assert_contains 'FilesTabSwitcherView' "$ROOT/Sources/FilesTabControls.swift" 'Files tab switcher'
