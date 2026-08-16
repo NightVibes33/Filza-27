@@ -169,7 +169,11 @@ jobs:
           ! grep -aFq 'URLSession DNS failed for ' "$DYLIB"
 
           grep -aFq 'MondFullHostFactory' "$DYLIB"
-          grep -aFq 'Generate Token loaded captured exploit token' "$DYLIB"
+          grep -aFq 'waiting for Run Exploit' "$DYLIB"
+          grep -aFq 'Generate Token issued fresh sandbox token' "$DYLIB"
+          ! grep -aFq 'Generate Token loaded captured exploit token' "$DYLIB"
+          ! grep -aFq 'Run Exploit populated captured token' "$DYLIB"
+          ! grep -aFq 'Settings loaded captured exploit token' "$DYLIB"
           grep -aFq 'Filza3105HostFactory' "$DYLIB"
           grep -aFq 'ByeTunesEmbeddedHostFactory' "$DYLIB"
           grep -aFq 'jailed in-process WebDAV lifecycle hook installed' "$DYLIB"
