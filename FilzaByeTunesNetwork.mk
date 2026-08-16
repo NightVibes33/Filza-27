@@ -41,11 +41,13 @@ FilzaApplySandboxExt_SWIFT_FILES += $(BYETUNES_YTK_SWIFT_FILES)
 before-FilzaApplySandboxExt-all::
 	@bash scripts/stage-byetunes-youtubekit.sh
 	@bash scripts/patch-byetunes-youtubekit-primary.sh
+	@bash scripts/patch-byetunes-manage-backups-typecheck.sh
 	@test -f "$(BYETUNES_YTK_ROOT)/YouTube.swift" || (echo "Missing pinned pre-v2.4 YouTubeKit" >&2; exit 1)
 	@test -f "$(BYETUNES_YTK_ROOT)/InnerTube.swift" || (echo "Incomplete pinned pre-v2.4 YouTubeKit" >&2; exit 1)
 	@test -f "$(BYETUNES_YTK_ROOT)/Resources/meriyah.umd.js" || (echo "Incomplete pinned YouTubeKit resources" >&2; exit 1)
 	@grep -Fq 'let youtube = YouTube(videoID: videoID)' ByeTunesMetadataCompat.swift
 	@grep -Fq '[YouTubeProvider] YouTubeKit metadata matched videoID=' ByeTunesMetadataCompat.swift
+	@grep -Fq 'FILZA_MANAGE_BACKUPS_TYPECHECK_SPLIT' ByeTunes/MusicManager/ManageBackupsView.swift
 
 	@test -f "ByeTunes/MusicManager/MetadataBackgroundURLSession.swift" || (echo "Missing upstream ByeTunes metadata transport" >&2; exit 1)
 	@grep -Fq 'return try await URLSession.shared.data(for: request)' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
