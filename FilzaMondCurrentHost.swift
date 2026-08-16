@@ -105,7 +105,7 @@ private enum MondEmbeddedRuntime {
 
         FilzaDiagnosticsAppend(
             "mond",
-            "Mond runtime configured commit=500d76082f0ca021ddd591c05d129ebbc26c20df embedded-parity=accent+defaults+bundle bundle=\(MondEmbeddedParity.bundle.bundleIdentifier ?? \"unknown\")"
+            "Mond runtime configured commit=500d76082f0ca021ddd591c05d129ebbc26c20df embedded-parity=accent+defaults+bundle bundle=\(MondEmbeddedParity.bundle.bundleIdentifier ?? "unknown")"
         )
     }
 
