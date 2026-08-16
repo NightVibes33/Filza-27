@@ -4,7 +4,7 @@ import UIKit
 import UniformTypeIdentifiers
 import ObjectiveC.runtime
 
-// Mond 2.1 is compiled into Filza's process, so its standalone App entry point
+// Mond 2.0 is compiled into Filza's process, so its standalone App entry point
 // cannot be used directly. These globals mirror mond.swift exactly where the
 // upstream source expects process-global state.
 var pipe = Pipe()
@@ -23,7 +23,7 @@ var mondCurrentTestPath: String {
     return url.path
 }
 
-// Mechanical selector namespace only; behavior matches Mond 2.1's
+// Mechanical selector namespace only; behavior matches Mond 2.0's
 // UIDocumentPickerViewController.fix_init implementation.
 extension UIDocumentPickerViewController {
     @objc(filzaMond2_fix_initForOpeningContentTypes:asCopy:)
@@ -49,7 +49,7 @@ private enum MondEmbeddedRuntime {
             dup2(pipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
         }
 
-        UserDefaults.standard.register(defaults: ["method": "bad_query"])
+        UserDefaults.standard.register(defaults: ["exploit_method": "bad_query"])
 
         if UserDefaults.standard.bool(forKey: "ka_on") {
             keep_alive()
@@ -59,7 +59,7 @@ private enum MondEmbeddedRuntime {
 
         FilzaDiagnosticsAppend(
             "mond",
-            "Mond 2.1 runtime configured commit=500d76082f0ca021ddd591c05d129ebbc26c20df"
+            "Mond 2.0 runtime configured commit=87b38b2726160c6d1cfacbbfa834a2572d7ca333"
         )
     }
 
@@ -93,7 +93,7 @@ private enum MondEmbeddedRuntime {
 }
 
 private struct MondEmbeddedRoot: View {
-    @StateObject private var state = MondCurrentAppState.shared
+    @StateObject private var state = MondCurrentAppState()
     @AppStorage("ka_on") private var ka_on = true
 
     var body: some View {
@@ -148,14 +148,14 @@ public final class MondEmbeddedHostFactory: NSObject {
 
         FilzaDiagnosticsAppend(
             "mond",
-            "constructed exact Mond 2.1 root at 500d76082f0ca021ddd591c05d129ebbc26c20df"
+            "constructed exact Mond 2.0 root at 87b38b2726160c6d1cfacbbfa834a2572d7ca333"
         )
         return controller
     }
 }
 
 // Preserve the older Filza bridge ABI only as a mechanical host alias. It
-// returns the same unmodified Mond 2.1 root.
+// returns the same unmodified Mond 2.0 root.
 @objc(MondGestaltHostFactory)
 public final class MondGestaltHostFactory: NSObject {
     @objc(makeViewControllerWithPath:)
