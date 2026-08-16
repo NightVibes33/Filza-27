@@ -127,7 +127,7 @@ static BOOL F3105TryPresentPendingImport(void)
         target = target.presentedViewController;
     [target presentViewController:controller animated:YES completion:^{
         FilzaDiagnosticsAppend(@"3105",
-            [NSString stringWithFormat:@"presented 3105 1.0 import route for %@", url.lastPathComponent ?: url.absoluteString]);
+            [NSString stringWithFormat:@"presented 3105 1.0.1 import route for %@", url.lastPathComponent ?: url.absoluteString]);
     }];
     return YES;
 }
@@ -189,7 +189,7 @@ static void F3105InstallOpenURLHook(void)
 
     F3105HookedApplicationDelegateClass = delegateClass;
     FilzaDiagnosticsAppend(@"3105",
-        @"installed 3105 1.0 document/custom-URL import bridge on Filza app delegate");
+        @"installed 3105 1.0.1 document/custom-URL import bridge on Filza app delegate");
 }
 
 BOOL Filza3105PresentAppsFromController(UIViewController *source)
