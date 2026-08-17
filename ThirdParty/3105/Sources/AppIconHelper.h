@@ -1,5 +1,6 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import "idevice.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -8,7 +9,22 @@ NS_ASSUME_NONNULL_BEGIN
 NSDictionary<NSString *, NSDictionary *> *installedAppInfo(void);
 
 /// Fetches an icon for a single bundle ID via LSApplicationProxy.
-UIImage *iconForBundleID(NSString *bundleID);
+UIImage * _Nullable iconForBundleID(NSString *bundleID);
+
+/// Fetches a rendered SpringBoard icon through the already-established shared
+/// RSD transport owned by ByeTunes' DeviceManager.
+UIImage * _Nullable filzaSpringBoardIconForBundleIDRSD(
+    struct AdapterHandle *adapter,
+    struct RsdHandshakeHandle *handshake,
+    NSString *bundleID
+);
+
+/// Fetches a rendered SpringBoard icon through the already-established shared
+/// classic lockdown provider owned by ByeTunes' DeviceManager.
+UIImage * _Nullable filzaSpringBoardIconForBundleIDProvider(
+    struct IdeviceProviderHandle *provider,
+    NSString *bundleID
+);
 
 /// Returns @{ @"name": NSString, @"icon": UIImage } for a single bundle ID.
 NSDictionary *appInfoForBundleID(NSString *bundleID);
