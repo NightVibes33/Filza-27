@@ -237,12 +237,13 @@ struct Filza3105PairingSettingsSection: View {
         } footer: {
             Text("Shared with ByeTunes. 3105 keeps its normal app discovery and only uses this connection for higher-quality SpringBoard app icons. If pairing or LocalDevVPN is unavailable, the existing LaunchServices icon path is used automatically.")
         }
-        .fileImporter(
-            isPresented: $showingPairingImporter,
-            allowedContentTypes: [.data, .propertyList],
-            allowsMultipleSelection: false
-        ) { result in
-            handlePairingImport(result)
+        .sheet(isPresented: $showingPairingImporter) {
+            // Use the exact same document picker and broad pairing-file type set
+            // as ByeTunes. SwiftUI's fileImporter was graying out valid pairing
+            // files that ByeTunes' UIDocumentPicker accepts on-device.
+            DocumentPicker(types: [.data, .xml, .propertyList, .item]) { url in
+                handlePairingImport(url: url)
+            }
         }
         .alert("Device Pairing", isPresented: $showingMessage) {
             Button("OK", role: .cancel) { }
@@ -254,31 +255,25 @@ struct Filza3105PairingSettingsSection: View {
         }
     }
 
-    private func handlePairingImport(_ result: Result<[URL], Error>) {
-        switch result {
-        case .failure(let error):
+    private func handlePairingImport(url: URL?) {
+        guard let url else { return }
+
+        do {
+            manager.stopHeartbeat()
+            try manager.importPairingFile(from: url)
+            FilzaSharedPairingSupport.resetAfterPairingChange()
+            manager.startHeartbeat(forceReconnect: true) { success in
+                Task { @MainActor in
+                    message = success
+                        ? "Pairing saved for Filza 27 and connected. ByeTunes and 3105 now share this device connection."
+                        : "Pairing was saved, but the device tunnel is not connected yet. Enable LocalDevVPN and tap Reconnect."
+                    showingMessage = true
+                }
+            }
+        } catch {
+            manager.refreshExpectedPairingFileState()
             message = error.localizedDescription
             showingMessage = true
-
-        case .success(let urls):
-            guard let url = urls.first else { return }
-            do {
-                manager.stopHeartbeat()
-                try manager.importPairingFile(from: url)
-                FilzaSharedPairingSupport.resetAfterPairingChange()
-                manager.startHeartbeat(forceReconnect: true) { success in
-                    Task { @MainActor in
-                        message = success
-                            ? "Pairing saved for Filza 27 and connected. ByeTunes and 3105 now share this device connection."
-                            : "Pairing was saved, but the device tunnel is not connected yet. Enable LocalDevVPN and tap Reconnect."
-                        showingMessage = true
-                    }
-                }
-            } catch {
-                manager.refreshExpectedPairingFileState()
-                message = error.localizedDescription
-                showingMessage = true
-            }
         }
     }
 
