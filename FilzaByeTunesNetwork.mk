@@ -123,7 +123,7 @@ before-FilzaApplySandboxExt-all::
 	@grep -Fq 'MondEmbeddedParity.accentColor' ThirdParty/mond-current/Generated/Mond/views_tweaks_GestaltView.swift
 	@grep -Fq '@AppStorage("method", store: MondEmbeddedParity.defaults)' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
 	@grep -Fq 'MondEmbeddedParity.bundle.infoDictionary' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
-	@grep -Fq 'Color("AccentColor")' ThirdParty/mond-current/Upstream/views/tweaks_GestaltView.swift
+	@grep -Fq 'Color("AccentColor")' ThirdParty/mond-current/Upstream/views/tweaks/GestaltView.swift
 	@grep -Fq 'Bundle.main.infoDictionary' ThirdParty/mond-current/Upstream/views/app/SettingsView.swift
 
 	@test -f FilzaSupportPrompt.m || (echo "Missing Filza Buy Me a Coffee support replacement" >&2; exit 1)
