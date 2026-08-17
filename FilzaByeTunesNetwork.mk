@@ -68,16 +68,31 @@ before-FilzaApplySandboxExt-all::
 	@test -f ThirdParty/3105/Sources/FilzaAppIPAExporter.swift
 	@test -f Filza3105IPAExportBridge.m
 
+	# Keep the current Apps Manager result exactly as the default view, then add
+	# opt-in research views that can surface Apple/internal/service candidates.
+	# Candidate-only LaunchServices probing is lazy so normal Apps Manager startup
+	# and the existing broad 3105 enumeration remain unchanged.
+	@bash scripts/patch-3105-app-manager-research-sort.sh
+	@test -f scripts/patch-3105-app-manager-research-sort.sh || (echo "Missing 3105 app research/sort patch" >&2; exit 1)
+	@grep -Fq 'FILZA_3105_APP_RESEARCH_SORT_V1' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'case internalHidden = "internal-hidden"' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'Picker("View", selection: $$appViewMode)' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'Picker("Sort", selection: $$appSortOrder)' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'if appViewMode == .default && appSortOrder == .name' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'ContainerPresentationPolicy.shouldShow(bundleID: $$0.bundleID)' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'AppBrowserResearchClassifier.researchCandidateIdentifiers' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'Label("Repackage as IPA"' ThirdParty/3105/Sources/AppDataBrowserView.swift
+
 	# Keep upstream 3105's original Settings sheet presentation. The pairing file
 	# chooser itself uses SwiftUI fileImporter with UTType.item so the Files UI is
 	# presented by the current Settings view instead of stacking another custom
 	# SwiftUI sheet or changing 3105's navigation hierarchy.
 	@bash scripts/patch-3105-pairing-importer.sh
 	@test -f scripts/patch-3105-pairing-importer.sh || (echo "Missing 3105 pairing importer patch" >&2; exit 1)
-	@grep -Fq '.sheet(isPresented: $showSettings) { ThreeOneOSFiveSettingsView() }' ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
+	@grep -Fq '.sheet(isPresented: $$showSettings) { ThreeOneOSFiveSettingsView() }' ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
 	@grep -Fq 'allowedContentTypes: [.item]' ThirdParty/3105/Sources/FilzaSharedPairingSupport.swift
 	@grep -Fq 'handlePairingImport(_ result: Result<[URL], Error>)' ThirdParty/3105/Sources/FilzaSharedPairingSupport.swift
-	@! grep -Fq '.sheet(isPresented: $showingPairingImporter)' ThirdParty/3105/Sources/FilzaSharedPairingSupport.swift
+	@! grep -Fq '.sheet(isPresented: $$showingPairingImporter)' ThirdParty/3105/Sources/FilzaSharedPairingSupport.swift
 
 	# stage-3105-v1.sh runs in the main Makefile hook before this included
 	# fragment. Replace only the generated Filza icon glue with the optimized
