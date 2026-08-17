@@ -29,43 +29,34 @@ if state_anchor not in browser:
     raise SystemExit("3105 IPA export patch: state anchor changed")
 browser = browser.replace(state_anchor, state_replacement, 1)
 
-navigation_end = '''            .onAppear {
-                if !hasLoaded {
-                    hasLoaded = true
-                    reload()
+# 3105 1.0.1 added workspace initialization and navigationDestination after
+# onAppear. Anchor on navigationDestination itself instead of assuming an exact
+# onAppear body or an immediate NavigationStack closing brace. This keeps the
+# export presentation attached to the same appList modifier chain and survives
+# upstream additions to onAppear.
+navigation_anchor = '''            .navigationDestination(for: FileBrowserDestination.self) { destination in
+'''
+navigation_replacement = '''            .sheet(item: $ipaExportItem) { item in
+                FilzaIPAExportDocumentPicker(item: item) {
+                    ipaExportItem = nil
                 }
             }
-        }
-    }
-'''
-navigation_replacement = '''            .onAppear {
-                if !hasLoaded {
-                    hasLoaded = true
-                    reload()
-                }
+            .alert(
+                "IPA Export",
+                isPresented: Binding(
+                    get: { ipaExportError != nil },
+                    set: { if !$0 { ipaExportError = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) { ipaExportError = nil }
+            } message: {
+                Text(ipaExportError ?? "Unknown IPA export error")
             }
-        }
-        .sheet(item: $ipaExportItem) { item in
-            FilzaIPAExportDocumentPicker(item: item) {
-                ipaExportItem = nil
-            }
-        }
-        .alert(
-            "IPA Export",
-            isPresented: Binding(
-                get: { ipaExportError != nil },
-                set: { if !$0 { ipaExportError = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) { ipaExportError = nil }
-        } message: {
-            Text(ipaExportError ?? "Unknown IPA export error")
-        }
-    }
+            .navigationDestination(for: FileBrowserDestination.self) { destination in
 '''
-if navigation_end not in browser:
-    raise SystemExit("3105 IPA export patch: navigation modifier anchor changed")
-browser = browser.replace(navigation_end, navigation_replacement, 1)
+if navigation_anchor not in browser:
+    raise SystemExit("3105 IPA export patch: navigation destination anchor changed")
+browser = browser.replace(navigation_anchor, navigation_replacement, 1)
 
 version_anchor = '''            if !app.version.isEmpty {
                 Text(app.version)
@@ -273,6 +264,7 @@ PY
 grep -Fq 'Label("Repackage as IPA"' "$BROWSER"
 grep -Fq 'FilzaAppIPAExporter.repackage' "$BROWSER"
 grep -Fq 'FilzaIPAExportDocumentPicker' "$BROWSER"
+grep -Fq '.navigationDestination(for: FileBrowserDestination.self)' "$BROWSER"
 grep -Fq 'static func writeIPA(' "$ZIP"
 grep -Fq 'archiveRootName: "Payload/' "$ZIP"
 grep -Fq 'unixMode: unixMode(for:' "$ZIP"
