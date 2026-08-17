@@ -161,7 +161,7 @@ before-FilzaApplySandboxExt-all::
 	@test -f "$(MOND_GEN)/Mond/views_tweaks_SantanderView.swift" || (echo "Missing Mond 2.1 SantanderView" >&2; exit 1)
 	@test -f "$(MOND_GEN)/Mond/views_tweaks_posterboard_PosterView.swift" || (echo "Missing Mond 2.1 PosterView" >&2; exit 1)
 	@test -f "$(MOND_GEN)/Mond/views_tweaks_posterboard_TendiesView.swift" || (echo "Missing Mond 2.1 TendiesView" >&2; exit 1)
-	@test -f "$(MOND_GEN)/Mond/helpers_posterboard_tendies.swift" || (echo "Missing Mond 2.1 Tendies model" >&2; exit 1)
+	@test -f "$(MOND_GEN)/helpers_posterboard_tendies.swift" || (echo "Missing Mond 2.1 Tendies model" >&2; exit 1)
 	@test -f "$(MOND_GEN)/mond_bad_query.c" || (echo "Missing Mond 2.1 bad_query implementation" >&2; exit 1)
 	@test -f "$(MOND_GEN)/PartyUI/Containers_TerminalPlatter.swift" || (echo "Missing Mond 2.1 PartyUI" >&2; exit 1)
 	@test -f "$(MOND_GEN)/ZIPFoundation/Archive.swift" || (echo "Missing Mond 2.1 ZIPFoundation" >&2; exit 1)
@@ -173,6 +173,10 @@ before-FilzaApplySandboxExt-all::
 	@test -f "$(GCDWEBSERVER_ROOT)/GCDWebServer/Core/GCDWebServer.h" || (echo "Missing GCDWebServer source" >&2; exit 1)
 	@test -f "$(GCDWEBSERVER_ROOT)/GCDWebDAVServer/GCDWebDAVServer.h" || (echo "Missing GCDWebDAVServer source" >&2; exit 1)
 
-include $(THEOS_MAKE_PATH)/tweak.mk
+# These fragments must be included before Theos creates the target rules so
+# their additional FILES/SWIFT_FILES/LDFLAGS are part of the actual target.
+# Their before-* hooks remain after the main staging hook above, preserving the
+# required stage -> patch -> compile order.
 include FilzaSSHMetadata.mk
 include FilzaByeTunesNetwork.mk
+include $(THEOS_MAKE_PATH)/tweak.mk
