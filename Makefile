@@ -161,7 +161,7 @@ before-FilzaApplySandboxExt-all::
 	@test -f "$(MOND_GEN)/Mond/views_tweaks_SantanderView.swift" || (echo "Missing Mond 2.1 SantanderView" >&2; exit 1)
 	@test -f "$(MOND_GEN)/Mond/views_tweaks_posterboard_PosterView.swift" || (echo "Missing Mond 2.1 PosterView" >&2; exit 1)
 	@test -f "$(MOND_GEN)/Mond/views_tweaks_posterboard_TendiesView.swift" || (echo "Missing Mond 2.1 TendiesView" >&2; exit 1)
-	@test -f "$(MOND_GEN)/helpers_posterboard_tendies.swift" || (echo "Missing Mond 2.1 Tendies model" >&2; exit 1)
+	@test -f "$(MOND_GEN)/Mond/helpers_posterboard_tendies.swift" || (echo "Missing Mond 2.1 Tendies model" >&2; exit 1)
 	@test -f "$(MOND_GEN)/mond_bad_query.c" || (echo "Missing Mond 2.1 bad_query implementation" >&2; exit 1)
 	@test -f "$(MOND_GEN)/PartyUI/Containers_TerminalPlatter.swift" || (echo "Missing Mond 2.1 PartyUI" >&2; exit 1)
 	@test -f "$(MOND_GEN)/ZIPFoundation/Archive.swift" || (echo "Missing Mond 2.1 ZIPFoundation" >&2; exit 1)
