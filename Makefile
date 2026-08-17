@@ -16,7 +16,7 @@ THREEONE_ROOT := ThirdParty/3105
 MOND_CURRENT_ROOT := ThirdParty/mond-current
 MOND_GEN := $(MOND_CURRENT_ROOT)/Generated
 
-FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataRetryFix.m AppIconResourceProxyFix.m VirtualBackendFix.m SystemPathDiagnostics.m BadQuerySystemProbe.m GestaltManager.m FilzaMondBridge.m FilzaMainToolbarGestalt.m Filza3105Bridge.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ByeTunesFullAppLauncher.m FilzaDiagnostics.m FilzaQuickActions.m WebDAVRuntimeFix.m WebDAVToggleStateFix.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m CVE43724RieCompatibility.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
+FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataRetryFix.m AppIconResourceProxyFix.m VirtualBackendFix.m SystemPathDiagnostics.m BadQuerySystemProbe.m GestaltManager.m FilzaMondBridge.m FilzaMainToolbarGestalt.m Filza3105Bridge.m Filza3105IPAExportBridge.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ByeTunesFullAppLauncher.m FilzaDiagnostics.m FilzaQuickActions.m WebDAVRuntimeFix.m WebDAVToggleStateFix.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m CVE43724RieCompatibility.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
 FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/AppIconHelper.m
 FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/wallpaper_zip.c
 FilzaApplySandboxExt_FILES += $(BAD_QUERY_ROOT)/bad_query/bad_query.c
@@ -165,28 +165,14 @@ before-FilzaApplySandboxExt-all::
 	@test -f "$(MOND_GEN)/mond_bad_query.c" || (echo "Missing Mond 2.1 bad_query implementation" >&2; exit 1)
 	@test -f "$(MOND_GEN)/PartyUI/Containers_TerminalPlatter.swift" || (echo "Missing Mond 2.1 PartyUI" >&2; exit 1)
 	@test -f "$(MOND_GEN)/ZIPFoundation/Archive.swift" || (echo "Missing Mond 2.1 ZIPFoundation" >&2; exit 1)
-	@test -f "$(THREEONE_ROOT)/Sources/AppDataBrowserView.swift" || (echo "Missing 3105 Apps Manager" >&2; exit 1)
-	@test -f "$(THREEONE_ROOT)/Sources/PatchProjectsView.swift" || (echo "Missing 3105 Patches" >&2; exit 1)
-	@test -f "$(THREEONE_ROOT)/Sources/ThreeOneOSFiveContentView.swift" || (echo "Missing complete 3105 root navigation" >&2; exit 1)
-	@test -f "$(THREEONE_ROOT)/Sources/CleanerView.swift" || (echo "Missing 3105 Cleaner" >&2; exit 1)
-	@test -f "$(THREEONE_ROOT)/Sources/WallpaperLabView.swift" || (echo "Missing 3105 Wallpaper Lab" >&2; exit 1)
-	@test -f "$(THREEONE_ROOT)/Sources/ThreeOneOSFiveSettingsView.swift" || (echo "Missing 3105 Settings" >&2; exit 1)
-	@test -f "$(THREEONE_ROOT)/Sources/LogView.swift" || (echo "Missing 3105 Logs" >&2; exit 1)
-	@test -f "$(THREEONE_ROOT)/Sources/FileOperationCoordinator.swift" || (echo "Missing 3105 1.0 file-operation coordinator" >&2; exit 1)
-	@test -f "$(THREEONE_ROOT)/Sources/ZIPArchiveWriter.swift" || (echo "Missing 3105 1.0 ZIP writer" >&2; exit 1)
-	@test -f "$(THREEONE_ROOT)/Sources/wallpaper_zip.c" || (echo "Missing 3105 secure wallpaper ZIP extractor" >&2; exit 1)
-	@test -f "$(THREEONE_ROOT)/Resources/Filza3105.bundle/en.lproj/Localizable.strings" || (echo "Missing 3105 resources" >&2; exit 1)
-	@test -f "$(THREEONE_ROOT)/Resources/Filza3105.bundle/UpstreamAppInfo.plist" || (echo "Missing staged 3105 1.0 app metadata" >&2; exit 1)
-	@test -f "$(THREEONE_ROOT)/Resources/Filza3105.bundle/AppIcon3105.png" || (echo "Missing 3105 app icon resource" >&2; exit 1)
-	@test -f "$(THREEONE_ROOT)/LICENSE" || (echo "Missing 3105 license" >&2; exit 1)
-	@test -f "ByeTunesFullAppLauncher.m" || (echo "Missing ByeTunesFullAppLauncher.m" >&2; exit 1)
-	@test -f "FilzaDiagnostics.m" || (echo "Missing FilzaDiagnostics.m" >&2; exit 1)
-	@test -f "FilzaQuickActions.m" || (echo "Missing FilzaQuickActions.m" >&2; exit 1)
-	@test -f "WebDAVRuntimeFix.m" || (echo "Missing WebDAVRuntimeFix.m" >&2; exit 1)
-	@test -f "WebDAVToggleStateFix.m" || (echo "Missing WebDAVToggleStateFix.m" >&2; exit 1)
-	@test -f "$(GCDWEBSERVER_ROOT)/GCDWebDAVServer/GCDWebDAVServer.m" || (echo "Missing pinned GCDWebDAVServer" >&2; exit 1)
-	@test -f "$(GCDWEBSERVER_ROOT)/LICENSE" || (echo "Missing GCDWebServer license" >&2; exit 1)
+	@test -f "$(MOND_GEN)/ZIPFoundation/FileManager+ZIP.swift" || (echo "Missing Mond 2.1 ZIPFoundation FileManager support" >&2; exit 1)
+	@test -f "$(THREEONE_ROOT)/Sources/AppDataBrowserView.swift" || (echo "Missing complete 3105 Apps Manager source" >&2; exit 1)
+	@test -f "$(THREEONE_ROOT)/Sources/PatchProjectsView.swift" || (echo "Missing complete 3105 Patches source" >&2; exit 1)
+	@test -f "$(THREEONE_ROOT)/Sources/FilzaAppIPAExporter.swift" || (echo "Missing 3105 IPA exporter source" >&2; exit 1)
+	@test -f "Filza3105IPAExportBridge.m" || (echo "Missing 3105 IPA export bridge" >&2; exit 1)
+	@test -f "$(GCDWEBSERVER_ROOT)/GCDWebServer/Core/GCDWebServer.h" || (echo "Missing GCDWebServer source" >&2; exit 1)
+	@test -f "$(GCDWEBSERVER_ROOT)/GCDWebDAVServer/GCDWebDAVServer.h" || (echo "Missing GCDWebDAVServer source" >&2; exit 1)
 
+include $(THEOS_MAKE_PATH)/tweak.mk
 include FilzaSSHMetadata.mk
 include FilzaByeTunesNetwork.mk
-include $(THEOS_MAKE_PATH)/tweak.mk
