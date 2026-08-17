@@ -36,16 +36,20 @@ if old_overlay not in browser:
     raise SystemExit("3105 app research patch: overlay anchor changed")
 browser = browser.replace(old_overlay, new_overlay, 1)
 
-toolbar_anchor = '''            .toolbar {\n                ToolbarItem(placement: .navigationBarTrailing) {\n                    Button { reload() } label: {\n                        if isResolving {\n                            ProgressView()\n                        } else {\n                            Image(systemName: "arrow.clockwise")\n                        }\n                    }\n                    .disabled(isResolving)\n                    .accessibilityLabel(language.text("browser.retry"))\n                }\n            }\n'''
-toolbar_replacement = '''            .toolbar {\n                ToolbarItem(placement: .navigationBarTrailing) {\n                    Menu {\n                        Picker("View", selection: $appViewMode) {\n                            ForEach(AppBrowserViewMode.allCases) { mode in\n                                Text(mode.title).tag(mode)\n                            }\n                        }\n\n                        Divider()\n\n                        Picker("Sort", selection: $appSortOrder) {\n                            ForEach(AppBrowserSortOrder.allCases) { order in\n                                Text(order.title).tag(order)\n                            }\n                        }\n                    } label: {\n                        Image(systemName: "line.3.horizontal.decrease.circle")\n                    }\n                    .accessibilityLabel("View and sort apps")\n                }\n\n                ToolbarItem(placement: .navigationBarTrailing) {\n                    Button { reload() } label: {\n                        if isResolving || isResearchCatalogLoading {\n                            ProgressView()\n                        } else {\n                            Image(systemName: "arrow.clockwise")\n                        }\n                    }\n                    .disabled(isResolving || isResearchCatalogLoading)\n                    .accessibilityLabel(language.text("browser.retry"))\n                }\n            }\n'''
+# 3105 1.0.1 added its Files tab toolbar button. Preserve it and insert the
+# research view/sort menu between that control and the existing refresh button.
+toolbar_anchor = '''            .toolbar {\n                ToolbarItem(placement: .navigationBarTrailing) {\n                    FilesTabToolbarButton(session: $tabSession)\n                }\n                ToolbarItem(placement: .navigationBarTrailing) {\n                    Button { reload() } label: {\n                        if isResolving {\n                            ProgressView()\n                        } else {\n                            Image(systemName: "arrow.clockwise")\n                        }\n                    }\n                    .disabled(isResolving)\n                    .accessibilityLabel(language.text("browser.retry"))\n                }\n            }\n'''
+toolbar_replacement = '''            .toolbar {\n                ToolbarItem(placement: .navigationBarTrailing) {\n                    FilesTabToolbarButton(session: $tabSession)\n                }\n\n                ToolbarItem(placement: .navigationBarTrailing) {\n                    Menu {\n                        Picker("View", selection: $appViewMode) {\n                            ForEach(AppBrowserViewMode.allCases) { mode in\n                                Text(mode.title).tag(mode)\n                            }\n                        }\n\n                        Divider()\n\n                        Picker("Sort", selection: $appSortOrder) {\n                            ForEach(AppBrowserSortOrder.allCases) { order in\n                                Text(order.title).tag(order)\n                            }\n                        }\n                    } label: {\n                        Image(systemName: "line.3.horizontal.decrease.circle")\n                    }\n                    .accessibilityLabel("View and sort apps")\n                }\n\n                ToolbarItem(placement: .navigationBarTrailing) {\n                    Button { reload() } label: {\n                        if isResolving || isResearchCatalogLoading {\n                            ProgressView()\n                        } else {\n                            Image(systemName: "arrow.clockwise")\n                        }\n                    }\n                    .disabled(isResolving || isResearchCatalogLoading)\n                    .accessibilityLabel(language.text("browser.retry"))\n                }\n            }\n'''
 if toolbar_anchor not in browser:
-    raise SystemExit("3105 app research patch: toolbar anchor changed")
+    raise SystemExit("3105 app research patch: v1.0.1 toolbar anchor changed")
 browser = browser.replace(toolbar_anchor, toolbar_replacement, 1)
 
-on_appear_anchor = '''            .onAppear {\n                if !hasLoaded {\n                    hasLoaded = true\n                    reload()\n                }\n            }\n'''
-on_appear_replacement = '''            .onAppear {\n                if !hasLoaded {\n                    hasLoaded = true\n                    reload()\n                }\n            }\n            .onChange(of: appViewMode) { newMode in\n                if newMode.requiresResearchCatalog {\n                    loadResearchCatalogIfNeeded()\n                }\n            }\n'''
+# 3105 1.0.1 initializes its Patch Workspace in onAppear. Keep that lifecycle
+# intact and only append the research-mode transition hook.
+on_appear_anchor = '''            .onAppear {\n                if workspaceURL == nil {\n                    workspaceURL = try? PatchWorkspaceService.documentsRootURL()\n                    _ = try? PatchWorkspaceService.patchesRootURL()\n                }\n                if !hasLoaded {\n                    hasLoaded = true\n                    reload()\n                }\n            }\n'''
+on_appear_replacement = '''            .onAppear {\n                if workspaceURL == nil {\n                    workspaceURL = try? PatchWorkspaceService.documentsRootURL()\n                    _ = try? PatchWorkspaceService.patchesRootURL()\n                }\n                if !hasLoaded {\n                    hasLoaded = true\n                    reload()\n                }\n            }\n            .onChange(of: appViewMode) { newMode in\n                if newMode.requiresResearchCatalog {\n                    loadResearchCatalogIfNeeded()\n                }\n            }\n'''
 if on_appear_anchor not in browser:
-    raise SystemExit("3105 app research patch: onAppear anchor changed")
+    raise SystemExit("3105 app research patch: v1.0.1 onAppear anchor changed")
 browser = browser.replace(on_appear_anchor, on_appear_replacement, 1)
 
 header_anchor = '''                    Text(language.text("browser.apps_count", Int64(filteredApps.count)))\n                    Spacer()\n                    if isResolving {\n                        ProgressView()\n                            .controlSize(.mini)\n                        Text(language.text("browser.mha_scanning"))\n                    }\n'''
@@ -96,6 +100,8 @@ required = [
     'AppBrowserResearchClassifier.researchCandidateIdentifiers',
     'rawInfo["found"] as? Bool == true',
     'Label("Repackage as IPA"',
+    'FilesTabToolbarButton(session: $tabSession)',
+    'PatchWorkspaceService.documentsRootURL()',
 ]
 for needle in required:
     if needle not in browser:
@@ -112,5 +118,7 @@ grep -Fq 'if appViewMode == .default && appSortOrder == .name' "$BROWSER"
 grep -Fq 'ContainerPresentationPolicy.shouldShow(bundleID: $0.bundleID)' "$BROWSER"
 grep -Fq 'AppBrowserResearchClassifier.researchCandidateIdentifiers' "$BROWSER"
 grep -Fq 'Label("Repackage as IPA"' "$BROWSER"
+grep -Fq 'FilesTabToolbarButton(session: $tabSession)' "$BROWSER"
+grep -Fq 'PatchWorkspaceService.documentsRootURL()' "$BROWSER"
 
 echo "Patched 3105 Apps Manager with opt-in internal/hidden research views and sorting"
