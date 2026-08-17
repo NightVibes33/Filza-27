@@ -5,6 +5,12 @@
 # Only the YouTube provider regains the exact vendored YouTubeKit implementation
 # that shipped in NightVibes33/ByeTunes before the v2.4 migration.
 
+# A fresh checkout does not contain the generated pre-v2.4 YouTubeKit tree.
+# Bootstrap it while make is still parsing this fragment, before Theos validates
+# the Swift input paths. The later build hook still verifies/restages the exact
+# pinned tree before compilation.
+include FilzaYouTubeKitBootstrap.mk
+
 BYETUNES_YTK_ROOT := ThirdParty/byetunes-youtubekit/Generated
 BYETUNES_YTK_SWIFT_FILES := \
     $(BYETUNES_YTK_ROOT)/Cipher.swift \
@@ -117,7 +123,7 @@ before-FilzaApplySandboxExt-all::
 	@grep -Fq 'MondEmbeddedParity.accentColor' ThirdParty/mond-current/Generated/Mond/views_tweaks_GestaltView.swift
 	@grep -Fq '@AppStorage("method", store: MondEmbeddedParity.defaults)' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
 	@grep -Fq 'MondEmbeddedParity.bundle.infoDictionary' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
-	@grep -Fq 'Color("AccentColor")' ThirdParty/mond-current/Upstream/views/tweaks/GestaltView.swift
+	@grep -Fq 'Color("AccentColor")' ThirdParty/mond-current/Upstream/views/tweaks_GestaltView.swift
 	@grep -Fq 'Bundle.main.infoDictionary' ThirdParty/mond-current/Upstream/views/app/SettingsView.swift
 
 	@test -f FilzaSupportPrompt.m || (echo "Missing Filza Buy Me a Coffee support replacement" >&2; exit 1)
