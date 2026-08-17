@@ -112,6 +112,150 @@ content_path.write_text(content, encoding="utf-8")
 settings_path.write_text(settings, encoding="utf-8")
 PY
 
+# Filza-only integration: keep upstream 3105's broad app enumeration, but route
+# its icon rows through the shared ByeTunes pairing/tunnel first. The exact same
+# DeviceManager/pairing file is exposed in 3105 Settings. AppIconHelper remains
+# the LaunchServices fallback when pairing or LocalDevVPN is unavailable.
+python3 - \
+  "$ROOT/Sources/AppDataBrowserView.swift" \
+  "$ROOT/Sources/ThreeOneOSFiveSettingsView.swift" \
+  "$ROOT/Sources/AppIconHelper.m" <<'PY'
+from pathlib import Path
+import sys
+
+browser_path = Path(sys.argv[1])
+settings_path = Path(sys.argv[2])
+icon_path = Path(sys.argv[3])
+
+browser = browser_path.read_text(encoding="utf-8")
+old_icon_loader = '''            DispatchQueue.global(qos: .utility).async {
+                let icon = iconForBundleID(bundleID)
+                DispatchQueue.main.async {
+                    resolvedIcon = icon
+                }
+            }
+'''
+new_icon_loader = '''            Task { @MainActor in
+                resolvedIcon = await FilzaSharedPairingSupport.resolvedIcon(for: bundleID)
+            }
+'''
+if old_icon_loader not in browser:
+    raise SystemExit("3105 BrowserAppIcon loader anchor changed")
+browser = browser.replace(old_icon_loader, new_icon_loader, 1)
+browser_path.write_text(browser, encoding="utf-8")
+
+settings = settings_path.read_text(encoding="utf-8")
+device_section = '''                Section(language.text("common.device")) {
+                    LabeledContent(language.text("dashboard.hardware_model"), value: AppInfo.displayMachineName)
+                    LabeledContent(language.text("settings.ios_version"), value: "\\(AppInfo.osVersion) (\\(AppInfo.osBuild))")
+                }
+'''
+if device_section not in settings:
+    raise SystemExit("3105 Settings device section anchor changed")
+settings = settings.replace(
+    device_section,
+    device_section + '''
+                Filza3105PairingSettingsSection()
+''',
+    1,
+)
+settings_path.write_text(settings, encoding="utf-8")
+
+icon = icon_path.read_text(encoding="utf-8")
+bridge_marker = "filzaSpringBoardIconForBundleIDRSD"
+if bridge_marker in icon:
+    raise SystemExit("3105 SpringBoard icon bridge unexpectedly already staged")
+
+icon += r'''
+
+#pragma mark - Filza shared paired SpringBoard icon service
+
+static UIImage *FilzaSpringBoardImageFromClient(
+    struct SpringBoardServicesClientHandle *client,
+    NSString *bundleID
+) {
+    if (!client || bundleID.length == 0) return nil;
+
+    void *pngData = NULL;
+    size_t dataLen = 0;
+    struct IdeviceFfiError *error = springboard_services_get_icon(
+        client,
+        bundleID.UTF8String,
+        &pngData,
+        &dataLen
+    );
+    if (error) {
+        const char *message = error->message ? error->message : "unknown error";
+        NSLog(@"[Filza3105Icons] SpringBoard icon failed for %@: %s", bundleID, message);
+        idevice_error_free(error);
+        if (pngData) idevice_data_free((uint8_t *)pngData, dataLen);
+        return nil;
+    }
+
+    if (!pngData || dataLen == 0) {
+        if (pngData) idevice_data_free((uint8_t *)pngData, dataLen);
+        return nil;
+    }
+
+    NSData *data = [NSData dataWithBytes:pngData length:dataLen];
+    idevice_data_free((uint8_t *)pngData, dataLen);
+    UIImage *image = [UIImage imageWithData:data];
+    if (!image) {
+        NSLog(@"[Filza3105Icons] SpringBoard returned %zu undecodable bytes for %@", dataLen, bundleID);
+    }
+    return image;
+}
+
+UIImage *filzaSpringBoardIconForBundleIDRSD(
+    struct AdapterHandle *adapter,
+    struct RsdHandshakeHandle *handshake,
+    NSString *bundleID
+) {
+    if (!adapter || !handshake || bundleID.length == 0) return nil;
+
+    struct SpringBoardServicesClientHandle *client = NULL;
+    struct IdeviceFfiError *error = springboard_services_connect_rsd(
+        adapter,
+        handshake,
+        &client
+    );
+    if (error) {
+        const char *message = error->message ? error->message : "unknown error";
+        NSLog(@"[Filza3105Icons] SpringBoardServices RSD connect failed: %s", message);
+        idevice_error_free(error);
+        return nil;
+    }
+    if (!client) return nil;
+
+    UIImage *image = FilzaSpringBoardImageFromClient(client, bundleID);
+    springboard_services_free(client);
+    return image;
+}
+
+UIImage *filzaSpringBoardIconForBundleIDProvider(
+    struct IdeviceProviderHandle *provider,
+    NSString *bundleID
+) {
+    if (!provider || bundleID.length == 0) return nil;
+
+    struct SpringBoardServicesClientHandle *client = NULL;
+    struct IdeviceFfiError *error = springboard_services_connect(provider, &client);
+    if (error) {
+        const char *message = error->message ? error->message : "unknown error";
+        NSLog(@"[Filza3105Icons] SpringBoardServices provider connect failed: %s", message);
+        idevice_error_free(error);
+        return nil;
+    }
+    if (!client) return nil;
+
+    UIImage *image = FilzaSpringBoardImageFromClient(client, bundleID);
+    springboard_services_free(client);
+    return image;
+}
+'''
+icon_path.write_text(icon, encoding="utf-8")
+PY
+
 for lang in en vi zh-Hans; do
   test -f "$UPSTREAM/$lang.lproj/Localizable.strings" || {
     echo "3105 1.0.1 localization missing: $lang" >&2
@@ -146,6 +290,14 @@ assert_contains 'FeatureVisibility' "$ROOT/Sources/ThreeOneOSFiveContentView.swi
 assert_contains 'NavigationSplitView' "$ROOT/Sources/ThreeOneOSFiveContentView.swift" 'responsive iPad navigation'
 assert_contains 'ThreeOneOSFiveSettingsView()' "$ROOT/Sources/ThreeOneOSFiveContentView.swift" 'Filza settings namespace adaptation'
 assert_contains 'struct ThreeOneOSFiveSettingsView: View' "$ROOT/Sources/ThreeOneOSFiveSettingsView.swift" 'Filza Settings type adaptation'
+assert_contains 'Filza3105PairingSettingsSection()' "$ROOT/Sources/ThreeOneOSFiveSettingsView.swift" 'shared pairing settings integration'
+assert_contains 'FilzaSharedPairingSupport.resolvedIcon' "$ROOT/Sources/AppDataBrowserView.swift" 'shared SpringBoard icon resolver'
+assert_contains 'filzaSpringBoardIconForBundleIDRSD' "$ROOT/Sources/AppIconHelper.m" 'RSD SpringBoard icon bridge'
+assert_contains 'filzaSpringBoardIconForBundleIDProvider' "$ROOT/Sources/AppIconHelper.m" 'provider SpringBoard icon bridge'
+test -s "$ROOT/Sources/FilzaSharedPairingSupport.swift" || {
+  echo "Missing Filza shared pairing support source" >&2
+  exit 1
+}
 assert_contains 'settings.developer_public_beta_build' "$ROOT/Resources/Filza3105.bundle/en.lproj/Localizable.strings" 'public beta labeling'
 assert_contains '"browser.tabs"' "$ROOT/Resources/Filza3105.bundle/en.lproj/Localizable.strings" 'Files tab localization'
 assert_contains '"browser.extract_zip"' "$ROOT/Resources/Filza3105.bundle/en.lproj/Localizable.strings" 'ZIP extraction localization'
