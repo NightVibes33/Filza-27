@@ -13,10 +13,31 @@ import UniformTypeIdentifiers
 @MainActor
 enum FilzaSharedPairingSupport {
     private static let enhancedIconCache = NSCache<NSString, UIImage>()
-    private static let iconQueue = DispatchQueue(
-        label: "com.nightvibes33.filza27.3105.springboard-icons",
-        qos: .utility
+
+    // SpringBoardServices is substantially faster when a small number of
+    // persistent service clients are reused instead of reconnecting once per
+    // app row. Each Swift worker maps deterministically to one native client
+    // slot, allowing limited concurrency without flooding the paired tunnel.
+    private static let iconWorkers: [DispatchQueue] = (0..<3).map { index in
+        DispatchQueue(
+            label: "com.nightvibes33.filza27.3105.springboard-icons.\(index)",
+            qos: .userInitiated
+        )
+    }
+    private static let fallbackQueue = DispatchQueue(
+        label: "com.nightvibes33.filza27.3105.launchservices-icons",
+        qos: .utility,
+        attributes: .concurrent
     )
+
+    // Multiple SwiftUI rows for the same app can appear while the catalog is
+    // progressively merged. Coalesce those duplicate SpringBoard requests.
+    private static var iconWaiters: [String: [CheckedContinuation<UIImage?, Never>]] = [:]
+
+    // A nil result is not permanently cached: service/transient failures get
+    // another chance shortly afterwards while obvious repeated misses are
+    // briefly throttled so scrolling does not hammer SpringBoardServices.
+    private static var iconRetryAfter: [String: Date] = [:]
 
     private static var connectionInFlight = false
     private static var connectionWaiters: [CheckedContinuation<Bool, Never>] = []
@@ -34,45 +55,85 @@ enum FilzaSharedPairingSupport {
         DeviceManager.shared.heartbeatReady && hasActiveTransport
     }
 
-    /// Resolve the best icon without changing 3105's app enumeration.
-    /// SpringBoardServices is preferred when shared pairing is available;
-    /// LaunchServices remains the no-pairing/error fallback.
-    static func resolvedIcon(for bundleID: String) async -> UIImage? {
+    /// Fetch only the higher-quality SpringBoardServices icon.
+    ///
+    /// Callers are expected to show their existing 3105/LaunchServices icon
+    /// immediately and then replace it if this async upgrade succeeds.
+    static func enhancedIcon(for bundleID: String) async -> UIImage? {
         guard !bundleID.isEmpty else { return nil }
 
         if let cached = enhancedIconCache.object(forKey: bundleID as NSString) {
             return cached
         }
 
-        if await ensureSharedTransport(),
-           let springBoardIcon = await fetchSpringBoardIcon(bundleID: bundleID) {
-            enhancedIconCache.setObject(springBoardIcon, forKey: bundleID as NSString)
-            return springBoardIcon
+        if let retryDate = iconRetryAfter[bundleID], Date() < retryDate {
+            return nil
         }
 
-        return await runOnIconQueue {
+        if iconWaiters[bundleID] != nil {
+            return await withCheckedContinuation { continuation in
+                iconWaiters[bundleID, default: []].append(continuation)
+            }
+        }
+
+        iconWaiters[bundleID] = []
+
+        let icon: UIImage?
+        if await ensureSharedTransport() {
+            icon = await fetchSpringBoardIcon(bundleID: bundleID)
+        } else {
+            icon = nil
+        }
+
+        if let icon {
+            enhancedIconCache.setObject(icon, forKey: bundleID as NSString)
+            iconRetryAfter.removeValue(forKey: bundleID)
+        } else {
+            // Do not permanently negative-cache. A short throttle avoids one
+            // failed internal/system entry repeatedly consuming a worker.
+            iconRetryAfter[bundleID] = Date().addingTimeInterval(8)
+        }
+
+        let waiters = iconWaiters.removeValue(forKey: bundleID) ?? []
+        waiters.forEach { $0.resume(returning: icon) }
+        return icon
+    }
+
+    /// Backwards-compatible best-icon resolver for other 3105 call sites.
+    /// The Apps Manager itself now paints LaunchServices immediately and uses
+    /// enhancedIcon(for:) only as an asynchronous visual upgrade.
+    static func resolvedIcon(for bundleID: String) async -> UIImage? {
+        if let enhanced = await enhancedIcon(for: bundleID) {
+            return enhanced
+        }
+        return await runOnFallbackQueue {
             iconForBundleID(bundleID)
         }
     }
 
     static func clearEnhancedIconCache() {
         enhancedIconCache.removeAllObjects()
+        iconRetryAfter.removeAll()
     }
 
     /// Clear icon state and allow an immediate transport retry. The pairing
-    /// file itself is deliberately not removed here.
+    /// file itself is deliberately not removed here. Native persistent service
+    /// clients detect changed transport handles and rebuild themselves.
     static func resetAfterPairingChange() {
         enhancedIconCache.removeAllObjects()
+        iconRetryAfter.removeAll()
         retryConnectionAfter = .distantPast
     }
 
     private static func ensureSharedTransport() async -> Bool {
         let manager = DeviceManager.shared
-        manager.refreshExpectedPairingFileState()
 
+        // The hot path should not re-read pairing state for every visible row.
         if manager.heartbeatReady && hasActiveTransport {
             return true
         }
+
+        manager.refreshExpectedPairingFileState()
         guard manager.hasValidExpectedPairingFile else {
             return false
         }
@@ -80,7 +141,7 @@ enum FilzaSharedPairingSupport {
         // ByeTunes may already be establishing the shared connection. Do not
         // race it with a second tunnel; wait briefly for its handles instead.
         if manager.connectionStatus == "Connecting..." {
-            return await waitForSharedTransport(timeout: 10.5)
+            return await waitForSharedTransport(timeout: 6.0)
         }
 
         if connectionInFlight {
@@ -125,7 +186,7 @@ enum FilzaSharedPairingSupport {
             if DeviceManager.shared.heartbeatReady && hasActiveTransport {
                 return true
             }
-            try? await Task.sleep(nanoseconds: 250_000_000)
+            try? await Task.sleep(nanoseconds: 200_000_000)
         }
         retryConnectionAfter = Date().addingTimeInterval(5)
         return false
@@ -136,13 +197,13 @@ enum FilzaSharedPairingSupport {
 
         if let adapter = manager.rpAdapter,
            let handshake = manager.rpHandshake {
-            return await runOnIconQueue {
+            return await runOnIconWorker(bundleID: bundleID) {
                 filzaSpringBoardIconForBundleIDRSD(adapter, handshake, bundleID)
             }
         }
 
         if let provider = manager.provider {
-            return await runOnIconQueue {
+            return await runOnIconWorker(bundleID: bundleID) {
                 filzaSpringBoardIconForBundleIDProvider(provider, bundleID)
             }
         }
@@ -150,10 +211,35 @@ enum FilzaSharedPairingSupport {
         return nil
     }
 
-    private static func runOnIconQueue(_ work: @escaping () -> UIImage?) async -> UIImage? {
+    private static func workerIndex(for bundleID: String) -> Int {
+        var hash = 5381
+        for byte in bundleID.utf8 {
+            hash = (hash &* 33) &+ Int(byte)
+        }
+        let remainder = hash % iconWorkers.count
+        return remainder >= 0 ? remainder : -remainder
+    }
+
+    private static func runOnIconWorker(
+        bundleID: String,
+        _ work: @escaping () -> UIImage?
+    ) async -> UIImage? {
+        let queue = iconWorkers[workerIndex(for: bundleID)]
+        return await withCheckedContinuation { continuation in
+            queue.async {
+                autoreleasepool {
+                    continuation.resume(returning: work())
+                }
+            }
+        }
+    }
+
+    private static func runOnFallbackQueue(_ work: @escaping () -> UIImage?) async -> UIImage? {
         await withCheckedContinuation { continuation in
-            iconQueue.async {
-                continuation.resume(returning: work())
+            fallbackQueue.async {
+                autoreleasepool {
+                    continuation.resume(returning: work())
+                }
             }
         }
     }
