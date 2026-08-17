@@ -54,6 +54,15 @@ FilzaApplySandboxExt_FILES += MondSandboxSPICompat.c
 FilzaApplySandboxExt_FILES += FilzaSupportPrompt.m
 
 before-FilzaApplySandboxExt-all::
+	# stage-3105-v1.sh runs in the main Makefile hook before this included
+	# fragment. Replace only the generated Filza icon glue with the optimized
+	# persistent-client implementation after the immutable 3105 stage completes.
+	@bash scripts/patch-3105-icon-performance.sh
+	@test -f scripts/patch-3105-icon-performance.sh || (echo "Missing 3105 icon performance patch" >&2; exit 1)
+	@grep -Fq 'FilzaSharedPairingSupport.enhancedIcon' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'FILZA_SBS_ICON_WORKERS 3' ThirdParty/3105/Sources/AppIconHelper.m
+	@grep -Fq 'FilzaEnsureRSDIconClientLocked' ThirdParty/3105/Sources/AppIconHelper.m
+
 	# stage-mond-current.sh runs in the main Makefile hook before this included
 	# fragment. First prove the pinned functional Swift graph is complete; then
 	# stage the app-target resources and adapt only the generated embedded copy.
