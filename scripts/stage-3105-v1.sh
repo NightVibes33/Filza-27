@@ -113,9 +113,10 @@ settings_path.write_text(settings, encoding="utf-8")
 PY
 
 # Filza-only integration: keep upstream 3105's broad app enumeration, but route
-# its icon rows through the shared ByeTunes pairing/tunnel first. The exact same
-# DeviceManager/pairing file is exposed in 3105 Settings. AppIconHelper remains
-# the LaunchServices fallback when pairing or LocalDevVPN is unavailable.
+# every icon row through the shared ByeTunes pairing/tunnel first. Existing
+# icons remain visible while the enhanced SpringBoard icon is fetched. The exact
+# same DeviceManager/pairing file is exposed in 3105 Settings. AppIconHelper
+# remains the LaunchServices fallback when pairing or LocalDevVPN is unavailable.
 python3 - \
   "$ROOT/Sources/AppDataBrowserView.swift" \
   "$ROOT/Sources/ThreeOneOSFiveSettingsView.swift" \
@@ -128,6 +129,12 @@ settings_path = Path(sys.argv[2])
 icon_path = Path(sys.argv[3])
 
 browser = browser_path.read_text(encoding="utf-8")
+old_guard = "            guard resolvedIcon == nil, !didRequestIcon else { return }\n"
+new_guard = "            guard !didRequestIcon else { return }\n"
+if old_guard not in browser:
+    raise SystemExit("3105 BrowserAppIcon request guard anchor changed")
+browser = browser.replace(old_guard, new_guard, 1)
+
 old_icon_loader = '''            DispatchQueue.global(qos: .utility).async {
                 let icon = iconForBundleID(bundleID)
                 DispatchQueue.main.async {
@@ -136,7 +143,9 @@ old_icon_loader = '''            DispatchQueue.global(qos: .utility).async {
             }
 '''
 new_icon_loader = '''            Task { @MainActor in
-                resolvedIcon = await FilzaSharedPairingSupport.resolvedIcon(for: bundleID)
+                if let icon = await FilzaSharedPairingSupport.resolvedIcon(for: bundleID) {
+                    resolvedIcon = icon
+                }
             }
 '''
 if old_icon_loader not in browser:
@@ -291,6 +300,7 @@ assert_contains 'NavigationSplitView' "$ROOT/Sources/ThreeOneOSFiveContentView.s
 assert_contains 'ThreeOneOSFiveSettingsView()' "$ROOT/Sources/ThreeOneOSFiveContentView.swift" 'Filza settings namespace adaptation'
 assert_contains 'struct ThreeOneOSFiveSettingsView: View' "$ROOT/Sources/ThreeOneOSFiveSettingsView.swift" 'Filza Settings type adaptation'
 assert_contains 'Filza3105PairingSettingsSection()' "$ROOT/Sources/ThreeOneOSFiveSettingsView.swift" 'shared pairing settings integration'
+assert_contains 'guard !didRequestIcon else { return }' "$ROOT/Sources/AppDataBrowserView.swift" 'enhanced icon upgrade request'
 assert_contains 'FilzaSharedPairingSupport.resolvedIcon' "$ROOT/Sources/AppDataBrowserView.swift" 'shared SpringBoard icon resolver'
 assert_contains 'filzaSpringBoardIconForBundleIDRSD' "$ROOT/Sources/AppIconHelper.m" 'RSD SpringBoard icon bridge'
 assert_contains 'filzaSpringBoardIconForBundleIDProvider' "$ROOT/Sources/AppIconHelper.m" 'provider SpringBoard icon bridge'
