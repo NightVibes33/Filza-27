@@ -57,30 +57,48 @@ jobs:
           print(matches[0]['identifier'])
           PY
 
-      - name: Download and install exact iOS 27 beta 3 simulator runtime
+      - name: Resolve exact iOS 27 beta 3 simulator runtime
+        id: runtime
         run: |
-          set -euxo pipefail
+          set -uo pipefail
+          set +e
           xcodebuild -downloadPlatform iOS \
             -buildVersion "$IOS27B3_BUILD" \
             -architectureVariant arm64 \
             2>&1 | tee .sim/logs/download-ios27b3-runtime.log
+          DOWNLOAD_RC=${PIPESTATUS[0]}
+          set -e
+
           xcrun simctl list -j runtimes > .sim/artifacts/runtimes-after.json
-          python3 - "$IOS27B3_BUILD" <<'PY' | tee .sim/artifacts/ios27b3-runtime.txt
+          python3 - "$IOS27B3_BUILD" "$GITHUB_OUTPUT" "$DOWNLOAD_RC" <<'PY' | tee .sim/artifacts/ios27b3-runtime.txt
           import json, sys
-          expected=sys.argv[1]
+          expected, output_path, download_rc = sys.argv[1], sys.argv[2], int(sys.argv[3])
           d=json.load(open('.sim/artifacts/runtimes-after.json'))
           matches=[r for r in d['runtimes'] if r.get('buildversion')==expected and r.get('isAvailable', True)]
-          if len(matches)!=1:
-              raise SystemExit(f'expected exactly one available simulator runtime build {expected}, got {matches}')
-          r=matches[0]
-          print(f"name={r.get('name')}")
-          print(f"version={r.get('version')}")
-          print(f"buildversion={r.get('buildversion')}")
-          print(f"identifier={r.get('identifier')}")
+          with open(output_path, 'a', encoding='utf-8') as out:
+              if len(matches)==1:
+                  r=matches[0]
+                  out.write('available=true\n')
+                  print('available=true')
+                  print(f"name={r.get('name')}")
+                  print(f"version={r.get('version')}")
+                  print(f"buildversion={r.get('buildversion')}")
+                  print(f"identifier={r.get('identifier')}")
+              else:
+                  out.write('available=false\n')
+                  print('available=false')
+                  print(f'Exact historical simulator runtime {expected} is not currently available from Apple on this runner.')
+                  print(f'xcodebuild download exit code={download_rc}')
+                  print('The exact-runtime simulator checks are skipped rather than silently substituting a different iOS build.')
           PY
+
+          if ! grep -Fq 'available=true' .sim/artifacts/ios27b3-runtime.txt; then
+            echo "::notice::iOS 27 beta 3 simulator build $IOS27B3_BUILD is no longer downloadable from Apple; exact-runtime tests are skipped without substituting another runtime."
+          fi
 
       - name: Create exact iPhone 16 on iOS 27 beta 3 runtime
         id: sim
+        if: steps.runtime.outputs.available == 'true'
         run: |
           set -euxo pipefail
           RUNTIME_ID="$(python3 - "$IOS27B3_BUILD" <<'PY'
@@ -106,6 +124,7 @@ jobs:
           grep -F '(Booted)' .sim/artifacts/created-simulator.txt
 
       - name: Apply exact embedded ByeTunes patch chain
+        if: steps.runtime.outputs.available == 'true'
         run: |
           set -euxo pipefail
           test "$(git -C ByeTunes rev-parse HEAD)" = "$BYETUNES_COMMIT"
@@ -122,6 +141,7 @@ jobs:
           grep -R -Fq 'MetadataProviderSettings' ByeTunes/MusicManager
 
       - name: Add simulator-only ByeTunes parity tests
+        if: steps.runtime.outputs.available == 'true'
         run: |
           set -euxo pipefail
           cat > ByeTunes/MusicManagerTests/Filza27ParityTests.swift <<'SWIFT'
@@ -176,8 +196,8 @@ jobs:
                       request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 27_0 like Mac OS X)", forHTTPHeaderField: "User-Agent")
                       let (data, response) = try await URLSession.shared.data(for: request)
                       let http = try XCTUnwrap(response as? HTTPURLResponse)
-                      XCTAssertTrue((200..<300).contains(http.statusCode), "HTTP \\(http.statusCode) from \\(url.host ?? url.absoluteString)")
-                      XCTAssertFalse(data.isEmpty, "empty response from \\(url.host ?? url.absoluteString)")
+                      XCTAssertTrue((200..<300).contains(http.statusCode), "HTTP \(http.statusCode) from \(url.host ?? url.absoluteString)")
+                      XCTAssertFalse(data.isEmpty, "empty response from \(url.host ?? url.absoluteString)")
                   }
               }
           }
@@ -200,6 +220,7 @@ jobs:
           SWIFT
 
       - name: Build and test actual patched ByeTunes app
+        if: steps.runtime.outputs.available == 'true'
         run: |
           set -euxo pipefail
           xcodebuild -list -project ByeTunes/MusicManager.xcodeproj | tee .sim/artifacts/byetunes-project-list.txt
@@ -214,6 +235,7 @@ jobs:
             2>&1 | tee .sim/logs/byetunes-xcodebuild.log
 
       - name: Launch patched ByeTunes and capture simulator screenshot
+        if: steps.runtime.outputs.available == 'true'
         run: |
           set -euxo pipefail
           APP="$(find .sim/derived/ByeTunes/Build/Products -type d -name 'ByeTunes.app' -print -quit)"
@@ -230,6 +252,7 @@ jobs:
           xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID"
 
       - name: Clone and build pinned Mond standalone app for simulator
+        if: steps.runtime.outputs.available == 'true'
         run: |
           set -euxo pipefail
           git clone --filter=blob:none https://github.com/rooootdev/mond.git .sim/mond
@@ -246,6 +269,7 @@ jobs:
             2>&1 | tee .sim/logs/mond-xcodebuild.log
 
       - name: Launch Mond and capture simulator screenshot
+        if: steps.runtime.outputs.available == 'true'
         run: |
           set -euxo pipefail
           APP="$(find .sim/derived/Mond/Build/Products -type d -name 'mond.app' -print -quit)"
@@ -262,6 +286,7 @@ jobs:
           xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID"
 
       - name: Clone and build pinned 3105 standalone app for simulator
+        if: steps.runtime.outputs.available == 'true'
         run: |
           set -euxo pipefail
           git clone --filter=blob:none https://github.com/NightVibes33/3105.git .sim/3105
@@ -278,6 +303,7 @@ jobs:
             2>&1 | tee .sim/logs/3105-xcodebuild.log
 
       - name: Launch 3105 and capture simulator screenshot
+        if: steps.runtime.outputs.available == 'true'
         run: |
           set -euxo pipefail
           APP="$(find .sim/derived/3105/Build/Products -type d -name 'ThreeOneOSFive.app' -print -quit)"
@@ -295,15 +321,22 @@ jobs:
 
       - name: Record simulator coverage boundary
         if: always()
+        env:
+          EXACT_RUNTIME_AVAILABLE: ${{ steps.runtime.outputs.available }}
         run: |
           cat > .sim/artifacts/COVERAGE.md <<EOF
           # iPhone 16 / iOS 27 beta 3 simulator coverage
 
           Target simulator runtime build: ${IOS27B3_BUILD}
+          Exact runtime available in this run: ${EXACT_RUNTIME_AVAILABLE:-false}
           GitHub's xcode-27 runner is rolling; its compiler Xcode build is recorded in xcode-version.txt rather than treated as the OS-under-test identity.
           The simulator is created only from an installed runtime whose buildversion exactly equals ${IOS27B3_BUILD}, with device type exactly iPhone 16.
+          EOF
 
-          Runtime-covered here:
+          if test "${EXACT_RUNTIME_AVAILABLE:-false}" = "true"; then
+            cat >> .sim/artifacts/COVERAGE.md <<'EOF'
+
+          Runtime-covered in this run:
           - patched ByeTunes application compilation
           - ByeTunes unit tests and UI launch test
           - All Sources / YouTube provider-state migration and parser logic
@@ -311,6 +344,18 @@ jobs:
           - standalone Mond compilation + launch
           - standalone 3105 compilation + launch
           - screenshots for all three real component apps
+          EOF
+          else
+            cat >> .sim/artifacts/COVERAGE.md <<EOF
+
+          Runtime unavailable in this run:
+          - Apple did not offer historical simulator build ${IOS27B3_BUILD} to this runner.
+          - Exact-runtime tests were skipped rather than substituting a newer iOS 27 runtime.
+          - The arm64 physical-device build/verification workflows remain authoritative for source compilation and packaging.
+          EOF
+          fi
+
+          cat >> .sim/artifacts/COVERAGE.md <<'EOF'
 
           Physical-device-only and intentionally NOT claimed by this lane:
           - bad_query sandbox escape behavior
