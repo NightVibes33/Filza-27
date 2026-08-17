@@ -26,6 +26,10 @@ UIImage * _Nullable filzaSpringBoardIconForBundleIDProvider(
     NSString *bundleID
 );
 
+/// Returns the installed .app bundle path exposed by LaunchServices for a
+/// bundle identifier, or nil when the bundle path is unavailable.
+NSString * _Nullable filzaAppBundlePathForBundleID(NSString *bundleID);
+
 /// Returns @{ @"name": NSString, @"icon": UIImage } for a single bundle ID.
 NSDictionary *appInfoForBundleID(NSString *bundleID);
 
