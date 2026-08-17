@@ -54,15 +54,16 @@ FilzaApplySandboxExt_FILES += MondSandboxSPICompat.c
 FilzaApplySandboxExt_FILES += FilzaSupportPrompt.m
 
 before-FilzaApplySandboxExt-all::
-	# 3105 is already hosted modally by Filza. Keep Settings inside 3105's own
-	# NavigationStack instead of stacking another Settings sheet underneath the
-	# pairing UIDocumentPicker. This prevents the picker presentation from
-	# collapsing back to the 3105 root while preserving the same pairing UI.
-	@bash scripts/patch-3105-pairing-presentation.sh
-	@test -f scripts/patch-3105-pairing-presentation.sh || (echo "Missing 3105 pairing presentation patch" >&2; exit 1)
-	@grep -Fq 'NavigationLink {' ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
-	@grep -Fq 'ThreeOneOSFiveSettingsView()' ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
-	@! grep -Fq 'showSettings' ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
+	# Keep upstream 3105's original Settings sheet presentation. The pairing file
+	# chooser itself uses SwiftUI fileImporter with UTType.item so the Files UI is
+	# presented by the current Settings view instead of stacking another custom
+	# SwiftUI sheet or changing 3105's navigation hierarchy.
+	@bash scripts/patch-3105-pairing-importer.sh
+	@test -f scripts/patch-3105-pairing-importer.sh || (echo "Missing 3105 pairing importer patch" >&2; exit 1)
+	@grep -Fq '.sheet(isPresented: $showSettings) { ThreeOneOSFiveSettingsView() }' ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
+	@grep -Fq 'allowedContentTypes: [.item]' ThirdParty/3105/Sources/FilzaSharedPairingSupport.swift
+	@grep -Fq 'handlePairingImport(_ result: Result<[URL], Error>)' ThirdParty/3105/Sources/FilzaSharedPairingSupport.swift
+	@! grep -Fq '.sheet(isPresented: $showingPairingImporter)' ThirdParty/3105/Sources/FilzaSharedPairingSupport.swift
 
 	# stage-3105-v1.sh runs in the main Makefile hook before this included
 	# fragment. Replace only the generated Filza icon glue with the optimized
