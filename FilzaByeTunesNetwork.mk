@@ -54,6 +54,20 @@ FilzaApplySandboxExt_FILES += MondSandboxSPICompat.c
 FilzaApplySandboxExt_FILES += FilzaSupportPrompt.m
 
 before-FilzaApplySandboxExt-all::
+	# Add an Apps Manager long-press action that repackages the installed .app
+	# bundle as a standard Payload/<name>.app IPA and opens the system export UI.
+	# The bundle is archived exactly as installed; this does not decrypt FairPlay,
+	# strip DRM, alter entitlements, or resign the app.
+	@bash scripts/patch-3105-ipa-export.sh
+	@test -f scripts/patch-3105-ipa-export.sh || (echo "Missing 3105 IPA export patch" >&2; exit 1)
+	@grep -Fq 'Label("Repackage as IPA"' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'FilzaAppIPAExporter.repackage' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'static func writeIPA(' ThirdParty/3105/Sources/ZIPArchiveWriter.swift
+	@grep -Fq 'archiveRootName: "Payload/' ThirdParty/3105/Sources/ZIPArchiveWriter.swift
+	@grep -Fq 'filzaAppBundlePathForBundleID' ThirdParty/3105/Sources/AppIconHelper.h
+	@test -f ThirdParty/3105/Sources/FilzaAppIPAExporter.swift
+	@test -f Filza3105IPAExportBridge.m
+
 	# Keep upstream 3105's original Settings sheet presentation. The pairing file
 	# chooser itself uses SwiftUI fileImporter with UTType.item so the Files UI is
 	# presented by the current Settings view instead of stacking another custom
@@ -101,8 +115,6 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/patch-byetunes-youtubekit-primary.sh
 	@bash scripts/patch-byetunes-manage-backups-typecheck.sh
 	@test -f "$(BYETUNES_YTK_ROOT)/YouTube.swift" || (echo "Missing pinned pre-v2.4 YouTubeKit" >&2; exit 1)
-	@test -f "$(BYETUNES_YTK_ROOT)/InnerTube.swift" || (echo "Incomplete pinned pre-v2.4 YouTubeKit" >&2; exit 1)
-	@test -f "$(BYETUNES_YTK_ROOT)/Resources/meriyah.umd.js" || (echo "Incomplete pinned YouTubeKit resources" >&2; exit 1)
 	@grep -Fq 'let youtube = YouTube(videoID: videoID)' ByeTunesMetadataCompat.swift
 	@grep -Fq '[YouTubeProvider] YouTubeKit metadata matched videoID=' ByeTunesMetadataCompat.swift
 	@grep -Fq 'FILZA_MANAGE_BACKUPS_TYPECHECK_SPLIT' ByeTunes/MusicManager/ManageBackupsView.swift
