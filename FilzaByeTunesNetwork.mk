@@ -74,20 +74,9 @@ before-FilzaApplySandboxExt-all::
 	@test -f ThirdParty/3105/Sources/FilzaAppIPAExporter.swift
 	@test -f Filza3105IPAExportBridge.m
 
-	# Keep the current Apps Manager result exactly as the default view, then add
-	# opt-in research views that can surface Apple/internal/service candidates.
-	# Candidate-only LaunchServices probing is lazy so normal Apps Manager startup
-	# and the existing broad 3105 enumeration remain unchanged.
-	@bash scripts/patch-3105-app-manager-research-sort.sh
-	@test -f scripts/patch-3105-app-manager-research-sort.sh || (echo "Missing 3105 app research/sort patch" >&2; exit 1)
-	@grep -Fq 'FILZA_3105_APP_RESEARCH_SORT_V1' ThirdParty/3105/Sources/AppDataBrowserView.swift
-	@grep -Fq 'case internalHidden = "internal-hidden"' ThirdParty/3105/Sources/AppDataBrowserView.swift
-	@grep -Fq 'Picker("View", selection: $$appViewMode)' ThirdParty/3105/Sources/AppDataBrowserView.swift
-	@grep -Fq 'Picker("Sort", selection: $$appSortOrder)' ThirdParty/3105/Sources/AppDataBrowserView.swift
-	@grep -Fq 'if appViewMode == .default && appSortOrder == .name' ThirdParty/3105/Sources/AppDataBrowserView.swift
-	@grep -Fq 'ContainerPresentationPolicy.shouldShow(bundleID: $$0.bundleID)' ThirdParty/3105/Sources/AppDataBrowserView.swift
-	@grep -Fq 'AppBrowserResearchClassifier.researchCandidateIdentifiers' ThirdParty/3105/Sources/AppDataBrowserView.swift
-	@grep -Fq 'Label("Repackage as IPA"' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	# Preserve 3105's original broad, single-list Apps Manager presentation.
+	# Do not split results into research categories or add discovery badges; the
+	# existing enumeration already surfaces the large mixed bundle-ID catalog.
 
 	# Keep upstream 3105's original Settings sheet presentation. The pairing file
 	# chooser itself uses SwiftUI fileImporter with UTType.item so the Files UI is
