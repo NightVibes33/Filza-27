@@ -74,9 +74,22 @@ before-FilzaApplySandboxExt-all::
 	@test -f ThirdParty/3105/Sources/FilzaAppIPAExporter.swift
 	@test -f Filza3105IPAExportBridge.m
 
-	# Preserve 3105's original broad, single-list Apps Manager presentation.
-	# Do not split results into research categories or add discovery badges; the
-	# existing enumeration already surfaces the large mixed bundle-ID catalog.
+	# Restore the requested View / Sort menu while preserving the original row UI.
+	# Default remains the exact existing 3105 list/order. The broader Apple
+	# LaunchServices probe starts only when a research view is explicitly selected.
+	# No discovery badges or source labels are rendered in the app rows.
+	@bash scripts/patch-3105-app-manager-view-sort.sh
+	@test -f scripts/patch-3105-app-manager-view-sort.sh || (echo "Missing 3105 app view/sort patch" >&2; exit 1)
+	@grep -Fq 'FILZA_3105_APP_VIEW_SORT_V2' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'Picker("View", selection: $$appViewMode)' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'Picker("Sort", selection: $$appSortOrder)' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'case internalHidden = "internal-hidden"' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'case systemServices = "system-services"' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'case unresolvedInteresting = "unresolved-interesting"' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'if appViewMode == .default && appSortOrder == .name' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'ContainerPresentationPolicy.shouldShow(bundleID: $$0.bundleID)' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@! grep -Fq 'discoverySummary(for: app)' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'Label("Repackage as IPA"' ThirdParty/3105/Sources/AppDataBrowserView.swift
 
 	# Keep upstream 3105's original Settings sheet presentation. The pairing file
 	# chooser itself uses SwiftUI fileImporter with UTType.item so the Files UI is
