@@ -6,15 +6,23 @@ A jailed, sideloadable Filza fork for modern iOS that combines Filza with app/co
 
 ## Download
 
-### [Download the latest verified `Filza-27.ipa`](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza-27.ipa)
+### Current verified IPA — `filza-27-142`
 
-Every public `Filza-27.ipa` release is produced from an **exact-SHA green GitHub Actions build on `main`**. The release also includes `Filza-27-SHA256.txt` so the IPA can be verified after download.
+### [Download `Filza-27.ipa`](https://github.com/NightVibes33/Filza-27/releases/download/filza-27-142/Filza-27.ipa)
+
+- Verified release: [`filza-27-142`](https://github.com/NightVibes33/Filza-27/releases/tag/filza-27-142)
+- Exact build commit: `066390b6414d4e930750b319ff83ee177fa68272`
+- SHA-256: `340ff70dd89571a9b99d51d8a48fba365e713cffc8ce11b32a50bb56a01e83d7`
+- Checksum file: [`Filza-27-SHA256.txt`](https://github.com/NightVibes33/Filza-27/releases/download/filza-27-142/Filza-27-SHA256.txt)
+- Rolling latest-green link: [`releases/latest/download/Filza-27.ipa`](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza-27.ipa)
+
+Every public `Filza-27.ipa` release is produced from an **exact-SHA green GitHub Actions build on `main`**. `main` may temporarily move ahead of the latest release while a new build is being verified; the versioned download above intentionally stays pinned to the last published green IPA.
 
 > **This is not a full jailbreak.** FilzaSlop exposes only files and containers the app can actually access. It does not claim kernel read/write, unrestricted `/`, a root shell, an SPTM bypass, or a writable system volume.
 
-## What's new — Mond 2.1 update
+## What's new — Mond 2.1 + 3105 shared pairing
 
-The current production tree embeds the **full pinned Mond 2.1 functional source surface** instead of the older Filza-specific Mond implementation.
+The current production tree embeds the **full pinned Mond 2.1 functional source surface** instead of the older Filza-specific Mond implementation, alongside the newer Filza-wide pairing/icon integration used by 3105 and ByeTunes.
 
 - Mond pinned to `rooootdev/mond@500d76082f0ca021ddd591c05d129ebbc26c20df`.
 - Full Mond 2.1 navigation and shared `AppState` lifecycle integrated.
@@ -22,7 +30,12 @@ The current production tree embeds the **full pinned Mond 2.1 functional source 
 - **Run Exploit** and **Generate Token** use the upstream Mond 2.1 flow.
 - Mond 2.1 MobileGestalt CacheExtra / safe-offset fixes retained.
 - Mond 2.1 CMG grant-state fix retained.
-- The untouched upstream app source is preserved under `ThirdParty/mond-current/Upstream` for provenance.
+- 3105 keeps its broader existing app-enumeration path instead of replacing it with the narrower paired-device app scan.
+- 3105 and ByeTunes share the same persisted pairing file and device tunnel state.
+- 3105 upgrades app rows with rendered **SpringBoardServices** icons when the shared paired connection is available.
+- Existing LaunchServices icons remain the immediate fallback, so app rows do not have to wait for the paired icon service.
+- Enhanced icon requests use a small persistent worker pool, request deduplication, caching, and reconnect/retry behavior instead of reconnecting SpringBoardServices once per row.
+- The untouched upstream Mond app source is preserved under `ThirdParty/mond-current/Upstream` for provenance.
 - The compiled copy receives mechanical module/symbol namespacing plus explicit embedded-host adapters for Mond's pinned `AccentColor`, `com.roooot.mond` preferences domain, and Mond app identity/resources. These adapters are applied only to the generated embedded copy; the preserved upstream snapshot is not rewritten.
 - A source-completeness gate compares the pinned functional Swift tree against the compiled Mond source list and fails the build if a future pin would silently omit a new upstream file.
 - Sandbox SPI ABI forwarding is handled by `MondSandboxSPICompat.c` without rewriting Mond's preserved upstream source.
@@ -37,6 +50,8 @@ See [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for the release changelog that is aut
 | Verified release IPA | ✅ Exact-SHA green build required |
 | Filza file browser | ✅ Included |
 | Apps Manager | ✅ 3105 1.0.1 integrated |
+| Shared device pairing | ✅ ByeTunes + 3105 use one persisted pairing state |
+| Enhanced app icons | ✅ SpringBoardServices when paired, LaunchServices fallback |
 | `.3105` Patch Workspace v2 | ✅ Integrated |
 | Music Library / ByeTunes | ✅ Integrated |
 | YouTube metadata provider | ✅ Restored and bundled |
@@ -57,7 +72,7 @@ For iOS 27, the useful `bad_query` behavior is associated with beta 1–4. Do no
 
 ## Install
 
-1. Download the latest verified [`Filza-27.ipa`](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza-27.ipa).
+1. Download the current verified [`Filza-27.ipa`](https://github.com/NightVibes33/Filza-27/releases/download/filza-27-142/Filza-27.ipa).
 2. Sideload it with your preferred signing method.
 3. Keep the base app identity when your signer allows it:
 
@@ -79,6 +94,8 @@ NightVibes33/3105@90ab4dd35823d58de10e6b8b78236e0e7e1ad32b
 
 It includes application search, icon and disk-size recovery where available, container browsing, per-tab navigation, file preview, create/rename/import/replace/delete operations, ZIP creation/extraction, and Patch Workspace handoff.
 
+The Filza integration intentionally preserves 3105's broader application discovery. Pairing is used as an **optional icon-quality backend**, not as a replacement for enumeration: when the shared ByeTunes/Filza device connection is ready, 3105 requests the rendered icon for each bundle ID from SpringBoardServices and replaces the already-visible LaunchServices icon. If pairing, LocalDevVPN, or SpringBoardServices is unavailable, the existing icon remains in place.
+
 ### Patches
 
 The embedded **3105 Patch Workspace v2** supports portable `.3105` projects, schema-v2 workspaces, legacy v1 decoding, bundle-ID targets, directory targets, import/export, backups, receipts, transaction journals, and restore flows.
@@ -88,6 +105,8 @@ The embedded **3105 Patch Workspace v2** supports portable `.3105` projects, sch
 ByeTunes is embedded directly into FilzaSlop and includes library browsing, downloads, queue persistence, backups, restore/repair tools, metadata editing, and multi-source metadata routing.
 
 The current build also restores the known working pre-v2.4 YouTubeKit metadata path as the first free YouTube provider while retaining the current ByeTunes integration. Required JavaScript solver resources are packaged inside the IPA.
+
+ByeTunes owns the canonical pairing/device connection used by paired features. 3105 consumes that same persisted pairing state instead of maintaining a separate pairing database, so a valid connection established by one embedded feature can be reused by the other.
 
 ### Mond 2.1 / Gestalt Editor
 
