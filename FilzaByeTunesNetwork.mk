@@ -54,6 +54,16 @@ FilzaApplySandboxExt_FILES += MondSandboxSPICompat.c
 FilzaApplySandboxExt_FILES += FilzaSupportPrompt.m
 
 before-FilzaApplySandboxExt-all::
+	# 3105 is already hosted modally by Filza. Keep Settings inside 3105's own
+	# NavigationStack instead of stacking another Settings sheet underneath the
+	# pairing UIDocumentPicker. This prevents the picker presentation from
+	# collapsing back to the 3105 root while preserving the same pairing UI.
+	@bash scripts/patch-3105-pairing-presentation.sh
+	@test -f scripts/patch-3105-pairing-presentation.sh || (echo "Missing 3105 pairing presentation patch" >&2; exit 1)
+	@grep -Fq 'NavigationLink {' ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
+	@grep -Fq 'ThreeOneOSFiveSettingsView()' ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
+	@! grep -Fq 'showSettings' ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
+
 	# stage-3105-v1.sh runs in the main Makefile hook before this included
 	# fragment. Replace only the generated Filza icon glue with the optimized
 	# persistent-client implementation after the immutable 3105 stage completes.
@@ -78,7 +88,7 @@ before-FilzaApplySandboxExt-all::
 	@grep -Fq '@AppStorage("method", store: MondEmbeddedParity.defaults)' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
 	@grep -Fq 'MondEmbeddedParity.bundle.infoDictionary' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
 	@grep -Fq 'Color("AccentColor")' ThirdParty/mond-current/Upstream/views/tweaks/GestaltView.swift
-	@grep -Fq 'Bundle.main.infoDictionary' ThirdParty/mond-current/Upstream/views/app/SettingsView.swift
+	@grep -Fq 'Bundle.main.infoDictionary' ThirdParty/mond-current/Upstream/views/app_SettingsView.swift
 
 	@test -f FilzaSupportPrompt.m || (echo "Missing Filza Buy Me a Coffee support replacement" >&2; exit 1)
 	@grep -Fq 'https://buymeacoffee.com/zyn3' FilzaSupportPrompt.m
