@@ -1,0 +1,31 @@
+name: Fix Mond staging path
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fix generated Tendies path
+        run: |
+          set -euo pipefail
+          if grep -Fq '$(MOND_GEN)/helpers_posterboard_tendies.swift' Makefile; then
+            sed -i 's#$(MOND_GEN)/helpers_posterboard_tendies.swift#$(MOND_GEN)/Mond/helpers_posterboard_tendies.swift#' Makefile
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add Makefile
+            git commit -m 'Fix Mond Tendies staging path'
+            git push
+          fi
+          rm -f .github/workflows/fix-mond-path.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -u .github/workflows/fix-mond-path.yml
+          git commit -m 'Remove temporary Mond path fixer' || true
+          git push || true
