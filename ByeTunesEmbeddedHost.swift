@@ -37,35 +37,13 @@ private enum ByeTunesEmbeddedStateRepair {
     }
 }
 
-/// The standalone ByeTunes app renders ContentView directly from WindowGroup.
-/// Keep the embedded full-screen route geometrically equivalent: no extra
-/// UINavigationController, navigation title, or safe-area shift. Filza still
-/// needs an escape hatch from a presented full-screen controller, so the close
-/// control is overlaid without participating in ContentView layout.
+/// Standalone/presented ByeTunes uses the exact same embedded-app chrome as
+/// 3105: persistent material Close bar, divider, large page sheet and grabber.
+/// ByeTunes' own ContentView stays unchanged inside that shell.
 private struct ByeTunesEmbeddedModalRoot: View {
-    @Environment(\.dismiss) private var dismiss
-
     var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .topTrailing) {
-                ContentView()
-
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 28, weight: .semibold))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(.secondary)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Close")
-                .padding(.top, max(proxy.safeAreaInsets.top + 6, 10))
-                .padding(.trailing, 12)
-                .zIndex(1000)
-            }
-            .frame(width: proxy.size.width, height: proxy.size.height)
+        FilzaEmbeddedPanel {
+            ContentView()
         }
     }
 }
@@ -82,12 +60,12 @@ private func makeMusicLibraryHost() -> UIViewController {
 }
 
 private func makePresentedMusicLibraryHost() -> UIViewController {
-    FilzaDiagnosticsWriteByeTunesStage("before parity-preserving presented Music Library host construction")
+    FilzaDiagnosticsWriteByeTunesStage("before 3105-style presented Music Library host construction")
     ByeTunesEmbeddedStateRepair.runIfNeeded()
     let host = UIHostingController(rootView: ByeTunesEmbeddedModalRoot())
     host.view.backgroundColor = .systemGroupedBackground
-    host.modalPresentationStyle = .fullScreen
-    FilzaDiagnosticsWriteByeTunesStage("parity-preserving full-screen Music Library host ready")
+    FilzaEmbeddedPanelPresentation.configure(host)
+    FilzaDiagnosticsWriteByeTunesStage("3105-style page-sheet Music Library host ready")
     return host
 }
 
@@ -120,16 +98,16 @@ public final class ByeTunesEmbeddedHostFactory: NSObject {
     }
 
     /// Used when Filza's existing Music Library controller owns navigation.
-    /// This is a raw upstream ContentView host with no extra container UI.
+    /// This remains a raw upstream ContentView host to avoid nesting a second
+    /// modal shell inside a Filza-owned container.
     @objc(makeLibraryViewController)
     public static func makeLibraryViewController() -> UIViewController {
         FilzaDiagnosticsWriteByeTunesStage("direct Music Library factory entered")
         return makeMusicLibraryHost()
     }
 
-    /// Used by the direct full-screen fallback route. The close affordance is
-    /// an overlay, not a UINavigationController, so it does not move or resize
-    /// the original ByeTunes content hierarchy.
+    /// Used by the direct presented route. This now uses exactly the same
+    /// embedded page-sheet/Close-bar presentation contract as 3105.
     @objc(makeViewController)
     public static func makeViewController() -> UIViewController {
         FilzaDiagnosticsWriteByeTunesStage("standalone Music Library factory entered")
