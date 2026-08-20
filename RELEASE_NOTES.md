@@ -9,6 +9,13 @@ This release keeps the existing Filza/3105/ByeTunes/WebDAV/SSH feature set while
 
 Each IPA is built and verified independently from the exact same commit before the release workflow publishes either one.
 
+The release publishes four exact-SHA assets:
+
+- `Filza-27.ipa`
+- `Filza-27-SHA256.txt`
+- `Filza-27-iOS16.ipa`
+- `Filza-27-iOS16-SHA256.txt`
+
 ## Mond 2.2
 
 - Updated the embedded Mond integration to upstream commit `3d91194716ad5f06afdf7e9037e6964e80a4ac29`.
