@@ -5,7 +5,6 @@ private struct Filza3105EmbeddedRoot: View {
     let initialTab: Int
     let initialImportURL: URL?
 
-    @Environment(\.dismiss) private var dismiss
     @StateObject private var appState = AppState()
     @StateObject private var patchDraftCoordinator = PatchDraftCoordinator()
     @StateObject private var fileOperationCoordinator = FileOperationCoordinator()
@@ -17,23 +16,7 @@ private struct Filza3105EmbeddedRoot: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Button {
-                    dismiss()
-                } label: {
-                    Label("Close", systemImage: "xmark")
-                }
-
-                Spacer()
-            }
-            .font(.callout.weight(.semibold))
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(.ultraThinMaterial)
-
-            Divider()
-
+        FilzaEmbeddedPanel {
             ThreeOneOSFiveContentView(initialTab: initialTab)
                 .environmentObject(appState)
                 .environmentObject(patchDraftCoordinator)
@@ -53,15 +36,15 @@ private struct Filza3105EmbeddedRoot: View {
             }
             FilzaDiagnosticsAppend(
                 "3105",
-                "persistent Close control visible initialTab=\(initialTab)"
+                "canonical embedded panel visible initialTab=\(initialTab)"
             )
             FilzaDiagnosticsAppend(
                 "3105",
-                "full upstream 3105 1.0.1 workspace appeared initialTab=\(initialTab)"
+                "full upstream 3105 1.1.1 workspace appeared initialTab=\(initialTab)"
             )
             FilzaDiagnosticsAppend(
                 "3105",
-                "1.0.1 navigation active: responsive layout, independent Files tabs, Patch Workspace v2"
+                "1.1.1 navigation active: responsive layout, independent Files tabs, Patch Workspace v2, updated support backend"
             )
         }
     }
@@ -83,13 +66,7 @@ public final class Filza3105HostFactory: NSObject {
             )
         )
         controller.title = title
-        controller.modalPresentationStyle = .pageSheet
-        if let sheet = controller.sheetPresentationController {
-            sheet.detents = [.large()]
-            sheet.selectedDetentIdentifier = .large
-            sheet.prefersGrabberVisible = true
-            sheet.prefersScrollingExpandsWhenScrolledToEdge = false
-        }
+        FilzaEmbeddedPanelPresentation.configure(controller)
         return controller
     }
 
@@ -97,7 +74,7 @@ public final class Filza3105HostFactory: NSObject {
         makeController(
             initialTab: 0,
             title: "3105",
-            diagnostic: "constructing full upstream 3105 1.0.1 workspace"
+            diagnostic: "constructing full upstream 3105 1.1.1 workspace"
         )
     }
 
@@ -105,7 +82,7 @@ public final class Filza3105HostFactory: NSObject {
         makeController(
             initialTab: 1,
             title: "Apps Manager",
-            diagnostic: "constructing complete 3105 1.0.1 Apps Manager"
+            diagnostic: "constructing complete 3105 1.1.1 Apps Manager"
         )
     }
 
@@ -113,7 +90,7 @@ public final class Filza3105HostFactory: NSObject {
         makeController(
             initialTab: 2,
             title: "Patches",
-            diagnostic: "constructing complete 3105 1.0.1 Patches"
+            diagnostic: "constructing complete 3105 1.1.1 Patches"
         )
     }
 
@@ -122,7 +99,7 @@ public final class Filza3105HostFactory: NSObject {
         makeController(
             initialTab: 2,
             title: "Patches",
-            diagnostic: "constructing 3105 1.0.1 Patches for external import",
+            diagnostic: "constructing 3105 1.1.1 Patches for external import",
             initialImportURL: url
         )
     }
