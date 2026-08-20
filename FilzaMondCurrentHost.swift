@@ -110,9 +110,9 @@ private enum MondEmbeddedRuntime {
 
         installDocumentPickerCompatibility()
 
-        FilzaDiagnosticsAppend(
-            "mond",
-            "Mond runtime configured commit=3d91194716ad5f06afdf7e9037e6964e80a4ac29 version=2.2 embedded-parity=accent+defaults+bundle bundle=\(MondEmbeddedParity.bundle.bundleIdentifier ?? "unknown")"
+        NSLog(
+            "[Filza/Mond] Mond runtime configured commit=3d91194716ad5f06afdf7e9037e6964e80a4ac29 version=2.2 embedded-parity=accent+defaults+bundle bundle=%@",
+            MondEmbeddedParity.bundle.bundleIdentifier ?? "unknown"
         )
     }
 
@@ -199,9 +199,8 @@ public final class MondEmbeddedHostFactory: NSObject {
         controller.title = "mond"
         controller.modalPresentationStyle = .fullScreen
 
-        FilzaDiagnosticsAppend(
-            "mond",
-            "constructed pinned Mond 2.2 root at 3d91194716ad5f06afdf7e9037e6964e80a4ac29"
+        NSLog(
+            "[Filza/Mond] constructed pinned Mond 2.2 root at 3d91194716ad5f06afdf7e9037e6964e80a4ac29"
         )
         return controller
     }
