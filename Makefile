@@ -38,9 +38,8 @@ FilzaApplySandboxExt_FILES += XPF/external/ChOma/src/arm64.c XPF/external/ChOma/
 # because Filza already owns UIApplication lifecycle.
 BYETUNES_SWIFT_FILES := $(shell find $(BYETUNES_ROOT) -type f -name '*.swift' ! -name 'MusicManagerApp.swift' ! -name 'SplashView.swift' -print)
 
-# The vendored 3105 tree is a rollback baseline. stage-3105-v1.sh restores the
-# proven 1.0.1 graph first; stage-3105-v111-overlay.sh then overlays immutable
-# upstream 1.1.1 while re-applying only Filza lifecycle/pairing/presentation glue.
+# stage-3105-v1.sh now stages immutable upstream 3105 1.1.1 directly while
+# preserving only Filza lifecycle/pairing/presentation adapters.
 THREEONE_SWIFT_FILES := $(shell find $(THREEONE_ROOT)/Sources -type f -name '*.swift' -print)
 
 # Mond 2.2 is staged as the exact current upstream tree, then mechanically
@@ -125,7 +124,6 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/stage-mond-current.sh
 	@bash scripts/stage-mond-22-overlay.sh
 	@bash scripts/stage-3105-v1.sh
-	@bash scripts/stage-3105-v111-overlay.sh
 	@bash scripts/patch-access-map-provenance.sh
 	@bash scripts/patch-byetunes-upstream-parity-v2.sh
 	@bash scripts/restore-byetunes-v24-metadata-compat.sh
@@ -145,7 +143,6 @@ before-FilzaApplySandboxExt-all::
 	@test -f "scripts/patch-byetunes-background-provider-parity.sh" || (echo "Missing ByeTunes background-provider parity patch" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-download-provider-parity.sh" || (echo "Missing ByeTunes download-provider parity patch" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-device-library-save.sh" || (echo "Missing ByeTunes device-library save verifier" >&2; exit 1)
-	@test -f "scripts/stage-3105-v111-overlay.sh" || (echo "Missing pinned 3105 1.1.1 overlay" >&2; exit 1)
 	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.c" || (echo "Missing pinned bad_query submodule" >&2; exit 1)
 	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.h" || (echo "Incomplete bad_query submodule" >&2; exit 1)
 	@test -f "AppProxyMetadataFix.m" || (echo "Missing AppProxyMetadataFix.m" >&2; exit 1)
