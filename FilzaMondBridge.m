@@ -49,46 +49,31 @@ static UIViewController *FMActiveController(void)
     return controller;
 }
 
-static void FMShowUnavailable(UIViewController *source, NSString *message)
-{
-    UIAlertController *alert = [UIAlertController
-        alertControllerWithTitle:@"mond unavailable"
-        message:message
-        preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"OK"
-        style:UIAlertActionStyleDefault handler:nil]];
-    [source presentViewController:alert animated:YES completion:nil];
-}
-
 static BOOL FMLoadModernHost(void)
 {
     if (NSClassFromString(@"MondEmbeddedHostFactory")) return YES;
 
-    if (@available(iOS 17.0, *)) {
-        if (sMondModernHandle) {
-            return NSClassFromString(@"MondEmbeddedHostFactory") != Nil;
-        }
-
-        NSString *path = [[NSBundle mainBundle].bundlePath
-            stringByAppendingPathComponent:@"Frameworks/FilzaMondModern.dylib"];
-        sMondModernHandle = dlopen(path.fileSystemRepresentation, RTLD_NOW | RTLD_LOCAL);
-        if (!sMondModernHandle) {
-            const char *error = dlerror();
-            FilzaDiagnosticsAppend(@"mond", [NSString stringWithFormat:
-                @"optional Mond 2.2 runtime failed to load path=%@ error=%s",
-                path,
-                error ?: "unknown"]);
-            return NO;
-        }
-
-        BOOL available = NSClassFromString(@"MondEmbeddedHostFactory") != Nil;
-        FilzaDiagnosticsAppend(@"mond", available
-            ? @"optional Mond 2.2 runtime loaded from universal IPA"
-            : @"optional Mond 2.2 runtime loaded but factory class is missing");
-        return available;
+    if (sMondModernHandle) {
+        return NSClassFromString(@"MondEmbeddedHostFactory") != Nil;
     }
 
-    return NO;
+    NSString *path = [[NSBundle mainBundle].bundlePath
+        stringByAppendingPathComponent:@"Frameworks/FilzaMondModern.dylib"];
+    sMondModernHandle = dlopen(path.fileSystemRepresentation, RTLD_NOW | RTLD_LOCAL);
+    if (!sMondModernHandle) {
+        const char *error = dlerror();
+        FilzaDiagnosticsAppend(@"mond", [NSString stringWithFormat:
+            @"Mond 2.2 universal runtime failed to load path=%@ error=%s",
+            path,
+            error ?: "unknown"]);
+        return NO;
+    }
+
+    BOOL available = NSClassFromString(@"MondEmbeddedHostFactory") != Nil;
+    FilzaDiagnosticsAppend(@"mond", available
+        ? @"Mond 2.2 universal runtime loaded (iOS 16.1+)"
+        : @"Mond 2.2 universal runtime loaded but factory class is missing");
+    return available;
 }
 
 static UIViewController *FMCreateHost(void)
@@ -121,10 +106,7 @@ static UIViewController *FMCreateHost(void)
 static BOOL FMPresentHost(UIViewController *source)
 {
     UIViewController *controller = FMCreateHost();
-    if (!controller) {
-        FMShowUnavailable(source, @"The Mond 2.2 interface could not be created.");
-        return NO;
-    }
+    if (!controller) return NO;
 
     dispatch_async(dispatch_get_main_queue(), ^{
         UIViewController *target = source;
@@ -132,7 +114,7 @@ static BOOL FMPresentHost(UIViewController *source)
             target = target.presentedViewController;
         [target presentViewController:controller animated:YES completion:^{
             FilzaDiagnosticsAppend(@"mond",
-                @"presented exact Mond 2.2 root directly");
+                @"presented exact Mond 2.2 universal root directly");
         }];
     });
     return YES;
@@ -147,10 +129,9 @@ void FilzaMondPresentFromController(UIViewController *source)
             return;
         }
 
-        if (@available(iOS 17.0, *)) {
-            FMPresentHost(presenter);
-        } else {
-            FilzaDiagnosticsAppend(@"mond", @"iOS 16 route selected native Gestalt Manager");
+        if (!FMPresentHost(presenter)) {
+            FilzaDiagnosticsAppend(@"mond",
+                @"Mond universal host unavailable; falling back to native Gestalt Manager");
             FilzaGestaltManagerPresentFromController(presenter);
         }
     });
@@ -164,5 +145,5 @@ void FilzaMondPresent(void)
 __attribute__((constructor)) static void FilzaMondInstall(void)
 {
     FilzaDiagnosticsAppend(@"mond",
-        @"full Mond 2.2 route installed commit=3d91194716ad5f06afdf7e9037e6964e80a4ac29; universal route uses native Gestalt on iOS 16 and lazy Mond 2.2 on iOS 17+");
+        @"full Mond 2.2 route installed commit=3d91194716ad5f06afdf7e9037e6964e80a4ac29; universal runtime targets iOS 16.1+ with native Gestalt fallback only if the host cannot load");
 }

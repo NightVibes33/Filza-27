@@ -97,11 +97,20 @@ private enum MondEmbeddedRuntime {
             dup2(pipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
         }
 
-        // Mirror Mond 2.2's standalone app defaults. The embedded build does
-        // not compile mond.swift, so these defaults must be registered here.
+        let ios16Backport = ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 16
+
+        // Mirror Mond 2.2's standalone defaults. On iOS 16, keep the full UI
+        // navigable even when an exploit-backed grant is unavailable so native
+        // file permissions/direct access can still be used by compatible routes.
         MondEmbeddedParity.defaults.register(defaults: [
             "method": "bad_query",
-            "atomic_write": true
+            "atomic_write": true,
+            "ignore_failure": ios16Backport
+        ])
+        UserDefaults.standard.register(defaults: [
+            "method": "bad_query",
+            "atomic_write": true,
+            "ignore_failure": ios16Backport
         ])
 
         if MondEmbeddedParity.defaults.bool(forKey: "ka_on") {
@@ -111,7 +120,8 @@ private enum MondEmbeddedRuntime {
         installDocumentPickerCompatibility()
 
         NSLog(
-            "[Filza/Mond] Mond runtime configured commit=3d91194716ad5f06afdf7e9037e6964e80a4ac29 version=2.2 embedded-parity=accent+defaults+bundle bundle=%@",
+            "[Filza/Mond] Mond runtime configured commit=3d91194716ad5f06afdf7e9037e6964e80a4ac29 version=2.2 ios16-backport=%@ bundle=%@ embedded-parity=accent+defaults+bundle",
+            ios16Backport ? "yes" : "no",
             MondEmbeddedParity.bundle.bundleIdentifier ?? "unknown"
         )
     }
@@ -150,36 +160,41 @@ private struct MondEmbeddedRoot: View {
     @AppStorage("ka_on", store: MondEmbeddedParity.defaults) private var ka_on = true
 
     var body: some View {
-        MondCurrentContentView()
-            .environmentObject(state)
-            .onOpenURL { url in
-                guard is_pb_archive(url) else {
-                    print("(mond) ignoring unsupported URL: \(url.lastPathComponent)")
-                    return
-                }
+        FilzaEmbeddedPanel {
+            MondCurrentContentView()
+                .environmentObject(state)
+                .onOpenURL { url in
+                    guard is_pb_archive(url) else {
+                        print("(mond) ignoring unsupported URL: \(url.lastPathComponent)")
+                        return
+                    }
 
-                state.append_poster_file(url)
-            }
-            .onAppear {
-                if !is_supported() {
-                    MondCurrentAlertinator.shared.alert(
-                        title: "Not supported!",
-                        body: "Your iOS version may not be supported by mond.\nMond only supports iOS 27.0 developer beta 1 - 4."
-                    )
+                    state.append_poster_file(url)
                 }
+                .onAppear {
+                    let major = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+                    if major == 16 {
+                        print("(mond) iOS 16 compatibility mode active: MobileGestalt, PosterBoard/Tendies and CacheExtra UI enabled")
+                    } else if !is_supported() {
+                        MondCurrentAlertinator.shared.alert(
+                            title: "Exploit backend may be unsupported",
+                            body: "Mond's interface can still open, but exploit-backed filesystem access is version-specific and may not be available on this iOS build."
+                        )
+                    }
 
-                grant_all(state: state)
-            }
-            .overlay {
-                if state.show_respring {
-                    MondCurrentRespringView()
-                        .brightness(-1.0)
-                        .ignoresSafeArea()
-                        .onAppear {
-                            print("(respring) respringing now...")
-                        }
+                    grant_all(state: state)
                 }
-            }
+                .overlay {
+                    if state.show_respring {
+                        MondCurrentRespringView()
+                            .brightness(-1.0)
+                            .ignoresSafeArea()
+                            .onAppear {
+                                print("(respring) respringing now...")
+                            }
+                    }
+                }
+        }
     }
 }
 
@@ -187,7 +202,7 @@ private struct MondEmbeddedRoot: View {
 private final class MondEmbeddedViewController: UIHostingController<MondEmbeddedRoot> {
     override func viewDidLoad() {
         super.viewDidLoad()
-        modalPresentationStyle = .fullScreen
+        FilzaEmbeddedPanelPresentation.configure(self)
     }
 }
 
@@ -197,7 +212,7 @@ public final class MondEmbeddedHostFactory: NSObject {
         MondEmbeddedRuntime.configureOnce()
         let controller = MondEmbeddedViewController(rootView: MondEmbeddedRoot())
         controller.title = "mond"
-        controller.modalPresentationStyle = .fullScreen
+        FilzaEmbeddedPanelPresentation.configure(controller)
 
         NSLog(
             "[Filza/Mond] constructed pinned Mond 2.2 root at 3d91194716ad5f06afdf7e9037e6964e80a4ac29"

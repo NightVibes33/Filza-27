@@ -1,0 +1,111 @@
+name: Verify 3105 1.1.1 + Shared Embedded UI
+
+on:
+  push:
+    branches: [ main, mond-ios16-full ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: verify-3105-shared-ui-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-contract:
+    runs-on: macos-26-intel
+    steps:
+      - name: Checkout complete source tree
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Verify pinned 3105 1.1.1 integration
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -f scripts/stage-3105-v1.sh
+          grep -Fq 'UPSTREAM_OWNER="YangJiiii"' scripts/stage-3105-v1.sh
+          grep -Fq 'UPSTREAM_COMMIT="f1b81047a01a1817c7fb17e6938929eef108f1aa"' scripts/stage-3105-v1.sh
+          grep -Fq 'UPSTREAM_VERSION="1.1.1"' scripts/stage-3105-v1.sh
+          ! test -e scripts/stage-3105-v111-overlay.sh
+
+          test -f ThirdParty/3105/Sources/AppState.swift
+          test -f ThirdParty/3105/Sources/KernelExploit.swift
+          test -f ThirdParty/3105/Sources/Utils.swift
+          grep -Fq 'kernelExploitApplicable' ThirdParty/3105/Sources/AppState.swift
+          grep -Fq 'runKernelExploitIfNeeded' ThirdParty/3105/Sources/AppState.swift
+          grep -Fq 'filza3105_kexploit_opa334' ThirdParty/3105/Sources/KernelExploit.swift
+
+          grep -Fq 'stage-3105-v1.sh' Makefile
+          ! grep -Fq 'stage-3105-v111-overlay.sh' Makefile
+          grep -Fq 'ThirdParty/3105/Sources/KernelExploit.swift' <(find ThirdParty/3105/Sources -type f -name '*.swift' -print)
+
+      - name: Verify embedded-host namespace isolation
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -f scripts/patch-3105-embedded-compat.sh
+          grep -Fq 'patch-3105-embedded-compat.sh' Makefile
+          grep -Fq 'DisplayIdentityAttestationToken' scripts/patch-3105-embedded-compat.sh
+          grep -Fq 'enum AppUpdateChecker' scripts/patch-3105-embedded-compat.sh
+
+          # Apply the same deterministic sequence used by the build and prove
+          # standalone-only 3105 symbols are absent before Swift compilation.
+          bash scripts/stage-3105-v1.sh
+          grep -Fq 'enum AppUpdateChecker' ThirdParty/3105/Sources/Utils.swift
+          grep -Fq 'DisplayIdentityAttestationToken' ThirdParty/3105/Sources/Utils.swift
+          bash scripts/patch-3105-embedded-compat.sh
+          ! grep -Fq 'enum AppUpdateChecker' ThirdParty/3105/Sources/Utils.swift
+          ! grep -Fq 'DisplayIdentityAttestationToken' ThirdParty/3105/Sources/Utils.swift
+          grep -Fq 'static var hardwareDisplayName' ThirdParty/3105/Sources/Utils.swift
+          grep -Fq 'enum ExploitStatus' ThirdParty/3105/Sources/Utils.swift
+          grep -Fq 'enum AppPaths' ThirdParty/3105/Sources/Utils.swift
+
+      - name: Verify one canonical embedded presentation component
+        shell: bash
+        run: |
+          set -euxo pipefail
+          PANEL='ThirdParty/3105/Sources/FilzaEmbeddedPanel.swift'
+          test -f "$PANEL"
+          grep -Fq 'struct FilzaEmbeddedPanel<Content: View>' "$PANEL"
+          grep -Fq 'Label("Close", systemImage: "xmark")' "$PANEL"
+          grep -Fq '.background(.ultraThinMaterial)' "$PANEL"
+          grep -Fq 'controller.modalPresentationStyle = .pageSheet' "$PANEL"
+          grep -Fq 'sheet.detents = [.large()]' "$PANEL"
+          grep -Fq 'sheet.prefersGrabberVisible = true' "$PANEL"
+
+          grep -Fq 'FilzaEmbeddedPanel {' Filza3105Host.swift
+          grep -Fq 'FilzaEmbeddedPanelPresentation.configure(controller)' Filza3105Host.swift
+          grep -Fq 'FilzaEmbeddedPanel {' ByeTunesEmbeddedHost.swift
+          grep -Fq 'FilzaEmbeddedPanelPresentation.configure(host)' ByeTunesEmbeddedHost.swift
+          grep -Fq 'FilzaEmbeddedPanel {' FilzaMondCurrentHost.swift
+          grep -Fq 'FilzaEmbeddedPanelPresentation.configure(controller)' FilzaMondCurrentHost.swift
+          grep -Fq 'SHARED_PANEL := $(ROOT)/ThirdParty/3105/Sources/FilzaEmbeddedPanel.swift' MondModern/Makefile
+
+          # Presented embedded apps must no longer use their old mismatched
+          # full-screen presentation styles.
+          ! grep -Fq 'host.modalPresentationStyle = .fullScreen' ByeTunesEmbeddedHost.swift
+          ! grep -Fq 'controller.modalPresentationStyle = .fullScreen' FilzaMondCurrentHost.swift
+
+      - name: Verify embedding boundaries remain intact
+        shell: bash
+        run: |
+          set -euxo pipefail
+          # The standalone 3105 app lifecycle/global window hooks are not part
+          # of Filza's Swift source graph.
+          ! grep -Fq 'ThreeOneOSFive/App.swift' Makefile
+          ! grep -Fq 'OnboardingView.swift' Makefile
+          ! grep -Fq 'DisplayIdentityAttribution.swift' Makefile
+          ! grep -Fq 'AntiDetection.m' Makefile
+
+          # ByeTunes' direct library host stays raw when an existing Filza
+          # controller already owns navigation; only presented routes get the
+          # shared panel, preventing nested exit chrome.
+          grep -Fq 'return makeMusicLibraryHost()' ByeTunesEmbeddedHost.swift
+          grep -Fq 'return makePresentedMusicLibraryHost()' ByeTunesEmbeddedHost.swift
+
+          # Mond remains a separately lazy-loaded module so iOS 16 core linking
+          # does not become coupled to the embedded Mond implementation.
+          grep -Fq 'Frameworks/FilzaMondModern.dylib' FilzaMondBridge.m
+          grep -Fq 'dlopen' FilzaMondBridge.m

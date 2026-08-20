@@ -1,5 +1,6 @@
 # Build against the modern iOS SDK because Mond 2.2 and the complete ByeTunes app use
-# modern SwiftUI APIs. Mond 2.2's upstream deployment target is iOS 17.
+# modern SwiftUI APIs. Release workflows may lower the deployment target to iOS 16.1
+# after applying the explicit compatibility transforms.
 TARGET := iphone:clang:latest:17.0
 ARCHS = arm64
 
@@ -37,9 +38,8 @@ FilzaApplySandboxExt_FILES += XPF/external/ChOma/src/arm64.c XPF/external/ChOma/
 # because Filza already owns UIApplication lifecycle.
 BYETUNES_SWIFT_FILES := $(shell find $(BYETUNES_ROOT) -type f -name '*.swift' ! -name 'MusicManagerApp.swift' ! -name 'SplashView.swift' -print)
 
-# The vendored 3105 tree is a rollback baseline. stage-3105-v1.sh overlays the
-# exact immutable 1.0 upstream files before compilation while preserving the
-# Filza-only root/settings namespace and host glue.
+# stage-3105-v1.sh now stages immutable upstream 3105 1.1.1 directly while
+# preserving only Filza lifecycle/pairing/presentation adapters.
 THREEONE_SWIFT_FILES := $(shell find $(THREEONE_ROOT)/Sources -type f -name '*.swift' -print)
 
 # Mond 2.2 is staged as the exact current upstream tree, then mechanically
@@ -124,6 +124,7 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/stage-mond-current.sh
 	@bash scripts/stage-mond-22-overlay.sh
 	@bash scripts/stage-3105-v1.sh
+	@bash scripts/patch-3105-embedded-compat.sh
 	@bash scripts/patch-access-map-provenance.sh
 	@bash scripts/patch-byetunes-upstream-parity-v2.sh
 	@bash scripts/restore-byetunes-v24-metadata-compat.sh
@@ -143,6 +144,7 @@ before-FilzaApplySandboxExt-all::
 	@test -f "scripts/patch-byetunes-background-provider-parity.sh" || (echo "Missing ByeTunes background-provider parity patch" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-download-provider-parity.sh" || (echo "Missing ByeTunes download-provider parity patch" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-device-library-save.sh" || (echo "Missing ByeTunes device-library save verifier" >&2; exit 1)
+	@test -f "scripts/patch-3105-embedded-compat.sh" || (echo "Missing 3105 embedded compatibility transform" >&2; exit 1)
 	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.c" || (echo "Missing pinned bad_query submodule" >&2; exit 1)
 	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.h" || (echo "Incomplete bad_query submodule" >&2; exit 1)
 	@test -f "AppProxyMetadataFix.m" || (echo "Missing AppProxyMetadataFix.m" >&2; exit 1)
@@ -171,6 +173,8 @@ before-FilzaApplySandboxExt-all::
 	@test -f "$(MOND_GEN)/ZIPFoundation/FileManager+ZIP.swift" || (echo "Missing Mond ZIPFoundation FileManager support" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/Sources/AppDataBrowserView.swift" || (echo "Missing complete 3105 Apps Manager source" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/Sources/PatchProjectsView.swift" || (echo "Missing complete 3105 Patches source" >&2; exit 1)
+	@test -f "$(THREEONE_ROOT)/Sources/KernelExploit.swift" || (echo "Missing embedded 3105 1.1.1 kernel coordinator" >&2; exit 1)
+	@test -f "$(THREEONE_ROOT)/Sources/FilzaEmbeddedPanel.swift" || (echo "Missing shared 3105-style embedded panel" >&2; exit 1)
 	@test -f "$(THREEONE_ROOT)/Sources/FilzaAppIPAExporter.swift" || (echo "Missing 3105 IPA exporter source" >&2; exit 1)
 	@test -f "Filza3105IPAExportBridge.m" || (echo "Missing 3105 IPA export bridge" >&2; exit 1)
 	@test -f "$(GCDWEBSERVER_ROOT)/GCDWebServer/Core/GCDWebServer.h" || (echo "Missing GCDWebServer source" >&2; exit 1)
