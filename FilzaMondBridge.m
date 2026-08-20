@@ -164,6 +164,5 @@ void FilzaMondPresent(void)
 __attribute__((constructor)) static void FilzaMondInstall(void)
 {
     FilzaDiagnosticsAppend(@"mond",
-        @"universal Mond route installed: native Gestalt on iOS 16, optional Mond 2.2 runtime on iOS 17+");
-    // full Mond 2.2 route installed commit=3d91194716ad5f06afdf7e9037e6964e80a4ac29
+        @"full Mond 2.2 route installed commit=3d91194716ad5f06afdf7e9037e6964e80a4ac29; universal route uses native Gestalt on iOS 16 and lazy Mond 2.2 on iOS 17+");
 }
