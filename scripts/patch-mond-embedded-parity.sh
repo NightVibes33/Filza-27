@@ -80,9 +80,10 @@ party_helpers.write_text(party, encoding="utf-8")
 PY
 
 # Prove the upstream snapshot stayed exact while the generated embedded copy got
-# only the host-environment adaptations above.
+# only the host-environment adaptations above. Mond 2.2 moved GestaltView under
+# views/tweaks/mobilegestalt and added CEView alongside it.
 grep -Fq 'Color("AccentColor")' "$UPSTREAM/views/app/ContentView.swift"
-grep -Fq 'Color("AccentColor")' "$UPSTREAM/views/tweaks/GestaltView.swift"
+grep -Fq 'Color("AccentColor")' "$UPSTREAM/views/tweaks/mobilegestalt/GestaltView.swift"
 grep -Fq 'UserDefaults.standard.string(forKey: "method")' "$UPSTREAM/exploit/unsbx.swift"
 grep -Fq 'Bundle.main.infoDictionary' "$UPSTREAM/views/app/SettingsView.swift"
 
@@ -90,6 +91,8 @@ grep -Fq 'MondEmbeddedParity.accentColor' "$MOND_GEN/views_app_ContentView.swift
 grep -Fq 'MondEmbeddedParity.accentColor' "$MOND_GEN/views_tweaks_GestaltView.swift"
 grep -Fq '@AppStorage("method", store: MondEmbeddedParity.defaults)' "$MOND_GEN/views_app_ContentView.swift"
 grep -Fq '@AppStorage("method", store: MondEmbeddedParity.defaults)' "$MOND_GEN/views_app_SettingsView.swift"
+grep -Fq '@AppStorage("ignore_failure", store: MondEmbeddedParity.defaults)' "$MOND_GEN/views_app_ContentView.swift"
+grep -Fq '@AppStorage("atomic_write", store: MondEmbeddedParity.defaults)' "$MOND_GEN/views_app_SettingsView.swift"
 grep -Fq 'MondEmbeddedParity.defaults.string(forKey: "method")' "$MOND_GEN/exploit_unsbx.swift"
 grep -Fq 'MondEmbeddedParity.defaults.string(forKey: mg_device_name_key)' "$MOND_GEN/helpers_mg.swift"
 grep -Fq 'MondEmbeddedParity.bundle.infoDictionary' "$MOND_GEN/views_app_SettingsView.swift"
@@ -102,4 +105,4 @@ grep -Fq 'UIImage(named: lastIcon, in: MondEmbeddedParity.bundle, compatibleWith
 ! grep -R -Fq 'Bundle.main' "$MOND_GEN"
 ! grep -Fq 'Bundle.main' "$PARTY_HELPERS"
 
-echo "Embedded Mond parity adapter applied: upstream accent + dedicated defaults + Mond bundle identity"
+echo "Embedded Mond 2.2 parity adapter applied: upstream accent + dedicated defaults + Mond bundle identity"
