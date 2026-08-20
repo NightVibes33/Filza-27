@@ -5,6 +5,16 @@ ROOT="ThirdParty/mond-current"
 UPSTREAM="$ROOT/Upstream"
 GEN="$ROOT/Generated/Mond"
 
+# The main Makefile first stages the previously-proven Mond 2.1 baseline. Apply
+# the exact pinned 2.2 overlay here before any provenance or completeness checks,
+# so every normal build ends with the current upstream source while preserving
+# the existing build order and PartyUI/ZIPFoundation pins.
+test -f scripts/stage-mond-22-overlay.sh || {
+  echo "ERROR: missing Mond 2.2 overlay stager" >&2
+  exit 1
+}
+bash scripts/stage-mond-22-overlay.sh
+
 EXPECTED_UPSTREAM=(
   exploit/cmg.swift
   exploit/unsbx.swift
