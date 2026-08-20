@@ -68,6 +68,20 @@ for path in sorted(root.glob("*.swift")):
 
     path.write_text(text, encoding="utf-8")
 
+# Mond 2.2's new CEView invokes state.respring() but the upstream view currently
+# omits its own @EnvironmentObject declaration. The standalone app supplies the
+# AppState object at the root; make that dependency explicit in the generated
+# embedded copy without modifying the pinned upstream snapshot.
+gestalt_path = root / "views_tweaks_GestaltView.swift"
+gestalt = gestalt_path.read_text(encoding="utf-8")
+ce_anchor = "struct MondCurrentCEView: View {\n"
+ce_binding = ce_anchor + "    @EnvironmentObject var state: MondCurrentAppState\n"
+if ce_anchor not in gestalt:
+    raise SystemExit("Mond 2.2 parity: CEView declaration missing")
+if ce_binding not in gestalt:
+    gestalt = gestalt.replace(ce_anchor, ce_binding, 1)
+gestalt_path.write_text(gestalt, encoding="utf-8")
+
 # PartyUI's AppInfo helper has the same Bundle.main assumption. Keep its pinned
 # source behavior while supplying Mond's embedded resource bundle explicitly.
 party = party_helpers.read_text(encoding="utf-8")
@@ -99,10 +113,11 @@ grep -Fq 'MondEmbeddedParity.bundle.infoDictionary' "$MOND_GEN/views_app_Setting
 grep -Fq 'UIImage(named: icon, in: MondEmbeddedParity.bundle, compatibleWith: nil)' "$MOND_GEN/views_app_SettingsView.swift"
 grep -Fq 'MondEmbeddedParity.bundle.infoDictionary' "$PARTY_HELPERS"
 grep -Fq 'UIImage(named: lastIcon, in: MondEmbeddedParity.bundle, compatibleWith: nil)' "$PARTY_HELPERS"
+grep -Fq '@EnvironmentObject var state: MondCurrentAppState' "$MOND_GEN/views_tweaks_GestaltView.swift"
 
 ! grep -R -Fq 'Color("AccentColor")' "$MOND_GEN"
 ! grep -R -Fq 'UserDefaults.standard' "$MOND_GEN"
 ! grep -R -Fq 'Bundle.main' "$MOND_GEN"
 ! grep -Fq 'Bundle.main' "$PARTY_HELPERS"
 
-echo "Embedded Mond 2.2 parity adapter applied: upstream accent + dedicated defaults + Mond bundle identity"
+echo "Embedded Mond 2.2 parity adapter applied: upstream accent + dedicated defaults + Mond bundle identity + CEView state binding"
