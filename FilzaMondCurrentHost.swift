@@ -213,7 +213,7 @@ public final class MondEmbeddedHostFactory: NSObject {
         controller.modalPresentationStyle = .fullScreen
 
         NSLog(
-            "[Filza/Mond] constructed pinned Mond 2.2 universal root at 3d91194716ad5f06afdf7e9037e6964e80a4ac29"
+            "[Filza/Mond] constructed pinned Mond 2.2 root at 3d91194716ad5f06afdf7e9037e6964e80a4ac29"
         )
         return controller
     }
