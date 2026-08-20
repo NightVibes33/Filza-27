@@ -20,8 +20,8 @@ jobs:
       - name: Checkout release metadata
         uses: actions/checkout@v4
 
-      - name: Wait for exact-SHA verified IPA build
-        id: verified
+      - name: Wait for exact-SHA modern IPA build
+        id: modern
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -38,7 +38,7 @@ jobs:
 
             RUN_ID="$(jq -r '.[0].databaseId // empty' <<<"$RUN_JSON")"
             if [[ -z "$RUN_ID" ]]; then
-              echo "Verified IPA run for $GITHUB_SHA has not appeared yet (attempt $attempt/90)."
+              echo "Modern verified IPA run for $GITHUB_SHA has not appeared yet (attempt $attempt/90)."
               sleep 10
               continue
             fi
@@ -51,56 +51,131 @@ jobs:
             test "$RUN_SHA" = "$GITHUB_SHA"
 
             if [[ "$RUN_STATUS" != "completed" ]]; then
-              echo "Verified IPA run $RUN_ID is $RUN_STATUS (attempt $attempt/90)."
+              echo "Modern verified IPA run $RUN_ID is $RUN_STATUS (attempt $attempt/90)."
               sleep 10
               continue
             fi
 
             if [[ "$RUN_CONCLUSION" != "success" ]]; then
-              echo "Refusing to publish: verified IPA run $RUN_ID concluded $RUN_CONCLUSION."
+              echo "Refusing to publish: modern verified IPA run $RUN_ID concluded $RUN_CONCLUSION."
               exit 1
             fi
 
             echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
             echo "run_number=$RUN_NUMBER" >> "$GITHUB_OUTPUT"
-            echo "Verified IPA run $RUN_ID is green for exact SHA $GITHUB_SHA."
+            echo "Modern verified IPA run $RUN_ID is green for exact SHA $GITHUB_SHA."
             exit 0
           done
 
-          echo "Timed out waiting for the verified IPA workflow for $GITHUB_SHA."
+          echo "Timed out waiting for the modern verified IPA workflow for $GITHUB_SHA."
           exit 1
 
-      - name: Download exact verified IPA artifact
+      - name: Wait for exact-SHA iOS 16 compatibility build
+        id: ios16
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERIFIED_RUN_ID: ${{ steps.verified.outputs.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for attempt in $(seq 1 90); do
+            RUN_JSON="$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow verify-ios16-support.yml \
+              --commit "$GITHUB_SHA" \
+              --limit 1 \
+              --json databaseId,status,conclusion,headSha,number 2>/dev/null || true)"
+
+            RUN_ID="$(jq -r '.[0].databaseId // empty' <<<"$RUN_JSON")"
+            if [[ -z "$RUN_ID" ]]; then
+              echo "iOS 16 compatibility run for $GITHUB_SHA has not appeared yet (attempt $attempt/90)."
+              sleep 10
+              continue
+            fi
+
+            RUN_STATUS="$(jq -r '.[0].status // empty' <<<"$RUN_JSON")"
+            RUN_CONCLUSION="$(jq -r '.[0].conclusion // empty' <<<"$RUN_JSON")"
+            RUN_SHA="$(jq -r '.[0].headSha // empty' <<<"$RUN_JSON")"
+            RUN_NUMBER="$(jq -r '.[0].number // empty' <<<"$RUN_JSON")"
+
+            test "$RUN_SHA" = "$GITHUB_SHA"
+
+            if [[ "$RUN_STATUS" != "completed" ]]; then
+              echo "iOS 16 compatibility run $RUN_ID is $RUN_STATUS (attempt $attempt/90)."
+              sleep 10
+              continue
+            fi
+
+            if [[ "$RUN_CONCLUSION" != "success" ]]; then
+              echo "Refusing to publish: iOS 16 compatibility run $RUN_ID concluded $RUN_CONCLUSION."
+              exit 1
+            fi
+
+            echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+            echo "run_number=$RUN_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "iOS 16 compatibility run $RUN_ID is green for exact SHA $GITHUB_SHA."
+            exit 0
+          done
+
+          echo "Timed out waiting for the iOS 16 compatibility workflow for $GITHUB_SHA."
+          exit 1
+
+      - name: Download exact verified artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MODERN_RUN_ID: ${{ steps.modern.outputs.run_id }}
+          IOS16_RUN_ID: ${{ steps.ios16.outputs.run_id }}
         shell: bash
         run: |
           set -euxo pipefail
-          gh run download "$VERIFIED_RUN_ID" \
+          gh run download "$MODERN_RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
             --name FilzaSlop-ByeTunes-All-YouTube-SSH-unsigned-arm64 \
-            --dir verified-artifact
+            --dir verified-modern
+          gh run download "$IOS16_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name Filza-27-ios16-unsigned-arm64 \
+            --dir verified-ios16
 
-      - name: Verify release IPA
+      - name: Verify release IPAs
         shell: bash
         run: |
           set -euxo pipefail
-          SOURCE_IPA="$(find verified-artifact -type f -name '*.ipa' -print -quit)"
-          test -n "$SOURCE_IPA"
-          test -s "$SOURCE_IPA"
+          MODERN_IPA="$(find verified-modern -type f -name '*.ipa' -print -quit)"
+          IOS16_IPA="$(find verified-ios16 -type f -name '*.ipa' -print -quit)"
+          test -n "$MODERN_IPA"
+          test -s "$MODERN_IPA"
+          test -n "$IOS16_IPA"
+          test -s "$IOS16_IPA"
 
           mkdir -p release
-          cp "$SOURCE_IPA" "release/Filza-27.ipa"
+          cp "$MODERN_IPA" "release/Filza-27.ipa"
+          cp "$IOS16_IPA" "release/Filza-27-iOS16.ipa"
 
           unzip -tq "release/Filza-27.ipa"
+          unzip -tq "release/Filza-27-iOS16.ipa"
           unzip -l "release/Filza-27.ipa" | grep -Eq 'Payload/[^/]+\.app/'
+          unzip -l "release/Filza-27-iOS16.ipa" | grep -Eq 'Payload/[^/]+\.app/'
+          unzip -l "release/Filza-27.ipa" | grep -F 'MondEmbedded.bundle/Info.plist'
+          ! unzip -l "release/Filza-27-iOS16.ipa" | grep -F 'MondEmbedded.bundle/'
+
+          MODERN_PLIST="$(mktemp)"
+          IOS16_PLIST="$(mktemp)"
+          unzip -p "release/Filza-27.ipa" 'Payload/*.app/Info.plist' > "$MODERN_PLIST"
+          unzip -p "release/Filza-27-iOS16.ipa" 'Payload/*.app/Info.plist' > "$IOS16_PLIST"
+          test "$(plutil -extract MinimumOSVersion raw -o - "$MODERN_PLIST")" = "17.0"
+          test "$(plutil -extract MinimumOSVersion raw -o - "$IOS16_PLIST")" = "16.1"
+          rm -f "$MODERN_PLIST" "$IOS16_PLIST"
+
           shasum -a 256 "release/Filza-27.ipa" | tee release/Filza-27-SHA256.txt
+          shasum -a 256 "release/Filza-27-iOS16.ipa" | tee release/Filza-27-iOS16-SHA256.txt
 
       - name: Build release notes
         env:
-          VERIFIED_RUN_ID: ${{ steps.verified.outputs.run_id }}
-          VERIFIED_RUN_NUMBER: ${{ steps.verified.outputs.run_number }}
+          MODERN_RUN_ID: ${{ steps.modern.outputs.run_id }}
+          MODERN_RUN_NUMBER: ${{ steps.modern.outputs.run_number }}
+          IOS16_RUN_ID: ${{ steps.ios16.outputs.run_id }}
+          IOS16_RUN_NUMBER: ${{ steps.ios16.outputs.run_number }}
           VERIFIED_SHA: ${{ github.sha }}
         shell: bash
         run: |
@@ -110,49 +185,51 @@ jobs:
           {
             printf '\n%s\n\n' '---'
             printf '%s\n\n' '### Verified build metadata'
-            printf -- '- Workflow run: `%s`\n' "$VERIFIED_RUN_ID"
-            printf -- '- Workflow number: `%s`\n' "$VERIFIED_RUN_NUMBER"
+            printf -- '- Modern/Mond 2.2 workflow run: `%s` (#%s)\n' "$MODERN_RUN_ID" "$MODERN_RUN_NUMBER"
+            printf -- '- iOS 16 compatibility workflow run: `%s` (#%s)\n' "$IOS16_RUN_ID" "$IOS16_RUN_NUMBER"
             printf -- '- Commit: `%s`\n' "$VERIFIED_SHA"
-            printf -- '- Artifact: `Filza-27.ipa`\n'
-            printf -- '- Checksum: `Filza-27-SHA256.txt`\n'
+            printf -- '- `Filza-27.ipa`: full Mond 2.2 build, minimum iOS 17.0\n'
+            printf -- '- `Filza-27-iOS16.ipa`: compatibility build, minimum iOS 16.1; native Gestalt route replaces the unavailable Mond iOS 27 backend\n'
+            printf -- '- Checksums: `Filza-27-SHA256.txt`, `Filza-27-iOS16-SHA256.txt`\n'
           } >> release/RELEASE_NOTES.md
           test -s release/RELEASE_NOTES.md
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERIFIED_RUN_ID: ${{ steps.verified.outputs.run_id }}
-          VERIFIED_RUN_NUMBER: ${{ steps.verified.outputs.run_number }}
+          MODERN_RUN_NUMBER: ${{ steps.modern.outputs.run_number }}
           VERIFIED_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euxo pipefail
-          TAG="filza-27-${VERIFIED_RUN_NUMBER}"
+          TAG="filza-27-${MODERN_RUN_NUMBER}"
+
+          ASSETS=(
+            "release/Filza-27.ipa"
+            "release/Filza-27-SHA256.txt"
+            "release/Filza-27-iOS16.ipa"
+            "release/Filza-27-iOS16-SHA256.txt"
+          )
 
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" \
-              "release/Filza-27.ipa" \
-              "release/Filza-27-SHA256.txt" \
-              --clobber \
-              --repo "$GITHUB_REPOSITORY"
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber --repo "$GITHUB_REPOSITORY"
             gh release edit "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
-              --title "Filza 27 — Mond 2.1" \
+              --title "Filza 27 — Mond 2.2 + iOS 16" \
               --notes-file "release/RELEASE_NOTES.md" \
               --latest
           else
-            gh release create "$TAG" \
-              "release/Filza-27.ipa" \
-              "release/Filza-27-SHA256.txt" \
+            gh release create "$TAG" "${ASSETS[@]}" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$VERIFIED_SHA" \
-              --title "Filza 27 — Mond 2.1" \
+              --title "Filza 27 — Mond 2.2 + iOS 16" \
               --notes-file "release/RELEASE_NOTES.md" \
               --latest
           fi
 
           FINAL_JSON="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
-          test "$(jq -r '.assets[] | select(.name == "Filza-27.ipa") | .name' <<<"$FINAL_JSON")" = "Filza-27.ipa"
-          test "$(jq -r '.assets[] | select(.name == "Filza-27-SHA256.txt") | .name' <<<"$FINAL_JSON")" = "Filza-27-SHA256.txt"
+          for asset in Filza-27.ipa Filza-27-SHA256.txt Filza-27-iOS16.ipa Filza-27-iOS16-SHA256.txt; do
+            test "$(jq -r --arg name "$asset" '.assets[] | select(.name == $name) | .name' <<<"$FINAL_JSON")" = "$asset"
+          done
           test "$(jq -r '.target_commitish' <<<"$FINAL_JSON")" = "$VERIFIED_SHA"
-          echo "Release $TAG verified for exact SHA $VERIFIED_SHA with Filza-27.ipa + checksum"
+          echo "Release $TAG verified for exact SHA $VERIFIED_SHA with modern Mond 2.2 and iOS 16 compatibility IPAs"
