@@ -24,6 +24,17 @@ with open(upstream_path, 'rb') as fh:
 patch_uti = 'com.yangjiii.3105.patch-package'
 patch_scheme = 'threeoneosfive'
 
+# 3105 is embedded inside Filza; never allow the standalone app metadata merge
+# to replace Filza's application identity, release/build numbers, or universal
+# deployment target. Only the explicitly merged integration keys below may move.
+protected_keys = (
+    'CFBundleIdentifier',
+    'CFBundleShortVersionString',
+    'CFBundleVersion',
+    'MinimumOSVersion',
+)
+protected = {key: info.get(key) for key in protected_keys}
+
 # Preserve Filza's own CFBundleShortVersionString/CFBundleVersion, but expose
 # the embedded 3105 release through the custom key its Settings view reads.
 release_version = upstream.get('AppReleaseDisplayVersion') or upstream.get('CFBundleShortVersionString')
@@ -68,9 +79,8 @@ info['UTExportedTypeDeclarations'] = uti_declarations
 info['LSSupportsOpeningDocumentsInPlace'] = True
 info['UIFileSharingEnabled'] = True
 
-# 1.0.1 explicitly supports responsive iPad split-view/landscape navigation.
-# Merge only the iPad orientation key so the host's iPhone orientation policy
-# remains unchanged.
+# Keep 3105's responsive iPad split-view/landscape navigation metadata without
+# replacing the host's iPhone orientation policy.
 if upstream.get('UISupportedInterfaceOrientations~ipad'):
     info['UISupportedInterfaceOrientations~ipad'] = upstream['UISupportedInterfaceOrientations~ipad']
 
@@ -78,6 +88,13 @@ for key in ('NSDocumentsFolderUsageDescription', 'NSPhotoLibraryUsageDescription
     value = upstream.get(key)
     if isinstance(value, str) and value:
         info.setdefault(key, value)
+
+for key, expected in protected.items():
+    if info.get(key) != expected:
+        raise SystemExit(
+            f'3105 metadata merge attempted to change protected Filza key {key}: '
+            f'{expected!r} -> {info.get(key)!r}'
+        )
 
 with open(path, 'wb') as fh:
     plistlib.dump(info, fh, fmt=plistlib.FMT_XML, sort_keys=False)
@@ -87,7 +104,10 @@ plutil -lint "$PLIST" >/dev/null
 plutil -extract CFBundleDocumentTypes xml1 -o - "$PLIST" | grep -Fq 'com.yangjiii.3105.patch-package'
 plutil -extract CFBundleURLTypes xml1 -o - "$PLIST" | grep -Fq 'threeoneosfive'
 plutil -extract UTExportedTypeDeclarations xml1 -o - "$PLIST" | grep -Fq 'application/x-3105-patch'
-test "$(plutil -extract AppReleaseDisplayVersion raw -o - "$PLIST")" = "1.0.1"
+
+EXPECTED_3105_VERSION="$(plutil -extract AppReleaseDisplayVersion raw -o - "$UPSTREAM")"
+test -n "$EXPECTED_3105_VERSION"
+test "$(plutil -extract AppReleaseDisplayVersion raw -o - "$PLIST")" = "$EXPECTED_3105_VERSION"
 plutil -extract UISupportedInterfaceOrientations~ipad xml1 -o - "$PLIST" | grep -Fq 'UIInterfaceOrientationLandscapeLeft'
 
-echo "Merged staged 3105 1.0.1 document, URL, version, permission and iPad metadata into $PLIST"
+echo "Merged staged 3105 ${EXPECTED_3105_VERSION} document, URL, version, permission and iPad metadata into $PLIST without changing Filza identity/deployment metadata"
