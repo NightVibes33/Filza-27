@@ -163,12 +163,25 @@ jobs:
           IOS16_PLIST="$(mktemp)"
           unzip -p "release/Filza-27.ipa" 'Payload/*.app/Info.plist' > "$MODERN_PLIST"
           unzip -p "release/Filza-27-iOS16.ipa" 'Payload/*.app/Info.plist' > "$IOS16_PLIST"
-          test "$(plutil -extract MinimumOSVersion raw -o - "$MODERN_PLIST")" = "17.0"
-          test "$(plutil -extract MinimumOSVersion raw -o - "$IOS16_PLIST")" = "16.1"
+          python3 - "$MODERN_PLIST" "$IOS16_PLIST" <<'PY'
+          import plistlib
+          import sys
+
+          def minimum_os(path):
+              with open(path, "rb") as handle:
+                  return plistlib.load(handle).get("MinimumOSVersion")
+
+          modern = minimum_os(sys.argv[1])
+          ios16 = minimum_os(sys.argv[2])
+          if modern != "17.0":
+              raise SystemExit(f"unexpected modern MinimumOSVersion: {modern!r}")
+          if ios16 != "16.1":
+              raise SystemExit(f"unexpected iOS16 MinimumOSVersion: {ios16!r}")
+          PY
           rm -f "$MODERN_PLIST" "$IOS16_PLIST"
 
-          shasum -a 256 "release/Filza-27.ipa" | tee release/Filza-27-SHA256.txt
-          shasum -a 256 "release/Filza-27-iOS16.ipa" | tee release/Filza-27-iOS16-SHA256.txt
+          sha256sum "release/Filza-27.ipa" | tee release/Filza-27-SHA256.txt
+          sha256sum "release/Filza-27-iOS16.ipa" | tee release/Filza-27-iOS16-SHA256.txt
 
       - name: Build release notes
         env:
