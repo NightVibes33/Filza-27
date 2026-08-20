@@ -2,7 +2,7 @@ name: Verify Single Universal IPA
 
 on:
   push:
-    branches: [ main, single-universal-ipa ]
+    branches: [ main, mond-ios16-full ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -40,13 +40,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: Vendor/ssh
-          key: universal-ssh-${{ runner.os }}-${{ runner.arch }}-${{ env.LIBSSH_COMMIT }}-${{ env.MBEDTLS_COMMIT }}-${{ hashFiles('scripts/build-ssh-stack.sh') }}
+          key: ios16-ssh-${{ runner.os }}-${{ runner.arch }}-${{ env.LIBSSH_COMMIT }}-${{ env.MBEDTLS_COMMIT }}-${{ hashFiles('scripts/build-ssh-stack.sh') }}
 
       - name: Build pinned SSH stack
         if: steps.ssh-cache.outputs.cache-hit != 'true'
-        run: |
-          set -euxo pipefail
-          bash scripts/build-ssh-stack.sh "$GITHUB_WORKSPACE/Vendor/ssh"
+        run: bash scripts/build-ssh-stack.sh "$GITHUB_WORKSPACE/Vendor/ssh"
 
       - name: Install Procursus build tools
         uses: dhinakg/procursus-action@main
@@ -58,12 +56,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.THEOS }}
-          key: universal-theos-${{ runner.os }}-${{ runner.arch }}-${{ env.THEOS_COMMIT }}
+          key: ios16-theos-${{ runner.os }}-${{ runner.arch }}-${{ env.THEOS_COMMIT }}
 
       - name: Install pinned Theos
         if: steps.theos-cache.outputs.cache-hit != 'true'
         run: |
-          set -euxo pipefail
           rm -rf "$THEOS"
           git clone --filter=blob:none https://github.com/theos/theos.git "$THEOS"
           git -C "$THEOS" checkout --detach "$THEOS_COMMIT"
@@ -74,15 +71,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: Vendor/idevice
-          key: universal-idevice-${{ runner.os }}-${{ runner.arch }}-${{ env.IDEVICE_COMMIT }}-${{ hashFiles('scripts/build-idevice.sh') }}
+          key: ios16-idevice-${{ runner.os }}-${{ runner.arch }}-${{ env.IDEVICE_COMMIT }}-${{ hashFiles('scripts/build-idevice.sh') }}
 
       - name: Build pinned idevice FFI
         if: steps.idevice-cache.outputs.cache-hit != 'true'
-        run: |
-          set -euxo pipefail
-          bash scripts/build-idevice.sh "$GITHUB_WORKSPACE/Vendor/idevice"
+        run: bash scripts/build-idevice.sh "$GITHUB_WORKSPACE/Vendor/idevice"
 
-      - name: Build optional Mond 2.2 runtime module
+      - name: Build Mond 2.2 iOS 16.1 runtime module
         run: |
           set -euxo pipefail
           export PATH="/opt/procursus/bin:$PATH"
@@ -98,6 +93,21 @@ jobs:
           grep -aFq 'Persist after reboot' "$MOND_DYLIB"
           grep -aFq 'Ignore exploit failure' "$MOND_DYLIB"
 
+          grep -Fq 'ObservableObject' ThirdParty/mond-current/Generated/Mond/helpers_posterboard_tendies.swift
+          ! grep -Fq 'import Observation' ThirdParty/mond-current/Generated/Mond/helpers_posterboard_tendies.swift
+          ! grep -Fq 'ContentUnavailableView' ThirdParty/mond-current/Generated/Mond/views_tweaks_posterboard_TendiesView.swift
+          ! grep -Fq '.topBarTrailing' ThirdParty/mond-current/Generated/Mond/views_tweaks_posterboard_TendiesView.swift
+          grep -Fq 'majorVersion >= 17 ? "61" : "59"' ThirdParty/mond-current/Generated/Mond/helpers_posterboard_poster.swift
+
+          python3 - "$MOND_DYLIB" <<'PY'
+          import re, subprocess, sys
+          out = subprocess.check_output(["otool", "-l", sys.argv[1]], text=True)
+          m = re.search(r"cmd LC_BUILD_VERSION.*?\n\s*cmdsize .*?\n\s*platform .*?\n\s*minos ([0-9.]+)", out, re.S)
+          if not m or m.group(1) != "16.1":
+              raise SystemExit(f"unexpected Mond deployment target: {m.group(1) if m else 'missing'}")
+          print("verified Mond deployment target=16.1")
+          PY
+
           mkdir -p .theos/universal
           cp "$MOND_DYLIB" .theos/universal/FilzaMondModern.dylib
           shasum -a 256 .theos/universal/FilzaMondModern.dylib
@@ -108,9 +118,10 @@ jobs:
           bash scripts/prepare-ios16-compat.sh
           ! grep '^FilzaApplySandboxExt_SWIFT_FILES' Makefile | grep -Fq 'FilzaMondCurrentHost.swift'
           ! grep '^FilzaApplySandboxExt_SWIFT_FILES' Makefile | grep -Fq '$(MOND_SWIFT_FILES)'
-          grep -Fq 'FilzaGestaltManagerPresentFromController(controller)' FilzaMainToolbarGestalt.m
-          grep -Fq 'FilzaGestaltManagerPresentFromController(source)' FilzaQuickActions.m
+          grep -Fq 'FilzaMondPresentFromController(controller);' FilzaMainToolbarGestalt.m
+          grep -Fq 'FilzaMondPresentFromController(source);' FilzaQuickActions.m
           grep -Fq 'FilzaMondModern.dylib' FilzaMondBridge.m
+          ! grep -Fq '@available(iOS 17.0' FilzaMondBridge.m
 
       - name: Build iOS 16.1 universal core
         run: |
@@ -125,33 +136,24 @@ jobs:
           test -s "$MOND_DYLIB"
           test "$(lipo -archs "$CORE_DYLIB")" = "arm64"
           test "$(lipo -archs "$MOND_DYLIB")" = "arm64"
-
           ! grep -aFq 'MondEmbeddedHostFactory' "$CORE_DYLIB"
           grep -aFq 'FilzaMondModern.dylib' "$CORE_DYLIB"
           grep -aFq 'Filza3105HostFactory' "$CORE_DYLIB"
           grep -aFq 'ByeTunesEmbeddedHostFactory' "$CORE_DYLIB"
-          grep -aFq 'Gestalt Manager' "$CORE_DYLIB"
           ! otool -L "$CORE_DYLIB" | grep -Fq 'FilzaMondModern.dylib'
 
           python3 - "$CORE_DYLIB" "$MOND_DYLIB" <<'PY'
-          import re
-          import subprocess
-          import sys
-
+          import re, subprocess, sys
           def min_os(path):
               out = subprocess.check_output(["otool", "-l", path], text=True)
-              match = re.search(r"cmd LC_BUILD_VERSION.*?\n\s*cmdsize .*?\n\s*platform .*?\n\s*minos ([0-9.]+)", out, re.S)
-              if not match:
-                  raise SystemExit(f"could not read LC_BUILD_VERSION minos from {path}")
-              return match.group(1)
-
-          core = min_os(sys.argv[1])
-          mond = min_os(sys.argv[2])
-          if core != "16.1":
-              raise SystemExit(f"unexpected universal core minos: {core}")
-          if mond != "17.0":
-              raise SystemExit(f"unexpected optional Mond minos: {mond}")
-          print(f"verified deployment split: core={core}, optional_mond={mond}")
+              m = re.search(r"cmd LC_BUILD_VERSION.*?\n\s*cmdsize .*?\n\s*platform .*?\n\s*minos ([0-9.]+)", out, re.S)
+              if not m:
+                  raise SystemExit(f"could not read deployment target from {path}")
+              return m.group(1)
+          core, mond = min_os(sys.argv[1]), min_os(sys.argv[2])
+          if core != "16.1" or mond != "16.1":
+              raise SystemExit(f"unexpected universal deployment targets: core={core}, mond={mond}")
+          print(f"verified universal deployment targets: core={core}, mond={mond}")
           PY
 
       - name: Generate runtime resources
@@ -195,10 +197,8 @@ jobs:
           cp .theos/byetunes-resources/meriyah.umd.js "$APP/meriyah.umd.js"
           cp .theos/byetunes-resources/astring.umd.js "$APP/astring.umd.js"
           cp .theos/byetunes-resources/yt_ejs_helper.js "$APP/yt_ejs_helper.js"
-
-          rm -rf "$APP/MondEmbedded.bundle"
+          rm -rf "$APP/MondEmbedded.bundle" "$APP/Filza3105.bundle"
           cp -R ThirdParty/mond-current/Resources/MondEmbedded.bundle "$APP/MondEmbedded.bundle"
-          rm -rf "$APP/Filza3105.bundle"
           cp -R ThirdParty/3105/Resources/Filza3105.bundle "$APP/Filza3105.bundle"
 
           if test -d .theos/byetunes-appintents/Metadata.appintents; then
@@ -208,7 +208,7 @@ jobs:
 
           plutil -replace MinimumOSVersion -string "16.1" "$APP/Info.plist"
           plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemIconSymbolName":"square.grid.2x2"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music Library","UIApplicationShortcutItemIconSymbolName":"music.note.list"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Editor","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.patches","UIApplicationShortcutItemTitle":"Patches","UIApplicationShortcutItemIconSymbolName":"shippingbox"}]' "$APP/Info.plist"
-          plutil -replace CFBundleShortVersionString -string "4.11" "$APP/Info.plist"
+          plutil -replace CFBundleShortVersionString -string "4.12" "$APP/Info.plist"
           plutil -replace CFBundleVersion -string "${GITHUB_RUN_NUMBER}" "$APP/Info.plist"
           plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
           plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
