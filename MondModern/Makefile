@@ -1,4 +1,4 @@
-TARGET := iphone:clang:latest:17.0
+TARGET := iphone:clang:latest:16.1
 ARCHS = arm64
 
 include $(THEOS)/makefiles/common.mk
@@ -71,6 +71,7 @@ FilzaMondModern_INSTALL_PATH = /usr/lib
 before-FilzaMondModern-all::
 	@cd "$(ROOT)" && bash scripts/stage-mond-current.sh
 	@cd "$(ROOT)" && bash scripts/stage-mond-22-overlay.sh
+	@cd "$(ROOT)" && bash scripts/patch-mond-ios16-backport.sh
 	@cd "$(ROOT)" && bash scripts/verify-mond-source-completeness.sh
 	@cd "$(ROOT)" && bash scripts/stage-mond-embedded-resources.sh
 	@test -f "$(MOND_GEN)/Mond/views_app_ContentView.swift" || (echo "Missing staged Mond 2.2 ContentView" >&2; exit 1)
