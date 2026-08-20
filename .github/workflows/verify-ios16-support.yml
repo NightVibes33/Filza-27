@@ -19,7 +19,7 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
       IDEVICE_COMMIT: 37ee77cf713f483551f3cf33ea8b2087a40058ca
       LIBSSH_COMMIT: 07430deb9b97b751ec5ea5a7fc307f40bf042e0a
-      MBEDTLS_COMMIT: 068ff080b369adfac81509f9b57b2afab82dc5
+      MBEDTLS_COMMIT: 068ff080b369adfac81509f9b57b2afabaf82dc5
       THEOS_COMMIT: 5280bd038207e14f8bd76f5417aa2fe641c03228
 
     steps:
@@ -123,7 +123,7 @@ jobs:
       MOND_COMMIT: 3d91194716ad5f06afdf7e9037e6964e80a4ac29
       IDEVICE_COMMIT: 37ee77cf713f483551f3cf33ea8b2087a40058ca
       LIBSSH_COMMIT: 07430deb9b97b751ec5ea5a7fc307f40bf042e0a
-      MBEDTLS_COMMIT: 068ff080b369adfac81509f9b57b2afab82dc5
+      MBEDTLS_COMMIT: 068ff080b369adfac81509f9b57b2afabaf82dc5
       THEOS_COMMIT: 5280bd038207e14f8bd76f5417aa2fe641c03228
 
     steps:
@@ -141,7 +141,7 @@ jobs:
         run: |
           set -euxo pipefail
           grep -Fq "MOND_COMMIT=\"$MOND_COMMIT\"" scripts/stage-mond-22-overlay.sh
-          grep -Fq 'scripts/stage-mond-22-overlay.sh' Makefile
+          grep -Fq 'stage-mond-22-overlay.sh' scripts/verify-mond-source-completeness.sh
           grep -Fq 'full Mond 2.2 route installed commit=3d91194716ad5f06afdf7e9037e6964e80a4ac29' FilzaMondBridge.m
           grep -Fq '"atomic_write": true' FilzaMondCurrentHost.swift
           grep -Fq '"ignore_failure"' FilzaMondCurrentHost.swift
@@ -197,14 +197,16 @@ jobs:
         run: |
           set -euxo pipefail
           bash scripts/stage-mond-current.sh
-          bash scripts/stage-mond-22-overlay.sh
           bash scripts/verify-mond-source-completeness.sh
+          bash scripts/stage-mond-embedded-resources.sh
+          bash scripts/patch-mond-embedded-parity.sh
           grep -Fq "mond=$MOND_COMMIT" ThirdParty/mond-current/PINNED.txt
           grep -Fq 'CacheExtra Fields' ThirdParty/mond-current/Generated/Mond/views_app_ContentView.swift
           grep -Fq 'Persist after reboot' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
           grep -Fq 'Ignore exploit failure' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
           grep -Fq 'MondCurrentCEView' ThirdParty/mond-current/Generated/Mond/views_tweaks_GestaltView.swift
           grep -Fq 'yK+xavymRGZ3xWc1tb8XDg' ThirdParty/mond-current/Generated/Mond/helpers_mg.swift
+          grep -Fq 'MondEmbeddedParity.defaults' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
 
       - name: Build full arm64 target with Mond 2.2
         run: |
