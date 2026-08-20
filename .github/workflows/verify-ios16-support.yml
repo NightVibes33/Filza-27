@@ -2,7 +2,7 @@ name: Verify iOS 16 + Universal Support
 
 on:
   push:
-    branches: [ ios16-support ]
+    branches: [ main, ios16-support ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -21,6 +21,8 @@ jobs:
       LIBSSH_COMMIT: 07430deb9b97b751ec5ea5a7fc307f40bf042e0a
       MBEDTLS_COMMIT: 068ff080b369adfac81509f9b57b2afabaf82dc5
       THEOS_COMMIT: 5280bd038207e14f8bd76f5417aa2fe641c03228
+      BASE_IPA_SHA256: b11ce30a2db6f6bc77773ed30bdb855d7c847830891b14d21230f2d893d5f223
+      BASE_IPA_URL: https://github.com/0xjohnnydev/FilzaSlop/releases/download/v1.0.2/FilzaSlop-v1.0.2-unsigned.ipa
 
     steps:
       - name: Xcode 26.2 setup
@@ -104,14 +106,93 @@ jobs:
           grep -aFq 'Filza3105HostFactory' "$DYLIB"
           grep -aFq 'ByeTunesEmbeddedHostFactory' "$DYLIB"
           grep -aFq 'Gestalt Manager' "$DYLIB"
-          otool -l "$DYLIB" | grep -A4 LC_BUILD_VERSION
+          otool -l "$DYLIB" | grep -A6 LC_BUILD_VERSION
           shasum -a 256 "$DYLIB"
 
-      - name: Upload iOS 16 build
+      - name: Generate iOS 16 runtime resources
+        run: |
+          set -euxo pipefail
+          bash scripts/generate-appintents-metadata.sh .theos/byetunes-appintents
+          bash scripts/stage-byetunes-resources.sh .theos/byetunes-resources
+          test -s .theos/byetunes-resources/AppIconImage.png
+          test -s .theos/byetunes-resources/Config.plist
+          test -s .theos/byetunes-resources/meriyah.umd.js
+          test -s .theos/byetunes-resources/astring.umd.js
+          test -s .theos/byetunes-resources/yt_ejs_helper.js
+          test -s ThirdParty/3105/Resources/Filza3105.bundle/UpstreamAppInfo.plist
+
+      - name: Package installable iOS 16 unsigned IPA
+        run: |
+          set -euxo pipefail
+          curl -fL --retry 3 --retry-delay 2 "$BASE_IPA_URL" -o .theos/FilzaSlop-base-unsigned.ipa
+          echo "$BASE_IPA_SHA256  .theos/FilzaSlop-base-unsigned.ipa" | shasum -a 256 -c -
+
+          STAGE="$(mktemp -d /tmp/filza-ios16-ipa.XXXXXX)"
+          trap 'rm -rf "$STAGE"' EXIT
+          unzip -q .theos/FilzaSlop-base-unsigned.ipa -d "$STAGE"
+          APP="$(find "$STAGE/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          test -n "$APP"
+          test "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Info.plist")" = "com.apple.mobile.MobileHouseArrest"
+          EXECUTABLE="$(plutil -extract CFBundleExecutable raw -o - "$APP/Info.plist")"
+          test -s "$APP/$EXECUTABLE"
+
+          mkdir -p "$APP/Frameworks"
+          cp .theos/obj/FilzaApplySandboxExt.dylib "$APP/Frameworks/FilzaApplySandboxExt.dylib"
+          codesign --remove-signature "$APP/Frameworks/FilzaApplySandboxExt.dylib" >/dev/null 2>&1 || true
+
+          cp .theos/byetunes-resources/AppIconImage.png "$APP/AppIconImage.png"
+          cp .theos/byetunes-resources/ByeTunes-Info.plist "$APP/ByeTunes-Info.plist"
+          cp .theos/byetunes-resources/Config.plist "$APP/Config.plist"
+          cp .theos/byetunes-resources/meriyah.umd.js "$APP/meriyah.umd.js"
+          cp .theos/byetunes-resources/astring.umd.js "$APP/astring.umd.js"
+          cp .theos/byetunes-resources/yt_ejs_helper.js "$APP/yt_ejs_helper.js"
+
+          rm -rf "$APP/MondEmbedded.bundle"
+          rm -rf "$APP/Filza3105.bundle"
+          cp -R ThirdParty/3105/Resources/Filza3105.bundle "$APP/Filza3105.bundle"
+          if test -d .theos/byetunes-appintents/Metadata.appintents; then
+            rm -rf "$APP/Metadata.appintents"
+            cp -R .theos/byetunes-appintents/Metadata.appintents "$APP/Metadata.appintents"
+          fi
+
+          plutil -replace MinimumOSVersion -string "16.1" "$APP/Info.plist"
+          plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemIconSymbolName":"square.grid.2x2"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music Library","UIApplicationShortcutItemIconSymbolName":"music.note.list"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Editor","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.patches","UIApplicationShortcutItemTitle":"Patches","UIApplicationShortcutItemIconSymbolName":"shippingbox"}]' "$APP/Info.plist"
+          plutil -replace CFBundleShortVersionString -string "4.11" "$APP/Info.plist"
+          plutil -replace CFBundleVersion -string "${GITHUB_RUN_NUMBER}" "$APP/Info.plist"
+          plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
+          plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
+          plutil -replace NSLocalNetworkUsageDescription -string "FilzaSlop uses your local network when you enable its WebDAV or SSH server." "$APP/Info.plist"
+          plutil -replace NSBonjourServices -json '["_http._tcp","_ssh._tcp"]' "$APP/Info.plist"
+          bash scripts/merge-3105-app-metadata.sh "$APP/Info.plist"
+
+          test "$(plutil -extract MinimumOSVersion raw -o - "$APP/Info.plist")" = "16.1"
+          DYLIB="$APP/Frameworks/FilzaApplySandboxExt.dylib"
+          ! grep -aFq 'MondEmbeddedHostFactory' "$DYLIB"
+          grep -aFq 'Filza3105HostFactory' "$DYLIB"
+          grep -aFq 'ByeTunesEmbeddedHostFactory' "$DYLIB"
+          grep -aFq 'Gestalt Manager' "$DYLIB"
+          test ! -e "$APP/MondEmbedded.bundle"
+          test -s "$APP/Filza3105.bundle/UpstreamAppInfo.plist"
+          otool -L "$APP/$EXECUTABLE" | grep -F 'FilzaApplySandboxExt.dylib'
+
+          OUTPUT="$GITHUB_WORKSPACE/.theos/Filza-27-ios16-${GITHUB_SHA::7}-unsigned.ipa"
+          rm -f "$OUTPUT"
+          (cd "$STAGE" && zip -qry "$OUTPUT" Payload)
+          test -s "$OUTPUT"
+          unzip -tq "$OUTPUT"
+          unzip -l "$OUTPUT" | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
+          unzip -l "$OUTPUT" | grep -F 'Filza3105.bundle/UpstreamAppInfo.plist'
+          ! unzip -l "$OUTPUT" | grep -F 'MondEmbedded.bundle/'
+          shasum -a 256 "$OUTPUT" | tee .theos/Filza-27-ios16-SHA256.txt
+
+      - name: Upload iOS 16 IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Filza-27-ios16-arm64
-          path: .theos/obj/FilzaApplySandboxExt.dylib
+          name: Filza-27-ios16-unsigned-arm64
+          path: |
+            .theos/Filza-27-ios16-*-unsigned.ipa
+            .theos/Filza-27-ios16-SHA256.txt
+            .theos/obj/FilzaApplySandboxExt.dylib
           if-no-files-found: error
           retention-days: 14
 
@@ -141,10 +222,11 @@ jobs:
         run: |
           set -euxo pipefail
           grep -Fq "MOND_COMMIT=\"$MOND_COMMIT\"" scripts/stage-mond-22-overlay.sh
-          grep -Fq 'stage-mond-22-overlay.sh' scripts/verify-mond-source-completeness.sh
+          grep -Fq 'Verification is deliberately side-effect free' scripts/verify-mond-source-completeness.sh
           grep -Fq 'full Mond 2.2 route installed commit=3d91194716ad5f06afdf7e9037e6964e80a4ac29' FilzaMondBridge.m
           grep -Fq '"atomic_write": true' FilzaMondCurrentHost.swift
           grep -Fq '"ignore_failure"' FilzaMondCurrentHost.swift
+          grep -Fq '@EnvironmentObject var state: MondCurrentAppState' scripts/patch-mond-embedded-parity.sh
 
       - name: Restore pinned SSH stack cache
         id: ssh-cache-full
@@ -197,6 +279,7 @@ jobs:
         run: |
           set -euxo pipefail
           bash scripts/stage-mond-current.sh
+          bash scripts/stage-mond-22-overlay.sh
           bash scripts/verify-mond-source-completeness.sh
           bash scripts/stage-mond-embedded-resources.sh
           bash scripts/patch-mond-embedded-parity.sh
@@ -205,6 +288,7 @@ jobs:
           grep -Fq 'Persist after reboot' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
           grep -Fq 'Ignore exploit failure' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
           grep -Fq 'MondCurrentCEView' ThirdParty/mond-current/Generated/Mond/views_tweaks_GestaltView.swift
+          grep -Fq '@EnvironmentObject var state: MondCurrentAppState' ThirdParty/mond-current/Generated/Mond/views_tweaks_GestaltView.swift
           grep -Fq 'yK+xavymRGZ3xWc1tb8XDg' ThirdParty/mond-current/Generated/Mond/helpers_mg.swift
           grep -Fq 'MondEmbeddedParity.defaults' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
 
