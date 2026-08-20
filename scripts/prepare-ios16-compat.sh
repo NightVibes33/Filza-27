@@ -4,10 +4,10 @@ set -euo pipefail
 python3 - <<'PY'
 from pathlib import Path
 
-# The core Filza fork, 3105, and ByeTunes support iOS 16. Mond does not: its
-# pinned upstream app target starts at iOS 17 and its exploit only targets iOS
-# 27 beta builds. The iOS 16 variant therefore omits Mond's Swift/C payload but
-# keeps the Objective-C bridge ABI so existing Filza call sites remain stable.
+# The universal architecture keeps the iOS 16.1 core free of Mond's Swift/C
+# implementation so the core never eagerly links the optional module. Mond 2.2
+# itself is built separately as FilzaMondModern.dylib with a 16.1 deployment
+# target and is loaded by FilzaMondBridge at runtime on every supported OS.
 makefile = Path("Makefile")
 s = makefile.read_text()
 
@@ -33,70 +33,35 @@ if old_swift not in s:
     raise SystemExit("iOS16 prep: Swift source anchor missing")
 s = s.replace(old_swift, new_swift, 1)
 
-# stage-mond-current.sh deliberately proves that the pinned Mond source manifest
-# is still represented in the build file. Keep that provenance marker even
-# though the iOS 16 active source assignment above does not compile Mond.
-marker = "\n# iOS16 compatibility provenance only: $(MOND_SWIFT_FILES)\n"
+# stage-mond-current.sh proves the pinned Mond source manifest remains represented
+# in the build file even though the universal core assignment does not compile it.
+marker = "\n# iOS16 universal-core provenance only: $(MOND_SWIFT_FILES)\n"
 if marker.strip() not in s:
     s = s.replace(new_swift, new_swift + marker, 1)
 
 makefile.write_text(s)
 
-# On iOS 16 the existing Gestalt button/quick action should open Filza's native
-# GestaltManager instead of trying to construct the intentionally omitted Mond
-# host. iOS 17+ behavior stays untouched.
-
-# Toolbar uses a local variable named controller rather than source.
-p = Path("FilzaMainToolbarGestalt.m")
-text = p.read_text()
-if '#import "GestaltManager.h"' not in text:
-    anchor = '#import "FilzaMondBridge.h"\n'
-    if anchor not in text:
-        raise SystemExit("iOS16 prep: toolbar import anchor missing")
-    text = text.replace(anchor, anchor + '#import "GestaltManager.h"\n', 1)
-call = '    FilzaMondPresentFromController(controller);'
-if call not in text:
-    raise SystemExit("iOS16 prep: toolbar Mond call anchor missing")
-text = text.replace(
-    call,
-    '    if (@available(iOS 17.0, *)) {\n'
-    '        FilzaMondPresentFromController(controller);\n'
-    '    } else {\n'
-    '        FilzaGestaltManagerPresentFromController(controller);\n'
-    '    }',
-    1,
-)
-p.write_text(text)
-
-# Home Screen quick action has a source variable and should use the same route.
-p = Path("FilzaQuickActions.m")
-text = p.read_text()
-if '#import "GestaltManager.h"' not in text:
-    anchor = '#import "FilzaMondBridge.h"\n'
-    if anchor not in text:
-        raise SystemExit("iOS16 prep: quick-action import anchor missing")
-    text = text.replace(anchor, anchor + '#import "GestaltManager.h"\n', 1)
-call = '            FilzaMondPresentFromController(source);'
-if call not in text:
-    raise SystemExit("iOS16 prep: quick-action Mond call anchor missing")
-text = text.replace(
-    call,
-    '            if (@available(iOS 17.0, *)) {\n'
-    '                FilzaMondPresentFromController(source);\n'
-    '            } else {\n'
-    '                FilzaGestaltManagerPresentFromController(source);\n'
-    '            }',
-    1,
-)
-p.write_text(text)
+# Mond routing must remain intact on iOS 16.1+. The bridge lazy-loads the
+# separately built FilzaMondModern.dylib and falls back to native Gestalt only if
+# that host cannot be loaded. Do not rewrite toolbar/quick-action call sites.
+for path, call in (
+    (Path("FilzaMainToolbarGestalt.m"), "FilzaMondPresentFromController(controller);"),
+    (Path("FilzaQuickActions.m"), "FilzaMondPresentFromController(source);"),
+):
+    text = path.read_text()
+    if call not in text:
+        raise SystemExit(f"iOS16 prep: Mond routing anchor missing from {path}")
+    if "@available(iOS 17.0" in text and "FilzaGestaltManagerPresentFromController" in text:
+        raise SystemExit(f"iOS16 prep: legacy iOS17 Mond gate still present in {path}")
 PY
 
 # Fail loudly if a future source change makes the compatibility transform drift.
 ! grep -Fq 'FilzaMondCurrentHost.swift' <(grep '^FilzaApplySandboxExt_SWIFT_FILES' Makefile)
 ! grep -Fq '$(MOND_SWIFT_FILES)' <(grep '^FilzaApplySandboxExt_SWIFT_FILES' Makefile)
 ! grep -Fq '$(MOND_GEN)/mond_bad_query.c' Makefile
-grep -Fq '# iOS16 compatibility provenance only: $(MOND_SWIFT_FILES)' Makefile
-grep -Fq 'FilzaGestaltManagerPresentFromController(controller)' FilzaMainToolbarGestalt.m
-grep -Fq 'FilzaGestaltManagerPresentFromController(source)' FilzaQuickActions.m
+grep -Fq '# iOS16 universal-core provenance only: $(MOND_SWIFT_FILES)' Makefile
+grep -Fq 'FilzaMondPresentFromController(controller);' FilzaMainToolbarGestalt.m
+grep -Fq 'FilzaMondPresentFromController(source);' FilzaQuickActions.m
+grep -Fq 'FilzaMondModern.dylib' FilzaMondBridge.m
 
-echo "Prepared iOS 16 compatibility source graph (Mond manifest preserved; native Gestalt route active)."
+echo "Prepared iOS 16.1 universal core (Mond routed through lazy universal module)."
