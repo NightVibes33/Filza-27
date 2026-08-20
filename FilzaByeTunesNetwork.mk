@@ -11,6 +11,12 @@
 # pinned tree before compilation.
 include FilzaYouTubeKitBootstrap.mk
 
+# 3105 1.1.1 stages its updated sandbox_escape.m at the repository root, while
+# that upstream translation unit keeps the original quoted kexploit header names
+# (kexploit_opa334.h, krw.h, kutils.h, offsets.h, xpaci.h). Expose the existing
+# pinned kexploit directory rather than rewriting upstream include directives.
+FilzaApplySandboxExt_CFLAGS += -I$(PWD)/kexploit
+
 BYETUNES_YTK_ROOT := ThirdParty/byetunes-youtubekit/Generated
 BYETUNES_YTK_SWIFT_FILES := \
     $(BYETUNES_YTK_ROOT)/Cipher.swift \
