@@ -1,55 +1,57 @@
 # 3105 source pin
 
-The Apps Manager and Patches integration tracks
-[`NightVibes33/3105`](https://github.com/NightVibes33/3105) commit
-`90ab4dd35823d58de10e6b8b78236e0e7e1ad32b`, which is the upstream
-[`YangJiiii/3105`](https://github.com/YangJiiii/3105) 1.0.1 release commit.
+The embedded Apps Manager / Patches workspace tracks upstream
+[`YangJiiii/3105`](https://github.com/YangJiiii/3105) **1.1.1** commit
+`f1b81047a01a1817c7fb17e6938929eef108f1aa`.
 
-`scripts/stage-3105-v1.sh` downloads that immutable revision at build time and
-stages the full set of source changes needed to move the vendored rollback
-baseline through 1.0 and 1.0.1. New 1.0.1 source units are registered in the
-Filza source graph before the staging hook runs, so they are compiled rather
-than merely copied into the checkout.
+The build keeps the known-good 1.0.1 staged baseline, then applies
+`scripts/stage-3105-v111-overlay.sh` as an explicit immutable 1.1.1 overlay. The
+overlay restages the current workspace sources, localization, app metadata and
+the updated existing kexploit/sandbox backend units before compilation. It does
+not replace Filza's separately pinned global `bad_query` implementation.
 
-The 1.0.1 integration includes:
+The embedded 1.1.1 integration includes:
 
-- Patch Workspace v2 under the app Documents/Patches workspace;
-- safer patch transactions and restore journaling for pre-existing, newly
-  created, and patch-created files/directories;
-- legacy v1 `.3105` package decoding alongside encrypted v2 workspaces;
-- ZIP extraction with path, symbolic-link, CRC, and available-space checks;
+- the current Home / Files / Patches / Cleaner / Wallpapers workspace;
+- 1.1.1 Files/Patch interaction behavior;
+- iOS 17.0–17.7.x and iOS 18.0–18.7.1 support-policy/kernel-path updates from upstream;
+- the existing iOS 26.0–26.6.1 and verified iOS 27 beta support policy;
+- Patch Workspace v2, encrypted `.3105` packages and legacy v1 decoding;
+- safer patch transactions and restore journaling;
+- ZIP extraction/creation with path, link, CRC and space checks;
 - multiple independent Files tabs with preserved navigation state;
 - responsive iPad/landscape navigation with `NavigationSplitView`;
-- Home visibility toggles for Cleaner and Wallpapers;
-- updated iOS 27 developer/public-beta labels and localization;
-- the existing file operations, ZIP creation, Files/HTTPS patch imports,
-  Cleaner, Wallpaper Lab, Keychain package handling, and app-container tools.
+- Cleaner and Wallpaper feature visibility controls;
+- updated app/container discovery and metadata behavior;
+- updated localization and 1.1.1 app metadata.
 
-The complete upstream SwiftUI workspace is compiled into Filza: Home, Files,
-Patches, Cleaner, Wallpapers, Settings, Logs, file operations, portable `.3105`
-package handling, Keychain storage, patch transactions, backup/restore, secure
-wallpaper-package extraction, and native app metadata helpers.
+Filza intentionally keeps only the embedding adaptations required because 3105
+is not the process owner here:
 
-Filza intentionally retains only the embedding adaptations that cannot be taken
-verbatim from the standalone app:
-
-- the upstream `@main` application declaration is not compiled because Filza
-  owns the UIApplication lifecycle;
-- upstream `ContentView` is staged directly and deterministically renamed to
-  `ThreeOneOSFiveContentView`; its initializer is extended only to preserve
-  Filza's direct Home / Apps Manager / Patches entry points;
-- upstream `SettingsView` is staged directly and renamed to
-  `ThreeOneOSFiveSettingsView` so it can coexist with ByeTunes in one Swift
-  module;
-- `Filza3105Host.swift` supplies `AppState`, `PatchDraftCoordinator`, and
-  `FileOperationCoordinator`, plus the persistent Close control;
-- `Filza3105Bridge.m` maps `.3105` documents and `threeoneosfive://` imports
-  into the embedded Patches workspace instead of requiring 3105 to own `@main`;
-- resource lookup targets `Filza3105.bundle`, and diagnostics are also copied
-  to Filza's log;
+- upstream `@main ThreeOneOSFiveApp` / `WindowGroup` is not compiled;
+- `AppState` is mirrored in `ThirdParty/3105/Sources/AppState.swift` so the 1.1.1
+  support/kernel state machine works without taking over Filza's lifecycle;
+- `KernelExploit.swift` keeps upstream 1.1.1 behavior but binds the already-built
+  C symbols directly for the mixed Theos target instead of relying on 3105's
+  standalone Xcode bridging header;
+- upstream `ContentView` is renamed deterministically to
+  `ThreeOneOSFiveContentView` and accepts Filza's direct Home / Apps Manager /
+  Patches initial route;
+- upstream `SettingsView` is renamed to `ThreeOneOSFiveSettingsView` and retains
+  Filza's shared pairing section;
+- app icons prefer Filza's shared paired SpringBoardServices resolver and retain
+  upstream local icon fallback behavior;
+- `.3105` document/custom-URL imports are routed by `Filza3105Bridge.m`;
+- resources resolve through `Filza3105.bundle`;
 - ContainerManager access continues to reuse Filza's retained leases.
 
-The staging script verifies the 1.0.1 metadata, responsive root, Patch Workspace,
-Files tabs, ZIP extraction, and localization markers before compilation.
+## Shared embedded UI
 
-The upstream GPLv3 license and third-party notices remain preserved here.
+3105 is the canonical presentation style for embedded tools in Filza 27.
+`FilzaEmbeddedPanel.swift` implements the same persistent material Close bar,
+divider, large page-sheet detent and visible grabber used by the 3105 host.
+Presented ByeTunes and Mond routes use this same component so all three embedded
+apps have a consistent exit/navigation container while preserving their own
+internal SwiftUI views.
+
+The upstream GPLv3 license and third-party notices remain preserved.
