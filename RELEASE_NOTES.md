@@ -1,50 +1,59 @@
-# Filza 27 — Mond 2.1 Update
+# Filza 27 — Mond 2.2 + iOS 16 Support
 
-This release promotes the current verified FilzaSlop production tree with the pinned **Mond 2.1** functional integration and the existing Filza, 3105, ByeTunes, WebDAV, and SSH feature set packaged into one IPA.
+This release keeps the existing Filza/3105/ByeTunes/WebDAV/SSH feature set while upgrading the full modern build to pinned **Mond 2.2** and adding a separately verified **iOS 16.1+ compatibility IPA**.
 
-## Highlights
+## Downloads
 
-### Mond 2.1
+- `Filza-27.ipa` — full modern build with Mond 2.2. Minimum iOS version: **17.0**.
+- `Filza-27-iOS16.ipa` — compatibility build for **iOS 16.1+**. It keeps Filza, 3105, ByeTunes, SSH/WebDAV, and the native Gestalt Manager, but intentionally omits Mond's iOS 27-specific exploit payload.
 
-- Updated the embedded Mond integration to upstream Mond source pinned at `500d76082f0ca021ddd591c05d129ebbc26c20df`.
-- Preserved the complete upstream `mond/` app source tree under `ThirdParty/mond-current/Upstream` for provenance.
-- Integrated Mond's shared `AppState` lifecycle and normal navigation.
-- Included MobileGestalt, PosterBoard / Tendies, and HouseArrest / Santander.
-- Retained the upstream **Run Exploit** and **Generate Token** flow.
-- Retained the pinned CacheExtra / safe MobileGestalt offset fixes.
-- Retained the pinned CMG grant-state fix.
-- Removed dependence on the older Filza-only Mond behavior patches from the staging path.
-- Kept mechanical module/symbol namespacing in the generated compiled copy so Mond can coexist with Filza's existing runtime.
-- Added explicit embedded-host parity for the standalone Mond app environment: the pinned `AccentColor`, a dedicated `com.roooot.mond` UserDefaults domain, and a dedicated Mond bundle identity/artwork resource.
-- The app-target parity fix restores the upstream MobileGestalt action-button tint instead of allowing `Apply Tweaks`, `Revert Tweaks`, and `Respring` to render with an invalid inherited color inside Filza.
-- Mond Settings now reads Mond's staged bundle identity/version/artwork rather than leaking Filza's `4.11` `Bundle.main` identity.
-- Added a source-completeness gate that fails the build if the pinned Mond functional Swift tree and the compiled embedded source list ever diverge.
-- Added a Sandbox SPI ABI compatibility bridge that forwards to the same system sandbox symbols used by upstream Mond.
+Each IPA is built and verified independently from the exact same commit before the release workflow publishes either one.
 
-### Build and verification
+## Mond 2.2
 
-- Verifies the pinned upstream source markers before adaptation and verifies the generated embedded source separately after adaptation.
-- Verifies every functional Mond Swift file at the pinned commit is represented in the generated compiled source graph, with `mond.swift` intentionally replaced by the Filza host lifecycle.
-- Verifies the Mond embedded resource bundle is packaged into the final IPA with display name `mond`, version `2.0`, bundle identity `com.roooot.mond`, and pinned upstream artwork.
-- Verified the complete Mond arm64 target compile/link path.
-- Kept the ChOma arm64 PatchFinder implementation in the target to satisfy the required `pfsec_arm64_*` symbols.
-- Added a compiler-only SwiftUI solver allowance for large embedded views without changing runtime behavior.
-- Split ByeTunes' large `ManageBackupsView` expression mechanically to keep the current UI/actions while avoiding Swift constraint-solver failures.
-- The release pipeline publishes only an IPA produced by the green verifier at the exact same `main` commit SHA.
-- Every release includes `Filza-27-SHA256.txt` alongside `Filza-27.ipa`.
+- Updated the embedded Mond integration to upstream commit `3d91194716ad5f06afdf7e9037e6964e80a4ac29`.
+- Retained the exact upstream source snapshot under `ThirdParty/mond-current/Upstream` for provenance.
+- Added the new **CacheExtra Fields** editor introduced by Mond 2.2.
+- Added the upstream **Persist after reboot** setting.
+- Added the upstream **Ignore exploit failure** setting.
+- Included the current MobileGestalt persistence changes and corrected iOS 27 region-key behavior from the pinned upstream revision.
+- Preserved MobileGestalt, PosterBoard/Tendies, HouseArrest/Santander, Run Exploit, and Generate Token flows.
+- Preserved PartyUI and ZIPFoundation at their existing pinned revisions.
+- Updated the embedded resource bundle identity to report Mond **2.2** while retaining the upstream artwork and `com.roooot.mond` defaults domain.
+- Added a narrow generated-copy compatibility binding for Mond 2.2's new CacheExtra editor so its respring action receives the same shared `AppState` environment as the rest of the embedded Mond UI. The untouched upstream snapshot is not modified.
+- Kept the generated symbol/module namespace isolation required for Mond to coexist inside Filza's process.
 
-### Existing integrated features
+## iOS 16.1+ compatibility
 
-- Filza file browser based on the anchored Filza 4.11 package path.
-- 3105 1.0.1 Apps Manager and Patch Workspace v2.
-- ByeTunes music-management interface and persistent queue/backup tooling.
-- Restored YouTubeKit metadata path and bundled solver resources.
-- In-process WebDAV server.
-- In-process libssh SSH server.
-- Home Screen quick actions for Apps Manager, Music Library, Gestalt Editor, and Patches.
+The project now has an explicit iOS 16 source graph instead of pretending newer-only components can run there.
+
+The iOS 16 build keeps:
+
+- Filza core file browser
+- 3105 Apps Manager and Patches
+- 3105 IPA repackaging support
+- ByeTunes
+- SSH server
+- WebDAV server
+- native Gestalt Manager
+- Home Screen quick actions
+
+For iOS 16, Gestalt actions route to the native Gestalt Manager. Mond's Swift/C payload is excluded because upstream Mond targets iOS 17+ and its current access backend is designed for supported iOS 27 beta builds.
+
+The compatibility IPA is compiled with an iOS **16.1** deployment target and packaged with `MinimumOSVersion = 16.1`. The full Mond IPA is explicitly packaged with `MinimumOSVersion = 17.0` so an incompatible modern build is not presented as an iOS 16 binary.
+
+## Build and verification
+
+- CI independently builds the iOS 16.1 arm64 compatibility graph and the full Mond 2.2 arm64 graph.
+- The Mond verifier checks the complete pinned 2.2 functional source graph, including the new `mobilegestalt/CEView.swift` and moved `mobilegestalt/GestaltView.swift` files.
+- Mond staging and verification are separated so the verifier is side-effect free and cannot silently fetch or mutate sources.
+- The full build verifies the Mond 2.2 host, CacheExtra editor, persistence settings, region key, 3105, ByeTunes, SSH, and WebDAV symbols before packaging.
+- The iOS 16 build verifies that Mond host symbols are absent while 3105, ByeTunes, and native Gestalt symbols remain present.
+- The release workflow waits for both exact-SHA verification workflows before publishing.
+- Releases include separate SHA-256 checksum files for both IPA variants.
 
 ## Compatibility note
 
 The project does **not** claim a full jailbreak, kernel read/write, root shell, SPTM bypass, or writable system volume. Actual filesystem/container access depends on the iOS build and the access primitives available to the running app.
 
-For iOS 27, `bad_query` behavior is associated with beta 1–4 and should not be assumed to work on beta 5 or newer.
+Mond's current exploit support remains version-specific. The iOS 16 compatibility build therefore does not label the Mond iOS 27 backend as usable on older systems; it uses the native Gestalt path instead.
