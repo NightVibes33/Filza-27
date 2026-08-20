@@ -1,4 +1,4 @@
-name: Verify iOS 16 Support
+name: Verify iOS 16 + Universal Support
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: verify-ios16-${{ github.ref }}
+  group: verify-universal-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -96,8 +96,6 @@ jobs:
           set -euxo pipefail
           export PATH="/opt/procursus/bin:$PATH"
           gmake clean || true
-          # ByeTunes' Live Activity model is iOS 16.1+, while the target iPad is
-          # on 16.7.11. Use 16.1 as the compatibility floor instead of 16.0.
           gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:16.1
           DYLIB=".theos/obj/FilzaApplySandboxExt.dylib"
           test -s "$DYLIB"
@@ -113,6 +111,123 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Filza-27-ios16-arm64
+          path: .theos/obj/FilzaApplySandboxExt.dylib
+          if-no-files-found: error
+          retention-days: 14
+
+  arm64-full-mond22:
+    runs-on: macos-26-intel
+    env:
+      THEOS: ${{ github.workspace }}/theos
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+      MOND_COMMIT: 3d91194716ad5f06afdf7e9037e6964e80a4ac29
+      IDEVICE_COMMIT: 37ee77cf713f483551f3cf33ea8b2087a40058ca
+      LIBSSH_COMMIT: 07430deb9b97b751ec5ea5a7fc307f40bf042e0a
+      MBEDTLS_COMMIT: 068ff080b369adfac81509f9b57b2afab82dc5
+      THEOS_COMMIT: 5280bd038207e14f8bd76f5417aa2fe641c03228
+
+    steps:
+      - name: Xcode 26.2 setup
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.2'
+
+      - name: Checkout complete source tree
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Verify Mond 2.2 integration contract
+        run: |
+          set -euxo pipefail
+          grep -Fq "MOND_COMMIT=\"$MOND_COMMIT\"" scripts/stage-mond-22-overlay.sh
+          grep -Fq 'scripts/stage-mond-22-overlay.sh' Makefile
+          grep -Fq 'full Mond 2.2 route installed commit=3d91194716ad5f06afdf7e9037e6964e80a4ac29' FilzaMondBridge.m
+          grep -Fq '"atomic_write": true' FilzaMondCurrentHost.swift
+          grep -Fq '"ignore_failure"' FilzaMondCurrentHost.swift
+
+      - name: Restore pinned SSH stack cache
+        id: ssh-cache-full
+        uses: actions/cache@v4
+        with:
+          path: Vendor/ssh
+          key: full-ssh-${{ runner.os }}-${{ runner.arch }}-${{ env.LIBSSH_COMMIT }}-${{ env.MBEDTLS_COMMIT }}-${{ hashFiles('scripts/build-ssh-stack.sh') }}
+
+      - name: Build pinned SSH stack
+        if: steps.ssh-cache-full.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          bash scripts/build-ssh-stack.sh "$GITHUB_WORKSPACE/Vendor/ssh"
+
+      - name: Install Procursus build tools
+        uses: dhinakg/procursus-action@main
+        with:
+          packages: ldid make
+
+      - name: Restore pinned Theos cache
+        id: theos-cache-full
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.THEOS }}
+          key: full-theos-${{ runner.os }}-${{ runner.arch }}-${{ env.THEOS_COMMIT }}
+
+      - name: Install pinned Theos
+        if: steps.theos-cache-full.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          rm -rf "$THEOS"
+          git clone --filter=blob:none https://github.com/theos/theos.git "$THEOS"
+          git -C "$THEOS" checkout --detach "$THEOS_COMMIT"
+          git -C "$THEOS" submodule update --init --recursive
+
+      - name: Restore pinned idevice FFI cache
+        id: idevice-cache-full
+        uses: actions/cache@v4
+        with:
+          path: Vendor/idevice
+          key: full-idevice-${{ runner.os }}-${{ runner.arch }}-${{ env.IDEVICE_COMMIT }}-${{ hashFiles('scripts/build-idevice.sh') }}
+
+      - name: Build pinned idevice FFI
+        if: steps.idevice-cache-full.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          bash scripts/build-idevice.sh "$GITHUB_WORKSPACE/Vendor/idevice"
+
+      - name: Stage and verify exact Mond 2.2 source graph
+        run: |
+          set -euxo pipefail
+          bash scripts/stage-mond-current.sh
+          bash scripts/stage-mond-22-overlay.sh
+          bash scripts/verify-mond-source-completeness.sh
+          grep -Fq "mond=$MOND_COMMIT" ThirdParty/mond-current/PINNED.txt
+          grep -Fq 'CacheExtra Fields' ThirdParty/mond-current/Generated/Mond/views_app_ContentView.swift
+          grep -Fq 'Persist after reboot' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
+          grep -Fq 'Ignore exploit failure' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
+          grep -Fq 'MondCurrentCEView' ThirdParty/mond-current/Generated/Mond/views_tweaks_GestaltView.swift
+          grep -Fq 'yK+xavymRGZ3xWc1tb8XDg' ThirdParty/mond-current/Generated/Mond/helpers_mg.swift
+
+      - name: Build full arm64 target with Mond 2.2
+        run: |
+          set -euxo pipefail
+          export PATH="/opt/procursus/bin:$PATH"
+          gmake clean || true
+          gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1
+          DYLIB=".theos/obj/FilzaApplySandboxExt.dylib"
+          test -s "$DYLIB"
+          test "$(lipo -archs "$DYLIB")" = "arm64"
+          grep -aFq 'MondEmbeddedHostFactory' "$DYLIB"
+          grep -aFq 'MondCurrentCEView' "$DYLIB"
+          grep -aFq 'CacheExtra Fields' "$DYLIB"
+          grep -aFq 'Persist after reboot' "$DYLIB"
+          grep -aFq 'Ignore exploit failure' "$DYLIB"
+          grep -aFq 'Filza3105HostFactory' "$DYLIB"
+          grep -aFq 'ByeTunesEmbeddedHostFactory' "$DYLIB"
+          shasum -a 256 "$DYLIB"
+
+      - name: Upload full build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Filza-27-full-mond22-arm64
           path: .theos/obj/FilzaApplySandboxExt.dylib
           if-no-files-found: error
           retention-days: 14
