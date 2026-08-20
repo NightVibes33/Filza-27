@@ -60,10 +60,11 @@ MOND_ZIP_SWIFT_FILES := \
 FilzaMondModern_FILES = $(BAD_QUERY_ROOT)/bad_query/bad_query.c $(MOND_GEN)/mond_bad_query.c
 FilzaMondModern_SWIFT_FILES = $(ROOT)/FilzaMondCurrentHost.swift $(MOND_SWIFT_FILES) $(MOND_PARTYUI_SWIFT_FILES) $(MOND_ZIP_SWIFT_FILES)
 
-FilzaMondModern_CFLAGS = -I$(ROOT) -I$(ROOT)/compat -I$(ROOT)/$(BAD_QUERY_ROOT)/bad_query -I$(MOND_GEN) -fobjc-arc -include errno.h -include math.h -Wno-unused-function -Wno-unused-variable -Wno-deprecated-declarations
+FilzaMondModern_CFLAGS = -I$(ROOT) -I$(ROOT)/compat -I$(BAD_QUERY_ROOT)/bad_query -I$(MOND_GEN) -fobjc-arc -include errno.h -include math.h -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-deprecated-declarations -Wno-incompatible-pointer-types -Wno-incompatible-pointer-types-discards-qualifiers -Wno-format
 FilzaMondModern_SWIFTFLAGS += -swift-version 5 -default-isolation MainActor -Xfrontend -solver-expression-time-threshold=300 -Xcc -I$(MOND_GEN)
-FilzaMondModern_FRAMEWORKS = UIKit Foundation SwiftUI Combine UniformTypeIdentifiers PhotosUI Security CoreServices
-FilzaMondModern_LIBRARIES = z sandbox
+FilzaMondModern_FRAMEWORKS = UIKit Foundation SwiftUI Combine AVFoundation AVKit CoreMedia AudioToolbox CryptoKit Security UniformTypeIdentifiers PhotosUI JavaScriptCore AppIntents ActivityKit SafariServices CFNetwork MobileCoreServices WebKit QuickLook ImageIO
+FilzaMondModern_PRIVATE_FRAMEWORKS = IOSurface
+FilzaMondModern_LIBRARIES = z xml2 sandbox sqlite3
 FilzaMondModern_INSTALL_PATH = /usr/lib
 
 before-FilzaMondModern-all::
