@@ -3,6 +3,8 @@ name: Verify iOS 16 Support
 on:
   push:
     branches: [ ios16-support ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 concurrency:
