@@ -32,31 +32,19 @@ new_swift = (
 if old_swift not in s:
     raise SystemExit("iOS16 prep: Swift source anchor missing")
 s = s.replace(old_swift, new_swift, 1)
+
+# stage-mond-current.sh deliberately proves that the pinned Mond source manifest
+# is still represented in the build file. Keep that provenance marker even
+# though the iOS 16 active source assignment above does not compile Mond.
+marker = "\n# iOS16 compatibility provenance only: $(MOND_SWIFT_FILES)\n"
+if marker.strip() not in s:
+    s = s.replace(new_swift, new_swift + marker, 1)
+
 makefile.write_text(s)
 
 # On iOS 16 the existing Gestalt button/quick action should open Filza's native
 # GestaltManager instead of trying to construct the intentionally omitted Mond
 # host. iOS 17+ behavior stays untouched.
-def patch_gestalt_route(path: str, call_anchor: str):
-    p = Path(path)
-    text = p.read_text()
-    import_anchor = '#import "FilzaMondBridge.h"\n'
-    if '#import "GestaltManager.h"' not in text:
-        if import_anchor not in text:
-            raise SystemExit(f"iOS16 prep: import anchor missing in {path}")
-        text = text.replace(import_anchor, import_anchor + '#import "GestaltManager.h"\n', 1)
-
-    if call_anchor not in text:
-        raise SystemExit(f"iOS16 prep: Mond call anchor missing in {path}")
-    replacement = (
-        "if (@available(iOS 17.0, *)) {\n"
-        "            FilzaMondPresentFromController(source);\n"
-        "        } else {\n"
-        "            FilzaGestaltManagerPresentFromController(source);\n"
-        "        }"
-    )
-    text = text.replace(call_anchor, replacement, 1)
-    p.write_text(text)
 
 # Toolbar uses a local variable named controller rather than source.
 p = Path("FilzaMainToolbarGestalt.m")
@@ -107,7 +95,8 @@ PY
 ! grep -Fq 'FilzaMondCurrentHost.swift' <(grep '^FilzaApplySandboxExt_SWIFT_FILES' Makefile)
 ! grep -Fq '$(MOND_SWIFT_FILES)' <(grep '^FilzaApplySandboxExt_SWIFT_FILES' Makefile)
 ! grep -Fq '$(MOND_GEN)/mond_bad_query.c' Makefile
+grep -Fq '# iOS16 compatibility provenance only: $(MOND_SWIFT_FILES)' Makefile
 grep -Fq 'FilzaGestaltManagerPresentFromController(controller)' FilzaMainToolbarGestalt.m
 grep -Fq 'FilzaGestaltManagerPresentFromController(source)' FilzaQuickActions.m
 
-echo "Prepared iOS 16 compatibility source graph (Mond omitted; native Gestalt route active)."
+echo "Prepared iOS 16 compatibility source graph (Mond manifest preserved; native Gestalt route active)."
