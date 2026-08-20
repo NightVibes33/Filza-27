@@ -194,6 +194,7 @@ jobs:
             .theos/Filza-27-ios16-SHA256.txt
             .theos/obj/FilzaApplySandboxExt.dylib
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 14
 
   arm64-full-mond22:
@@ -316,4 +317,5 @@ jobs:
           name: Filza-27-full-mond22-arm64
           path: .theos/obj/FilzaApplySandboxExt.dylib
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 14
