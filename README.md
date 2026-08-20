@@ -1,66 +1,65 @@
 # FilzaSlop / Filza-27
 
-A jailed, sideloadable Filza fork for modern iOS that combines Filza with app/container management, ByeTunes music tools, Mond 2.2, WebDAV, SSH, and the 3105 patch workspace in one project.
+A jailed, sideloadable Filza fork combining Filza with app/container management, ByeTunes, Mond 2.2, WebDAV, SSH, and the 3105 patch workspace.
 
 [![Release](https://img.shields.io/github/v/release/NightVibes33/Filza-27?display_name=tag&label=latest)](https://github.com/NightVibes33/Filza-27/releases/latest)
 
 ## Download
 
-### Current verified IPA — `filza-27-142`
+### [Download the latest `Filza-27.ipa`](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza-27.ipa)
 
-### [Download `Filza-27.ipa`](https://github.com/NightVibes33/Filza-27/releases/download/filza-27-142/Filza-27.ipa)
+- One IPA for **iOS 16.1+**.
+- Checksum: [`Filza-27-SHA256.txt`](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza-27-SHA256.txt)
+- Every public release is produced from an exact-SHA green GitHub Actions build on `main`.
 
-- Verified release: [`filza-27-142`](https://github.com/NightVibes33/Filza-27/releases/tag/filza-27-142)
-- Exact build commit: `066390b6414d4e930750b319ff83ee177fa68272`
-- SHA-256: `340ff70dd89571a9b99d51d8a48fba365e713cffc8ce11b32a50bb56a01e83d7`
-- Checksum file: [`Filza-27-SHA256.txt`](https://github.com/NightVibes33/Filza-27/releases/download/filza-27-142/Filza-27-SHA256.txt)
-- Rolling latest-green link: [`releases/latest/download/Filza-27.ipa`](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza-27.ipa)
-
-Every public release is produced from **exact-SHA green GitHub Actions builds on `main`**. The release pipeline now verifies both the modern IPA and the iOS 16 compatibility IPA before publishing either one. `main` may temporarily move ahead of the latest release while a new build is being verified; the versioned download above intentionally stays pinned to the last published green IPA.
+The release pipeline publishes **one IPA**, not separate modern and iOS 16 packages.
 
 > **This is not a full jailbreak.** FilzaSlop exposes only files and containers the app can actually access. It does not claim kernel read/write, unrestricted `/`, a root shell, an SPTM bypass, or a writable system volume.
 
-## What's new — Mond 2.2 + iOS 16 support
+## Universal iOS 16.1+ architecture
 
-The current source tree upgrades the full modern build to pinned **Mond 2.2** and adds a separately verified **iOS 16.1+ compatibility IPA**.
+`Filza-27.ipa` has `MinimumOSVersion = 16.1` and contains two runtime layers in the same app bundle:
+
+- `Frameworks/FilzaApplySandboxExt.dylib` — iOS **16.1+** core containing Filza integration, 3105, ByeTunes, SSH, WebDAV, native Gestalt, and runtime routing.
+- `Frameworks/FilzaMondModern.dylib` — iOS **17.0+** Mond 2.2 module bundled inside the same IPA.
+
+The core does not link the Mond module eagerly. On iOS 17+ it loads `FilzaMondModern.dylib` from the app's Frameworks directory only when Mond is requested. On iOS 16, that newer Mach-O is never loaded and Gestalt actions use the native Gestalt Manager.
+
+This keeps one installable IPA across the supported OS range without changing Mond's real deployment requirement.
+
+## What's new — Mond 2.2 + one universal IPA
 
 - Mond pinned to `rooootdev/mond@3d91194716ad5f06afdf7e9037e6964e80a4ac29`.
-- Full Mond 2.2 navigation and shared `AppState` lifecycle integrated.
-- New Mond 2.2 **CacheExtra Fields** editor included.
-- New **Persist after reboot** and **Ignore exploit failure** settings included.
+- Full Mond 2.2 navigation and shared `AppState` lifecycle retained on supported newer systems.
+- **CacheExtra Fields** editor included.
+- **Persist after reboot** and **Ignore exploit failure** settings included.
 - **MobileGestalt**, **PosterBoard / Tendies**, and **HouseArrest / Santander** routes retained.
 - **Run Exploit** and **Generate Token** retain the upstream Mond flow.
 - Current MobileGestalt persistence and iOS 27 region-key behavior from the pinned upstream revision are included.
-- 3105 keeps its broader existing app-enumeration path instead of replacing it with the narrower paired-device app scan.
-- 3105 and ByeTunes share the same persisted pairing file and device tunnel state.
-- 3105 upgrades app rows with rendered **SpringBoardServices** icons when the shared paired connection is available.
-- Existing LaunchServices icons remain the immediate fallback, so app rows do not have to wait for the paired icon service.
-- Enhanced icon requests use a small persistent worker pool, request deduplication, caching, and reconnect/retry behavior instead of reconnecting SpringBoardServices once per row.
-- The untouched upstream Mond app source is preserved under `ThirdParty/mond-current/Upstream` for provenance.
-- The compiled copy receives mechanical module/symbol namespacing plus explicit embedded-host adapters for Mond's `AccentColor`, `com.roooot.mond` preferences domain, app identity/resources, and shared environment state. These adapters are applied only to the generated embedded copy; the preserved upstream snapshot is not rewritten.
-- A source-completeness gate compares the pinned functional Swift tree against the compiled Mond source list and fails the build if a future pin would silently omit a new upstream file.
-- Sandbox SPI ABI forwarding is handled by `MondSandboxSPICompat.c` without rewriting Mond's preserved upstream source.
-- The modern arm64 build is packaged with `MinimumOSVersion = 17.0`.
-- The compatibility build is compiled and packaged with `MinimumOSVersion = 16.1` and intentionally excludes Mond's iOS 27-specific payload while keeping Filza, 3105, ByeTunes, SSH, WebDAV, and the native Gestalt Manager.
+- 3105 and ByeTunes keep their shared persisted pairing/device connection.
+- 3105 keeps its broader app enumeration and SpringBoardServices icon upgrade path with LaunchServices fallback.
+- The untouched upstream Mond source snapshot remains under `ThirdParty/mond-current/Upstream`.
+- The generated embedded Mond copy retains its explicit AccentColor, `com.roooot.mond` defaults domain, resource-bundle, namespace, and shared-state adapters.
 
-See [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for the release changelog that is automatically included in GitHub Releases.
+See [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for the release changelog.
 
 ## Included features
 
-| Feature | Modern IPA | iOS 16.1+ IPA |
+| Feature | iOS 16.1 | iOS 17+ / supported newer systems |
 | --- | --- | --- |
 | Filza file browser | ✅ | ✅ |
-| Apps Manager | ✅ 3105 1.0.1 integrated | ✅ 3105 1.0.1 integrated |
+| Apps Manager | ✅ 3105 1.0.1 | ✅ 3105 1.0.1 |
 | Shared device pairing | ✅ | ✅ |
-| Enhanced app icons | ✅ SpringBoardServices when paired, LaunchServices fallback | ✅ where supported |
+| Enhanced app icons | ✅ where supported | ✅ SpringBoardServices with LaunchServices fallback |
 | `.3105` Patch Workspace v2 | ✅ | ✅ |
 | 3105 IPA repackaging | ✅ | ✅ |
 | Music Library / ByeTunes | ✅ | ✅ |
 | YouTube metadata provider | ✅ | ✅ |
-| Mond | ✅ Full pinned Mond 2.2 integration | ❌ intentionally excluded |
-| MobileGestalt editor | ✅ Mond 2.2 | ✅ native Gestalt Manager |
-| PosterBoard / Tendies | ✅ | ❌ Mond-only |
-| HouseArrest / Santander | ✅ | ❌ Mond-only |
+| MobileGestalt editor | ✅ native Gestalt Manager | ✅ Mond 2.2 where applicable |
+| Mond 2.2 UI/runtime | Not loaded | ✅ lazy-loaded module |
+| CacheExtra Fields | — | ✅ |
+| PosterBoard / Tendies | — | ✅ Mond route |
+| HouseArrest / Santander | — | ✅ Mond route |
 | WebDAV server | ✅ | ✅ |
 | SSH server | ✅ | ✅ |
 | Home Screen quick actions | ✅ | ✅ |
@@ -68,18 +67,17 @@ See [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for the release changelog that is aut
 
 ## Compatibility
 
-The full modern IPA has a minimum deployment target of **iOS 17.0**. A second compatibility IPA has a minimum deployment target of **iOS 16.1**.
+The IPA itself supports **iOS 16.1 and newer**.
 
-For iOS 27, the useful `bad_query` behavior is associated with beta 1–4. Do not assume the same access on beta 5 or newer. Exact access can vary by device and build, so FilzaSlop validates real file/directory access instead of treating a returned handle as automatic success.
+Mond remains version-specific. Bundling its iOS-17+ runtime in the universal IPA does not make its exploit backend valid on every iOS version. On iOS 16, the newer module is not loaded.
 
-The iOS 16 compatibility build does not claim that Mond's current iOS 27 access backend works on older systems. Gestalt actions use the native Gestalt Manager instead.
+For iOS 27, the useful `bad_query` behavior is associated with beta 1–4. Do not assume the same access on beta 5 or newer. Exact access varies by device/build, so FilzaSlop validates actual filesystem/container access instead of treating a returned handle as automatic success.
 
 ## Install
 
-1. Download the current verified release from [`releases/latest`](https://github.com/NightVibes33/Filza-27/releases/latest).
-2. Choose `Filza-27.ipa` for the full modern/Mond build, or `Filza-27-iOS16.ipa` when the release includes the iOS 16 compatibility build.
-3. Sideload it with your preferred signing method.
-4. Keep the base app identity when your signer allows it:
+1. Download [`Filza-27.ipa`](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza-27.ipa).
+2. Sideload it with your preferred signing method.
+3. Keep the base app identity when your signer allows it:
 
 ```text
 com.apple.mobile.MobileHouseArrest
@@ -99,7 +97,7 @@ NightVibes33/3105@90ab4dd35823d58de10e6b8b78236e0e7e1ad32b
 
 It includes application search, icon and disk-size recovery where available, container browsing, per-tab navigation, file preview, create/rename/import/replace/delete operations, ZIP creation/extraction, IPA repackaging support, and Patch Workspace handoff.
 
-The Filza integration intentionally preserves 3105's broader application discovery. Pairing is used as an **optional icon-quality backend**, not as a replacement for enumeration: when the shared ByeTunes/Filza device connection is ready, 3105 requests the rendered icon for each bundle ID from SpringBoardServices and replaces the already-visible LaunchServices icon. If pairing, LocalDevVPN, or SpringBoardServices is unavailable, the existing icon remains in place.
+Pairing remains an optional icon-quality backend rather than a replacement for app enumeration. When the shared ByeTunes/Filza connection is ready, 3105 can request rendered SpringBoardServices icons; otherwise existing LaunchServices icons remain available.
 
 ### Patches
 
@@ -109,15 +107,15 @@ The embedded **3105 Patch Workspace v2** supports portable `.3105` projects, sch
 
 ByeTunes is embedded directly into FilzaSlop and includes library browsing, downloads, queue persistence, backups, restore/repair tools, metadata editing, and multi-source metadata routing.
 
-The current build also restores the known working pre-v2.4 YouTubeKit metadata path as the first free YouTube provider while retaining the current ByeTunes integration. Required JavaScript solver resources are packaged inside the IPA.
+The current integration also restores the known working pre-v2.4 YouTubeKit metadata path as the first free YouTube provider while retaining current ByeTunes behavior. Required JavaScript solver resources are packaged inside the IPA.
 
-ByeTunes owns the canonical pairing/device connection used by paired features. 3105 consumes that same persisted pairing state instead of maintaining a separate pairing database, so a valid connection established by one embedded feature can be reused by the other.
+ByeTunes owns the canonical pairing/device connection used by paired features, and 3105 consumes that same persisted state.
 
 ### Mond 2.2 / Gestalt Editor
 
-Mond is staged from the exact pinned upstream revision, then its generated compiled copy is adapted only where embedding inside Filza changes the standalone app environment. The modern IPA supplies Mond's accent color, isolated preferences domain, dedicated resource bundle, and shared environment bindings so SwiftUI controls and Settings identity do not accidentally inherit Filza's app target.
+Mond is staged from the exact pinned upstream revision. Only the generated embedded copy receives the host adaptations required to run inside Filza; the upstream snapshot remains unchanged.
 
-Available modern routes include:
+Available Mond routes include:
 
 - MobileGestalt
 - CacheExtra Fields
@@ -125,7 +123,7 @@ Available modern routes include:
 - HouseArrest / Santander
 - Settings / exploit controls
 
-The exposed Mond access methods include:
+Exposed Mond access methods include:
 
 - `bad_query`
 - `cmg`
@@ -136,9 +134,7 @@ The MobileGestalt cache used by the editor is:
 /private/var/containers/Shared/SystemGroup/systemgroup.com.apple.mobilegestaltcache/Library/Caches/com.apple.MobileGestalt.plist
 ```
 
-The editor includes newer iOS 27 capability mappings alongside the existing Dynamic Island, Always-On Display, Camera Control, Action Button, Stage Manager, Apple Intelligence eligibility, internal-feature, and related controls.
-
-On iOS 16, Gestalt actions are routed to the native Gestalt Manager instead of embedding Mond's newer payload.
+On iOS 16, Gestalt actions route to the native Gestalt Manager instead of loading the modern Mond module.
 
 ## Logs
 
@@ -159,36 +155,34 @@ ByeTunesEmbedStage.txt
 
 ## Verification and builds
 
-The modern installable IPA workflow is:
+The full feature verifier is:
 
 ```text
 .github/workflows/verify-upstream-byetunes-ssh.yml
 ```
 
-The universal/iOS 16 verification workflow is:
+The one-IPA universal verifier is:
 
 ```text
-.github/workflows/verify-ios16-support.yml
+.github/workflows/verify-single-universal-ipa.yml
 ```
 
-CI independently builds the full Mond 2.2 arm64 graph and the iOS 16.1 compatibility graph. The Mond verifier checks the complete pinned functional source graph, including the current MobileGestalt sources, and the iOS 16 verifier checks that Mond host symbols are absent while 3105, ByeTunes, and native Gestalt symbols remain present.
+It builds the iOS 17+ Mond module first, then builds the iOS 16.1-compatible core, packages both into the **same IPA**, and verifies that the core/app do not eagerly link the newer module.
 
-After both exact-SHA verifiers succeed, the release workflow:
+CI verifies the core and optional Mond Mach-O deployment targets independently, checks expected symbols/resources, and validates the final IPA structure.
+
+After the exact-SHA universal and full-feature verifiers succeed, the release workflow:
 
 ```text
 .github/workflows/publish-green-ipa-release.yml
 ```
 
-waits for both verifier runs at the **same commit SHA**, downloads those exact artifacts, validates their IPA structure and minimum OS versions, calculates SHA-256, and publishes:
+publishes only:
 
 ```text
 Filza-27.ipa
 Filza-27-SHA256.txt
-Filza-27-iOS16.ipa
-Filza-27-iOS16-SHA256.txt
 ```
-
-The release body is generated from [`RELEASE_NOTES.md`](RELEASE_NOTES.md) plus the exact workflow runs and commit SHA used for the IPAs.
 
 ## Current limitations
 
@@ -220,4 +214,4 @@ FilzaSlop combines work from multiple open-source projects. Their upstream licen
 
 ## Research note
 
-This repository includes compatibility and filesystem-access research for modern iOS. Those experiments should be treated as research features, not as proof of unrestricted system access.
+This repository includes compatibility and filesystem-access research for modern iOS. Those experiments should be treated as research features, not proof of unrestricted system access.
