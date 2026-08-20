@@ -120,7 +120,7 @@ private enum MondEmbeddedRuntime {
         installDocumentPickerCompatibility()
 
         NSLog(
-            "[Filza/Mond] Mond runtime configured commit=3d91194716ad5f06afdf7e9037e6964e80a4ac29 version=2.2 ios16-backport=%@ bundle=%@",
+            "[Filza/Mond] Mond runtime configured commit=3d91194716ad5f06afdf7e9037e6964e80a4ac29 version=2.2 ios16-backport=%@ bundle=%@ embedded-parity=accent+defaults+bundle",
             ios16Backport ? "yes" : "no",
             MondEmbeddedParity.bundle.bundleIdentifier ?? "unknown"
         )
