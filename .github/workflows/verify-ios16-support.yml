@@ -80,12 +80,14 @@ jobs:
           set -euxo pipefail
           bash scripts/build-idevice.sh "$GITHUB_WORKSPACE/Vendor/idevice"
 
-      - name: Build iOS 16 arm64 target
+      - name: Build iOS 16.1 arm64 target
         run: |
           set -euxo pipefail
           export PATH="/opt/procursus/bin:$PATH"
           gmake clean || true
-          gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:16.0
+          # ByeTunes' Live Activity model is iOS 16.1+, while the target iPad is
+          # on 16.7.11. Use 16.1 as the compatibility floor instead of 16.0.
+          gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:16.1
           DYLIB=".theos/obj/FilzaApplySandboxExt.dylib"
           test -s "$DYLIB"
           test "$(lipo -archs "$DYLIB")" = "arm64"
