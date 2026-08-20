@@ -23,7 +23,7 @@ curl -fL --retry 3 --retry-delay 2 \
   -o "$PROJECT_META"
 
 grep -Fq 'INFOPLIST_KEY_CFBundleDisplayName = mond;' "$PROJECT_META"
-grep -Fq 'MARKETING_VERSION = 2.0;' "$PROJECT_META"
+grep -Fq 'MARKETING_VERSION = 2.2;' "$PROJECT_META"
 grep -Fq 'CURRENT_PROJECT_VERSION = 1;' "$PROJECT_META"
 grep -Fq 'PRODUCT_BUNDLE_IDENTIFIER = com.roooot.mond;' "$PROJECT_META"
 grep -Fq 'ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;' "$PROJECT_META"
@@ -47,7 +47,7 @@ cat > "$BUNDLE/Info.plist" <<'PLIST'
     <key>CFBundleIdentifier</key>
     <string>com.roooot.mond</string>
     <key>CFBundleShortVersionString</key>
-    <string>2.0</string>
+    <string>2.2</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>CFBundlePackageType</key>
@@ -68,7 +68,7 @@ PLIST
 
 plutil -lint "$BUNDLE/Info.plist"
 test "$(plutil -extract CFBundleDisplayName raw -o - "$BUNDLE/Info.plist")" = "mond"
-test "$(plutil -extract CFBundleShortVersionString raw -o - "$BUNDLE/Info.plist")" = "2.0"
+test "$(plutil -extract CFBundleShortVersionString raw -o - "$BUNDLE/Info.plist")" = "2.2"
 test "$(plutil -extract CFBundleIdentifier raw -o - "$BUNDLE/Info.plist")" = "com.roooot.mond"
 
-echo "Staged Mond embedded resource bundle from pinned commit ${MOND_COMMIT}"
+echo "Staged Mond 2.2 embedded resource bundle from pinned commit ${MOND_COMMIT}"
