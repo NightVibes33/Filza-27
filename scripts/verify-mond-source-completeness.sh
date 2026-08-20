@@ -5,15 +5,18 @@ ROOT="ThirdParty/mond-current"
 UPSTREAM="$ROOT/Upstream"
 GEN="$ROOT/Generated/Mond"
 
-# The main Makefile first stages the previously-proven Mond 2.1 baseline. Apply
-# the exact pinned 2.2 overlay here before any provenance or completeness checks,
-# so every normal build ends with the current upstream source while preserving
-# the existing build order and PartyUI/ZIPFoundation pins.
-test -f scripts/stage-mond-22-overlay.sh || {
-  echo "ERROR: missing Mond 2.2 overlay stager" >&2
+# Verification is deliberately side-effect free. Callers must stage the pinned
+# 2.1 baseline and then apply stage-mond-22-overlay.sh before invoking this file.
+# Keeping staging and verification separate prevents hidden network fetches and
+# makes the source graph deterministic in both CI and normal Theos builds.
+test -s "$ROOT/PINNED.txt" || {
+  echo "ERROR: Mond pinned manifest missing; stage Mond 2.2 before verification." >&2
   exit 1
 }
-bash scripts/stage-mond-22-overlay.sh
+grep -Fq 'mond=3d91194716ad5f06afdf7e9037e6964e80a4ac29' "$ROOT/PINNED.txt" || {
+  echo "ERROR: Mond 2.2 overlay is not staged." >&2
+  exit 1
+}
 
 EXPECTED_UPSTREAM=(
   exploit/cmg.swift
