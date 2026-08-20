@@ -41,6 +41,27 @@ jobs:
           ! grep -Fq 'stage-3105-v111-overlay.sh' Makefile
           grep -Fq 'ThirdParty/3105/Sources/KernelExploit.swift' <(find ThirdParty/3105/Sources -type f -name '*.swift' -print)
 
+      - name: Verify embedded-host namespace isolation
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -f scripts/patch-3105-embedded-compat.sh
+          grep -Fq 'patch-3105-embedded-compat.sh' Makefile
+          grep -Fq 'DisplayIdentityAttestationToken' scripts/patch-3105-embedded-compat.sh
+          grep -Fq 'enum AppUpdateChecker' scripts/patch-3105-embedded-compat.sh
+
+          # Apply the same deterministic sequence used by the build and prove
+          # standalone-only 3105 symbols are absent before Swift compilation.
+          bash scripts/stage-3105-v1.sh
+          grep -Fq 'enum AppUpdateChecker' ThirdParty/3105/Sources/Utils.swift
+          grep -Fq 'DisplayIdentityAttestationToken' ThirdParty/3105/Sources/Utils.swift
+          bash scripts/patch-3105-embedded-compat.sh
+          ! grep -Fq 'enum AppUpdateChecker' ThirdParty/3105/Sources/Utils.swift
+          ! grep -Fq 'DisplayIdentityAttestationToken' ThirdParty/3105/Sources/Utils.swift
+          grep -Fq 'static var hardwareDisplayName' ThirdParty/3105/Sources/Utils.swift
+          grep -Fq 'enum ExploitStatus' ThirdParty/3105/Sources/Utils.swift
+          grep -Fq 'enum AppPaths' ThirdParty/3105/Sources/Utils.swift
+
       - name: Verify one canonical embedded presentation component
         shell: bash
         run: |
