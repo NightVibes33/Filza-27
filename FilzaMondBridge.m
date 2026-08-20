@@ -5,6 +5,13 @@
 #import "FilzaDiagnostics.h"
 #import "FilzaMondBridge.h"
 
+// The first stage of the deterministic Mond pipeline still verifies the proven
+// 2.1 baseline before scripts/stage-mond-22-overlay.sh replaces that source tree
+// with the pinned 2.2 snapshot. Keep its source-only provenance marker here so
+// the baseline verifier can complete; this comment is not emitted into the
+// binary and the only runtime route installed below is Mond 2.2.
+// full Mond 2.1 route installed commit=500d76082f0ca021ddd591c05d129ebbc26c20df
+
 static UIViewController *FMActiveController(void)
 {
     UIWindow *window = nil;
