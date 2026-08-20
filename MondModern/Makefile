@@ -8,6 +8,7 @@ ROOT := $(abspath ..)
 MOND_GEN := $(ROOT)/ThirdParty/mond-current/Generated
 BAD_QUERY_ROOT := $(ROOT)/ThirdParty/bad_query
 MOND_BRIDGING_HEADER := $(ROOT)/MondModern/MondModern-Bridging-Header.h
+SHARED_PANEL := $(ROOT)/ThirdParty/3105/Sources/FilzaEmbeddedPanel.swift
 
 MOND_SWIFT_FILES := \
     $(MOND_GEN)/Mond/exploit_cmg.swift \
@@ -59,7 +60,7 @@ MOND_ZIP_SWIFT_FILES := \
     $(MOND_GEN)/ZIPFoundation/URL+ZIP.swift
 
 FilzaMondModern_FILES = $(BAD_QUERY_ROOT)/bad_query/bad_query.c $(MOND_GEN)/mond_bad_query.c
-FilzaMondModern_SWIFT_FILES = $(ROOT)/FilzaMondCurrentHost.swift $(MOND_SWIFT_FILES) $(MOND_PARTYUI_SWIFT_FILES) $(MOND_ZIP_SWIFT_FILES)
+FilzaMondModern_SWIFT_FILES = $(ROOT)/FilzaMondCurrentHost.swift $(SHARED_PANEL) $(MOND_SWIFT_FILES) $(MOND_PARTYUI_SWIFT_FILES) $(MOND_ZIP_SWIFT_FILES)
 
 FilzaMondModern_CFLAGS = -I$(ROOT) -I$(ROOT)/compat -I$(BAD_QUERY_ROOT)/bad_query -I$(MOND_GEN) -fobjc-arc -include errno.h -include math.h -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-deprecated-declarations -Wno-incompatible-pointer-types -Wno-incompatible-pointer-types-discards-qualifiers -Wno-format
 FilzaMondModern_SWIFTFLAGS += -swift-version 5 -default-isolation MainActor -Xfrontend -solver-expression-time-threshold=300 -Xcc -I$(MOND_GEN) -import-objc-header $(MOND_BRIDGING_HEADER)
@@ -79,5 +80,6 @@ before-FilzaMondModern-all::
 	@test -f "$(MOND_GEN)/mond_bad_query.c" || (echo "Missing staged Mond bad_query C source" >&2; exit 1)
 	@test -f "$(MOND_GEN)/mond_bad_query.h" || (echo "Missing staged Mond bad_query header" >&2; exit 1)
 	@test -f "$(MOND_BRIDGING_HEADER)" || (echo "Missing Mond Swift bridging header" >&2; exit 1)
+	@test -f "$(SHARED_PANEL)" || (echo "Missing shared 3105-style embedded panel" >&2; exit 1)
 
 include $(THEOS_MAKE_PATH)/library.mk
