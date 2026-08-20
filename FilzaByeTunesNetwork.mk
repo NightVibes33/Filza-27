@@ -111,9 +111,9 @@ before-FilzaApplySandboxExt-all::
 	@grep -Fq 'FILZA_SBS_ICON_WORKERS 3' ThirdParty/3105/Sources/AppIconHelper.m
 	@grep -Fq 'FilzaEnsureRSDIconClientLocked' ThirdParty/3105/Sources/AppIconHelper.m
 
-	# stage-mond-current.sh runs in the main Makefile hook before this included
-	# fragment. First prove the pinned functional Swift graph is complete; then
-	# stage the app-target resources and adapt only the generated embedded copy.
+	# The main Makefile stages the pinned Mond source before this included fragment.
+	# Prove the 2.2 functional graph is complete, stage app-target resources, then
+	# adapt only the generated embedded copy.
 	@bash scripts/verify-mond-source-completeness.sh
 	@bash scripts/stage-mond-embedded-resources.sh
 	@bash scripts/patch-mond-embedded-parity.sh
@@ -125,7 +125,8 @@ before-FilzaApplySandboxExt-all::
 	@grep -Fq 'MondEmbeddedParity.accentColor' ThirdParty/mond-current/Generated/Mond/views_tweaks_GestaltView.swift
 	@grep -Fq '@AppStorage("method", store: MondEmbeddedParity.defaults)' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
 	@grep -Fq 'MondEmbeddedParity.bundle.infoDictionary' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
-	@grep -Fq 'Color("AccentColor")' ThirdParty/mond-current/Upstream/views/tweaks/GestaltView.swift
+	@grep -Fq '@EnvironmentObject var state: MondCurrentAppState' ThirdParty/mond-current/Generated/Mond/views_tweaks_GestaltView.swift
+	@grep -Fq 'Color("AccentColor")' ThirdParty/mond-current/Upstream/views/tweaks/mobilegestalt/GestaltView.swift
 	@grep -Fq 'Bundle.main.infoDictionary' ThirdParty/mond-current/Upstream/views/app/SettingsView.swift
 
 	@test -f FilzaSupportPrompt.m || (echo "Missing Filza Buy Me a Coffee support replacement" >&2; exit 1)
