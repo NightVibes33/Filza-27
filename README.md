@@ -27,7 +27,9 @@ The core does not link the Mond module eagerly. When Mond is requested, the brid
 
 The Mond compatibility stage preserves the upstream feature flow while replacing iOS-17-only SwiftUI/state conveniences with iOS-16-compatible equivalents. PosterBoard selects descriptor store **59 on iOS 16** and **61 on iOS 17+**.
 
-## What's new — full Mond 2.2 on iOS 16.1+
+## What's new
+
+### Full Mond 2.2 on iOS 16.1+
 
 - Mond pinned to `rooootdev/mond@3d91194716ad5f06afdf7e9037e6964e80a4ac29`.
 - Full Mond 2.2 navigation and shared `AppState` lifecycle available from iOS 16.1+.
@@ -39,10 +41,19 @@ The Mond compatibility stage preserves the upstream feature flow while replacing
 - iOS-17-only empty-state, toolbar-placement, and two-value `onChange` APIs are replaced with iOS-16 equivalents in the generated embedded copy.
 - PosterBoard descriptor-store routing is runtime-correct for iOS 16 vs iOS 17+.
 - Current MobileGestalt persistence and iOS 27 region-key behavior from the pinned upstream revision are retained.
+
+### 3105 1.1.1 + unified third-party presentation
+
+- 3105 is pinned directly to official upstream `YangJiiii/3105@f1b81047a01a1817c7fb17e6938929eef108f1aa` (**1.1.1**).
+- The current Files/Patches workspace, 1.1.1 tap behavior, support-policy updates, and existing 1.1.1 backend source units used by Filza are staged before compilation.
 - 3105 and ByeTunes keep their shared persisted pairing/device connection.
 - 3105 keeps broader app enumeration and SpringBoardServices icon upgrade with LaunchServices fallback.
-- The untouched upstream Mond source snapshot remains under `ThirdParty/mond-current/Upstream`.
-- The generated embedded Mond copy retains its explicit AccentColor, `com.roooot.mond` defaults domain, resource bundle, namespace, and shared-state adapters.
+- **3105, Mond, and presented ByeTunes now use the exact same `FilzaEmbeddedPanel` presentation source**: persistent material Close bar, divider, large page sheet, visible grabber, and the same dismissal behavior.
+- Each third-party app keeps its own internal UI/features inside that common shell.
+- **Filza's own file-browser/navigation UI is not restyled or replaced.**
+- Standalone 3105 process/window hooks that would affect the host globally are not installed into Filza.
+
+The untouched upstream Mond source snapshot remains under `ThirdParty/mond-current/Upstream`; the generated embedded Mond copy retains its explicit AccentColor, `com.roooot.mond` defaults domain, resource bundle, namespace, and shared-state adapters.
 
 See [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for the release changelog.
 
@@ -51,7 +62,7 @@ See [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for the release changelog.
 | Feature | iOS 16.1+ | Notes |
 | --- | --- | --- |
 | Filza file browser | ✅ | Actual filesystem visibility still follows sandbox/access state |
-| Apps Manager | ✅ 3105 1.0.1 | App/container details depend on available APIs/permissions |
+| Apps Manager | ✅ 3105 1.1.1 | App/container details depend on available APIs/permissions |
 | Shared device pairing | ✅ | Used by ByeTunes/3105 paired features |
 | Enhanced app icons | ✅ where supported | SpringBoardServices with LaunchServices fallback |
 | `.3105` Patch Workspace v2 | ✅ | Portable projects, backup/restore, receipts/journals |
@@ -67,13 +78,14 @@ See [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for the release changelog.
 | WebDAV server | ✅ | App-hosted service |
 | SSH server | ✅ | App-hosted service |
 | Home Screen quick actions | ✅ | Mond/Gestalt routing preserved on iOS16 |
+| Shared third-party Close/page-sheet UI | ✅ | Same source for 3105, Mond, presented ByeTunes; Filza UI unchanged |
 | Full jailbreak / writable system volume | ❌ Not claimed | Outside this project's proven capabilities |
 
 ## Compatibility
 
 The **application, core runtime, and Mond 2.2 runtime all build with a minimum deployment target of iOS 16.1**.
 
-That does not mean every access primitive works on every OS version. Mond's `bad_query`, `cmg`, private APIs, and cross-container write paths remain OS/build-specific. Filza-27 keeps the UI/runtime portable while validating what access is actually available on the running device.
+That does not mean every access primitive works on every OS version. Mond's `bad_query`, `cmg`, private APIs, 3105 backend paths, and cross-container write paths remain OS/build-specific. Filza-27 keeps the UI/runtime portable while validating what access is actually available on the running device.
 
 For iOS 16, the PosterBoard format/path compatibility is handled by using descriptor store `59`. For iOS 17 and newer, Mond uses store `61`.
 
@@ -95,15 +107,17 @@ Changing that bundle identifier can break MobileHouseArrest-dependent behavior.
 
 ### Apps Manager / 3105
 
-Apps Manager embeds **3105 1.0.1**, pinned to:
+Apps Manager embeds **3105 1.1.1**, pinned to the official upstream release commit:
 
 ```text
-NightVibes33/3105@90ab4dd35823d58de10e6b8b78236e0e7e1ad32b
+YangJiiii/3105@f1b81047a01a1817c7fb17e6938929eef108f1aa
 ```
 
-It includes application search, icon and disk-size recovery where available, container browsing, per-tab navigation, file preview, create/rename/import/replace/delete operations, ZIP creation/extraction, IPA repackaging support, and Patch Workspace handoff.
+It includes application search, icon and disk-size recovery where available, container browsing, independent Files tabs, file preview, create/rename/import/replace/delete operations, ZIP creation/extraction, IPA repackaging support, Patch Workspace handoff, and the current 1.1.1 support/backend state used by the embedded build.
 
 Pairing remains an optional icon-quality backend rather than a replacement for app enumeration. When the shared ByeTunes/Filza connection is ready, 3105 can request rendered SpringBoardServices icons; otherwise LaunchServices icons remain available.
+
+Because 3105 is embedded rather than process owner, Filza does not compile its standalone `@main` lifecycle or install standalone-global window/process hooks into the Filza host. See `ThirdParty/3105/UPSTREAM.md` for the exact embedding boundary.
 
 ### Patches
 
@@ -116,6 +130,8 @@ ByeTunes is embedded directly into Filza-27 and includes library browsing, downl
 The integration restores the known working pre-v2.4 YouTubeKit metadata path as the first free YouTube provider while retaining current ByeTunes behavior. Required JavaScript solver resources are packaged inside the IPA.
 
 ByeTunes owns the canonical pairing/device connection used by paired features, and 3105 consumes that same persisted state.
+
+The normal presented ByeTunes route uses the same `FilzaEmbeddedPanel` as 3105. The legacy Filza-owned Music Library child-controller path remains a raw `ContentView` only to avoid nesting a second modal shell inside an existing Filza controller.
 
 ### Mond 2.2 / Gestalt / PosterBoard
 
@@ -140,7 +156,20 @@ The MobileGestalt cache used by the editor is:
 /private/var/containers/Shared/SystemGroup/systemgroup.com.apple.mobilegestaltcache/Library/Caches/com.apple.MobileGestalt.plist
 ```
 
-On iOS 16.1+, the Mond host is attempted normally. Native Gestalt is used only if the Mond host cannot be loaded.
+On iOS 16.1+, the Mond host is attempted normally. Native Gestalt is used only if the Mond host cannot be loaded. The presented Mond root uses the same `FilzaEmbeddedPanel` and page-sheet dismissal contract as 3105.
+
+## Shared third-party UI contract
+
+`ThirdParty/3105/Sources/FilzaEmbeddedPanel.swift` is the single canonical host shell for presented third-party tools. It supplies:
+
+- persistent top-left **Close** action;
+- material header and divider;
+- `.pageSheet` presentation;
+- large detent;
+- visible sheet grabber;
+- consistent dismissal behavior.
+
+3105, Mond, and the normal presented ByeTunes route consume that exact component rather than maintaining separate look-alike copies. Their internal app views remain independent. This contract does **not** modify Filza's own UI.
 
 ## Logs
 
@@ -173,9 +202,9 @@ The one-IPA universal verifier is:
 .github/workflows/verify-single-universal-ipa.yml
 ```
 
-It builds Mond 2.2 with deployment target **16.1**, builds the iOS 16.1-compatible core, packages both into the **same IPA**, and verifies that the app/core do not eagerly link the Mond module.
+It builds Mond 2.2 with deployment target **16.1**, builds the iOS 16.1-compatible core containing the staged 3105 1.1.1 integration and ByeTunes, packages both runtime layers into the **same IPA**, and verifies that the app/core do not eagerly link the Mond module.
 
-CI verifies both Mach-O deployment targets, the iOS-16 generated-source backport, expected symbols/resources, PosterBoard 59/61 routing, and final IPA structure.
+CI verifies both Mach-O deployment targets, the iOS-16 generated-source backport, expected symbols/resources, PosterBoard 59/61 routing, and final IPA structure. The 3105 staging script independently verifies the exact 1.1.1 metadata and embedding contracts before compilation.
 
 The supplemental iOS 16 workflow verifies the core graph as a diagnostic build only; it no longer publishes a second IPA.
 
@@ -193,8 +222,7 @@ Filza-27-SHA256.txt
 - PosterBoard/Tendies application requires writable access to the required PosterBoard data location.
 - `/System/Library` can be readable while remaining on iOS's signed read-only system volume.
 - Access to an App Group or data container does not imply access to the entire filesystem.
-- Kernel read/write is not established by this project.
-- No full jailbreak, root shell, SPTM bypass, or system-volume remount is claimed.
+- No full jailbreak, root shell, SPTM bypass, or system-volume remount is claimed by the universal packaging work.
 - WebDAV and SSH are app-hosted services and can be suspended in the background.
 
 ## Upstream projects and credits
