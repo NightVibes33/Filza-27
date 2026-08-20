@@ -34,7 +34,9 @@ enum MondEmbeddedParity {
             "ka_on",
             "token",
             "dismiss_after_import",
-            "mg_device_name"
+            "mg_device_name",
+            "atomic_write",
+            "ignore_failure"
         ]
 
         for key in keys where store.object(forKey: key) == nil {
@@ -95,7 +97,12 @@ private enum MondEmbeddedRuntime {
             dup2(pipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
         }
 
-        MondEmbeddedParity.defaults.register(defaults: ["method": "bad_query"])
+        // Mirror Mond 2.2's standalone app defaults. The embedded build does
+        // not compile mond.swift, so these defaults must be registered here.
+        MondEmbeddedParity.defaults.register(defaults: [
+            "method": "bad_query",
+            "atomic_write": true
+        ])
 
         if MondEmbeddedParity.defaults.bool(forKey: "ka_on") {
             keep_alive()
@@ -105,7 +112,7 @@ private enum MondEmbeddedRuntime {
 
         FilzaDiagnosticsAppend(
             "mond",
-            "Mond runtime configured commit=500d76082f0ca021ddd591c05d129ebbc26c20df embedded-parity=accent+defaults+bundle bundle=\(MondEmbeddedParity.bundle.bundleIdentifier ?? "unknown")"
+            "Mond runtime configured commit=3d91194716ad5f06afdf7e9037e6964e80a4ac29 version=2.2 embedded-parity=accent+defaults+bundle bundle=\(MondEmbeddedParity.bundle.bundleIdentifier ?? "unknown")"
         )
     }
 
@@ -194,7 +201,7 @@ public final class MondEmbeddedHostFactory: NSObject {
 
         FilzaDiagnosticsAppend(
             "mond",
-            "constructed pinned Mond root at 500d76082f0ca021ddd591c05d129ebbc26c20df"
+            "constructed pinned Mond 2.2 root at 3d91194716ad5f06afdf7e9037e6964e80a4ac29"
         )
         return controller
     }
