@@ -39,6 +39,7 @@ before-FilzaApplySandboxExt-all::
 	@grep -Fq 'wolfSSH_SFTP_read' FilzaWolfSSHServer.m
 	@grep -Fq 'wolfSSH_CTX_UsePrivateKey_buffer' FilzaWolfSSHServer.m
 	@grep -Fq 'wolfSSH password verifier updated' FilzaWolfSSHServer.m
+	@grep -Fq 'silent-audio background keepalive active for wolfSSH' FilzaWolfSSHServer.m
 	@grep -Fq 'SSH-2.0-' FilzaSSHProtocolHealth.m
 	@grep -Fq 'protocol self-test passed' FilzaSSHProtocolHealth.m
 	@grep -Fq 'PROPFIND / HTTP/1.1' WebDAVRuntimeV2.m
