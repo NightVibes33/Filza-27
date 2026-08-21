@@ -60,7 +60,16 @@ cp -R "$WORK/wolfssl/wolfssl/." "$PREFIX/include/wolfssl/"
 printf 'Building wolfSSH %s for iOS arm64\n' "$WOLFSSH_COMMIT"
 git clone --filter=blob:none https://github.com/wolfSSL/wolfssh.git "$WORK/wolfssh"
 git -C "$WORK/wolfssh" checkout --detach "$WOLFSSH_COMMIT"
-# Pinned wolfSSH rejects a second RFC 4254 session channel. Clauntty opens an\n# initial control PTY and then a separate terminal/exec channel, so apply our\n# narrow, reviewed compatibility patch before configuring the library.\ngit -C "$WORK/wolfssh" apply "$SCRIPT_DIR/wolfssh-allow-multiple-session-channels.patch"\nif grep -Fq "if (ssh->channelListSz >= 1)" "$WORK/wolfssh/src/internal.c"; then\n  echo "wolfSSH multi-session compatibility patch was not applied" >&2\n  exit 2\nfi\n(\n  cd "$WORK/wolfssh"
+# Pinned wolfSSH rejects a second RFC 4254 session channel. Clauntty opens an
+# initial control PTY and then a separate terminal/exec channel, so apply our
+# narrow, reviewed compatibility patch before configuring the library.
+git -C "$WORK/wolfssh" apply "$SCRIPT_DIR/wolfssh-allow-multiple-session-channels.patch"
+if grep -Fq "if (ssh->channelListSz >= 1)" "$WORK/wolfssh/src/internal.c"; then
+  echo "wolfSSH multi-session compatibility patch was not applied" >&2
+  exit 2
+fi
+(
+  cd "$WORK/wolfssh"
   autoreconf -fi
   env CC="$CC" AR="$AR" RANLIB="$RANLIB" \
       CFLAGS="$COMMON_CFLAGS" \
