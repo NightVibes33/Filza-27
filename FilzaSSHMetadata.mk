@@ -12,7 +12,10 @@ SSH_MBEDCRYPTO := $(SSH_VENDOR)/lib/libmbedcrypto.a
 FilzaApplySandboxExt_FILES := $(filter-out WebDAVRuntimeFix.m,$(FilzaApplySandboxExt_FILES))
 FilzaApplySandboxExt_FILES += WebDAVRuntimeV2.m
 FilzaApplySandboxExt_FILES += FilzaSSHServerV2.m FilzaSSHPreferencesV2.m FilzaSSHPublicAccess.m
-FilzaApplySandboxExt_CFLAGS += -I$(SSH_VENDOR)/include -DLIBSSH_STATIC=1
+# libssh's public sftp.h hides its server declarations behind WITH_SERVER;
+# these are consumer-side declaration guards, separate from the CMake options
+# already used when the pinned static library itself is built.
+FilzaApplySandboxExt_CFLAGS += -I$(SSH_VENDOR)/include -DLIBSSH_STATIC=1 -DWITH_SERVER=1 -DWITH_SFTP=1
 FilzaApplySandboxExt_LDFLAGS += $(SSH_STATIC) $(SSH_MBEDTLS) $(SSH_MBEDX509) $(SSH_MBEDCRYPTO)
 
 before-FilzaApplySandboxExt-all::
