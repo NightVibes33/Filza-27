@@ -24,5 +24,6 @@ FOUNDATION_EXPORT BOOL FilzaSSHServerIsRunning(void);
 FOUNDATION_EXPORT NSString * _Nullable FilzaSSHServerLastError(void);
 FOUNDATION_EXPORT NSString * _Nullable FilzaSSHServerLANAddress(void);
 FOUNDATION_EXPORT NSString *FilzaSSHServerConnectionSummary(void);
+FOUNDATION_EXPORT void FilzaSSHProtocolHealthSchedule(NSString *reason);
 
 NS_ASSUME_NONNULL_END
