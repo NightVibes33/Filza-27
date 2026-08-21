@@ -44,6 +44,91 @@ static int FilzaSSHListenFD = -1;
 static dispatch_once_t FilzaSSHInitOnce;
 static const void *FilzaSSHQueueKey = &FilzaSSHQueueKey;
 static NSString *FilzaSSHFailure;
+static AVAudioPlayer *FilzaSSHKeepAlivePlayer;
+static id FilzaSSHInterruptionObserver;
+static id FilzaSSHForegroundObserver;
+static id FilzaSSHBackgroundObserver;
+static _Atomic(bool) FilzaSSHKeepAliveActive = false;
+
+typedef struct __attribute__((packed)) {
+    char riff[4];
+    uint32_t riffSize;
+    char wave[4];
+    char fmt[4];
+    uint32_t fmtSize;
+    uint16_t audioFormat;
+    uint16_t channels;
+    uint32_t sampleRate;
+    uint32_t byteRate;
+    uint16_t blockAlign;
+    uint16_t bitsPerSample;
+    char data[4];
+    uint32_t dataSize;
+} FilzaSSHSilentWAVHeader;
+
+static NSData *FilzaSSHSilentAudioData(void)
+{
+    const uint32_t sampleRate = 8000;
+    const uint16_t channels = 1;
+    const uint16_t bits = 16;
+    const uint32_t dataSize = sampleRate * channels * (bits / 8);
+    FilzaSSHSilentWAVHeader header = {0};
+    memcpy(header.riff, "RIFF", 4);
+    header.riffSize = 36 + dataSize;
+    memcpy(header.wave, "WAVE", 4);
+    memcpy(header.fmt, "fmt ", 4);
+    header.fmtSize = 16;
+    header.audioFormat = 1;
+    header.channels = channels;
+    header.sampleRate = sampleRate;
+    header.byteRate = sampleRate * channels * (bits / 8);
+    header.blockAlign = channels * (bits / 8);
+    header.bitsPerSample = bits;
+    memcpy(header.data, "data", 4);
+    header.dataSize = dataSize;
+    NSMutableData *wav = [NSMutableData dataWithBytes:&header length:sizeof(header)];
+    [wav increaseLengthBy:dataSize];
+    return wav;
+}
+
+static BOOL FilzaSSHBackgroundKeepAliveStart(void)
+{
+    if (FilzaSSHKeepAlivePlayer.isPlaying) {
+        atomic_store(&FilzaSSHKeepAliveActive, true);
+        return YES;
+    }
+
+    NSError *error = nil;
+    AVAudioSession *session = AVAudioSession.sharedInstance;
+    if (![session setCategory:AVAudioSessionCategoryPlayback
+                         mode:AVAudioSessionModeDefault
+                      options:AVAudioSessionCategoryOptionMixWithOthers
+                        error:&error] ||
+        ![session setActive:YES error:&error]) {
+        atomic_store(&FilzaSSHKeepAliveActive, false);
+        FilzaDiagnosticsAppend(@"SSH", [NSString stringWithFormat:@"background keepalive audio session failed: %@", error.localizedDescription]);
+        return NO;
+    }
+
+    FilzaSSHKeepAlivePlayer = [[AVAudioPlayer alloc] initWithData:FilzaSSHSilentAudioData() error:&error];
+    FilzaSSHKeepAlivePlayer.numberOfLoops = -1;
+    FilzaSSHKeepAlivePlayer.volume = 0.01f;
+    [FilzaSSHKeepAlivePlayer prepareToPlay];
+    BOOL started = [FilzaSSHKeepAlivePlayer play];
+    atomic_store(&FilzaSSHKeepAliveActive, started);
+    FilzaDiagnosticsAppend(@"SSH", started
+        ? @"silent-audio background keepalive active for wolfSSH"
+        : [NSString stringWithFormat:@"background keepalive player failed: %@", error.localizedDescription ?: @"play returned NO"]);
+    return started;
+}
+
+static void FilzaSSHBackgroundKeepAliveStop(void)
+{
+    [FilzaSSHKeepAlivePlayer stop];
+    FilzaSSHKeepAlivePlayer = nil;
+    atomic_store(&FilzaSSHKeepAliveActive, false);
+    FilzaDiagnosticsAppend(@"SSH", @"wolfSSH background keepalive stopped");
+}
 
 static NSObject *FilzaSSHLock(void)
 {
@@ -87,6 +172,23 @@ static void FilzaSSHInitialize(void)
         FilzaSSHListenerQueue = dispatch_queue_create("com.nightvibes33.filza.wolfssh.listener", DISPATCH_QUEUE_SERIAL);
         dispatch_queue_set_specific(FilzaSSHListenerQueue, FilzaSSHQueueKey, (void *)FilzaSSHQueueKey, NULL);
         FilzaSSHClientQueue = dispatch_queue_create("com.nightvibes33.filza.wolfssh.clients", DISPATCH_QUEUE_CONCURRENT);
+        NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
+        FilzaSSHInterruptionObserver = [center addObserverForName:AVAudioSessionInterruptionNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
+            AVAudioSessionInterruptionType type = [note.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue];
+            if (type == AVAudioSessionInterruptionTypeEnded && atomic_load(&FilzaSSHRunning))
+                dispatch_async(FilzaSSHListenerQueue, ^{ FilzaSSHBackgroundKeepAliveStart(); });
+        }];
+        FilzaSSHForegroundObserver = [center addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:nil usingBlock:^(__unused NSNotification *note) {
+            if (atomic_load(&FilzaSSHRunning))
+                dispatch_async(FilzaSSHListenerQueue, ^{ FilzaSSHBackgroundKeepAliveStart(); });
+        }];
+        FilzaSSHBackgroundObserver = [center addObserverForName:UIApplicationDidEnterBackgroundNotification object:nil queue:nil usingBlock:^(__unused NSNotification *note) {
+            if (atomic_load(&FilzaSSHRunning))
+                dispatch_async(FilzaSSHListenerQueue, ^{
+                    BOOL active = FilzaSSHBackgroundKeepAliveStart();
+                    FilzaDiagnosticsAppend(@"SSH", active ? @"wolfSSH entered background with keepalive active" : @"wolfSSH entered background without keepalive");
+                });
+        }];
         int rc = wolfSSH_Init();
         FilzaDiagnosticsAppend(@"SSH", [NSString stringWithFormat:@"wolfSSH initialized rc=%d backend=wolfSSH SFTP=enabled", rc]);
     });
@@ -533,6 +635,7 @@ BOOL FilzaSSHServerStart(NSError **error)
             [FilzaSSHBonjourService publish];
         }
         FilzaSSHClearFailure();
+        FilzaSSHBackgroundKeepAliveStart();
         NSString *lan = FilzaSSHServerLANAddress() ?: @"0.0.0.0";
         NSString *summary = [NSString stringWithFormat:@"wolfSSH SSH/SFTP server listening address=%@ port=%ld auth=%@ backend=wolfSSH", lan, (long)FilzaSSHConfiguredPort(), FilzaSSHAuthenticationEnabled() ? @"YES" : @"NO"];
         FilzaDiagnosticsAppend(@"SSH", summary);
@@ -550,6 +653,7 @@ void FilzaSSHServerStop(void)
         if (FilzaSSHBonjourService) { [FilzaSSHBonjourService stop]; FilzaSSHBonjourService = nil; }
         if (FilzaSSHAcceptSource) { dispatch_source_cancel(FilzaSSHAcceptSource); FilzaSSHAcceptSource = nil; }
         if (FilzaSSHListenFD >= 0) { close(FilzaSSHListenFD); FilzaSSHListenFD = -1; }
+        FilzaSSHBackgroundKeepAliveStop();
         FilzaDiagnosticsAppend(@"SSH", @"wolfSSH listener stopped");
     });
 }
@@ -577,6 +681,6 @@ NSString *FilzaSSHServerConnectionSummary(void)
     NSString *address = FilzaSSHServerLANAddress() ?: @"iPhone";
     NSInteger port = FilzaSSHConfiguredPort();
     NSString *user = FilzaSSHConfiguredUsername();
-    return [NSString stringWithFormat:@"wolfSSH + SFTP listening\nssh://%@:%ld\nssh %@@%@ -p %ld\nsftp -P %ld %@@%@",
-            address, (long)port, user, address, (long)port, (long)port, user, address];
+    return [NSString stringWithFormat:@"wolfSSH + SFTP listening — background=%@\nSame iPhone: ssh %@@127.0.0.1 -p %ld\nLAN: ssh %@@%@ -p %ld\nSFTP: sftp -P %ld %@@%@",
+            atomic_load(&FilzaSSHKeepAliveActive) ? @"ON" : @"OFF", user, (long)port, user, address, (long)port, (long)port, user, address];
 }
