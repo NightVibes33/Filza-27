@@ -1,0 +1,92 @@
+name: Temporary FilzaSlop upstream sync
+
+on:
+  push:
+    branches:
+      - upstream/filzaslop-2026-08-20
+    paths:
+      - .github/workflows/upstream-filzaslop-sync.yml
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Configure upstream
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote remove filzaslop-upstream 2>/dev/null || true
+          git remote add filzaslop-upstream https://github.com/0xjohnnydev/FilzaSlop.git
+          git fetch --no-tags filzaslop-upstream main
+
+      - name: Port LiveContainer compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA=5458ee7afcdfb2ce6dbb9ad5c4f7a63434920189
+          set +e
+          git cherry-pick --no-commit "$SHA"
+          status=$?
+          set -e
+          # Upstream intentionally removed the legacy kernel source graph here;
+          # Filza 27 must retain its universal iOS 16.1+/Mond/3105 build wiring.
+          git restore --source=HEAD --staged --worktree Makefile || true
+          if (( status != 0 )); then
+            unresolved="$(git diff --name-only --diff-filter=U)"
+            if [[ -n "$unresolved" ]]; then
+              echo "Unresolved LiveContainer conflicts:"
+              printf '%s\n' "$unresolved"
+              git diff --cc || true
+              exit 1
+            fi
+          fi
+          git add MCMFilzaIntegration.h MCMFilzaIntegration.m README.md
+          git commit -C "$SHA"
+          git cherry-pick --quit 2>/dev/null || true
+
+      - name: Port archive and safer deletion
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA=dc10a155beb76efff23fc1fb773c87d73424fd8a
+          set +e
+          git cherry-pick --no-commit "$SHA"
+          status=$?
+          set -e
+          if (( status != 0 )); then
+            unresolved="$(git diff --name-only --diff-filter=U)"
+            if [[ -n "$unresolved" ]]; then
+              echo "Unresolved archive conflicts:"
+              printf '%s\n' "$unresolved"
+              git diff --cc || true
+              exit 1
+            fi
+          fi
+          git add MCMFilzaIntegration.h MCMFilzaIntegration.m README.md Tweak.m
+          git commit -C "$SHA"
+          git cherry-pick --quit 2>/dev/null || true
+
+      - name: Protect downstream integration surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'MCMLaunchServicesStoreIdentifiers' MCMFilzaIntegration.m
+          grep -F 'hook_fileSystemDoEraseSelectedItems' Tweak.m
+          grep -F 'MCMFilzaIsRunningInLiveContainer' MCMFilzaIntegration.m
+          grep -F 'MCMFilzaArchivePath' MCMFilzaIntegration.m
+          grep -F 'sandbox_escape.m' Makefile
+          grep -F 'FilzaMondBridge.m' Makefile
+          grep -F 'Filza3105Bridge.m' Makefile
+          grep -F 'Security' Makefile
+          git diff --check HEAD~2..HEAD
+
+      - name: Push resolved upstream commits
+        run: git push origin HEAD:upstream/filzaslop-2026-08-20
