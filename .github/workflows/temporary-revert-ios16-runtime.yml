@@ -1,0 +1,126 @@
+name: Temporary runtime-only iOS 16 revert
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - .github/workflows/temporary-revert-ios16-runtime.yml
+
+permissions:
+  contents: write
+
+jobs:
+  revert-runtime:
+    runs-on: macos-26-intel
+    steps:
+      - name: Checkout sync branch
+        uses: actions/checkout@v4
+        with:
+          ref: upstream/filzaslop-2026-08-20
+          fetch-depth: 0
+          submodules: false
+
+      - name: Remove iOS 16 runtime and restore modern core
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          rm -f scripts/prepare-ios16-compat.sh scripts/patch-mond-ios16-backport.sh
+          rm -rf MondModern
+          git show 5e4f3eb5685ed9c8695cb3c52f30a3308dc82665:FilzaMondBridge.m > FilzaMondBridge.m
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          p = Path("Makefile")
+          s = p.read_text()
+          s = s.replace(
+              "# Build against the modern iOS SDK because Mond 2.2 and the complete ByeTunes app use\n# modern SwiftUI APIs. Release workflows may lower the deployment target to iOS 16.1\n# after applying the explicit compatibility transforms.\n",
+              "# Filza 27 ships one modern runtime. Mond 2.2, 3105, ByeTunes, WebDAV and SSH\n# are compiled together for iOS 17.0+; no iOS 16 compatibility transform is applied.\n",
+              1,
+          )
+          s = s.replace(
+              "# filenames remain stable so the existing source graph and iOS 16 stripping path\n# do not regress when upstream moves files.\n",
+              "# filenames remain stable so the existing source graph does not regress when\n# upstream moves files.\n",
+              1,
+          )
+          p.write_text(s)
+
+          p = Path("FilzaMondCurrentHost.swift")
+          s = p.read_text()
+          start = s.index("        let ios16Backport = ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 16\n")
+          end_anchor = "        if MondEmbeddedParity.defaults.bool(forKey: \"ka_on\") {\n"
+          end = s.index(end_anchor, start)
+          s = s[:start] + '''        // Mirror Mond 2.2's standalone defaults. The embedded build does\n        // not compile mond.swift, so these defaults must be registered here.\n        MondEmbeddedParity.defaults.register(defaults: [\n            "method": "bad_query",\n            "atomic_write": true\n        ])\n\n''' + s[end:]
+
+          log_start = s.index("        NSLog(\n            \"[Filza/Mond] Mond runtime configured commit=")
+          log_end = s.index("        )\n", log_start) + len("        )\n")
+          s = s[:log_start] + '''        FilzaDiagnosticsAppend(\n            "mond",\n            "Mond runtime configured commit=3d91194716ad5f06afdf7e9037e6964e80a4ac29 version=2.2 embedded-parity=accent+defaults+bundle bundle=\\(MondEmbeddedParity.bundle.bundleIdentifier ?? \"unknown\")"\n        )\n''' + s[log_end:]
+
+          appear_start = s.index("                    let major = ProcessInfo.processInfo.operatingSystemVersion.majorVersion\n")
+          appear_end = s.index("\n                    grant_all(state: state)", appear_start)
+          s = s[:appear_start] + '''                    if !is_supported() {\n                        MondCurrentAlertinator.shared.alert(\n                            title: "Not supported!",\n                            body: "Your iOS version may not be supported by mond.\\nMond only supports iOS 27.0 developer beta 1 - 4."\n                        )\n                    }\n''' + s[appear_end:]
+          p.write_text(s)
+
+          p = Path("scripts/build_release_ipa.sh")
+          s = p.read_text().replace("verified universal Actions IPA", "verified modern Actions IPA")
+          anchor = 'codesign --remove-signature "$APP/Frameworks/FilzaApplySandboxExt.dylib"\n'
+          if anchor not in s:
+              raise SystemExit("release package core anchor missing")
+          s = s.replace(anchor, anchor + 'rm -f "$APP/Frameworks/FilzaMondModern.dylib"\nplutil -replace MinimumOSVersion -string "17.0" "$APP/Info.plist"\n', 1)
+          verify_anchor = 'for resource in meriyah.umd.js astring.umd.js yt_ejs_helper.js; do\n'
+          s = s.replace(verify_anchor, '[[ "$(plutil -extract MinimumOSVersion raw -o - "$APP/Info.plist")" == "17.0" ]] || { echo "unexpected MinimumOSVersion" >&2; exit 70; }\n[[ ! -e "$APP/Frameworks/FilzaMondModern.dylib" ]] || { echo "stale split Mond runtime present" >&2; exit 70; }\n\n' + verify_anchor, 1)
+          p.write_text(s)
+
+          p = Path("README.md")
+          s = p.read_text()
+          if "## Universal iOS 16.1+ architecture" in s and "## What's new" in s:
+              before, rest = s.split("## Universal iOS 16.1+ architecture", 1)
+              _, after = rest.split("## What's new", 1)
+              s = before + '''## Modern iOS 17+ architecture\n\n`Filza-27.ipa` is built as one modern arm64 runtime with a minimum deployment target of **iOS 17.0**. Mond 2.2, 3105 1.1.1, ByeTunes, WebDAV, SSH/SFTP, Gestalt, and the current Filza integration are compiled into the same core dylib. There is no iOS 16 compatibility transform and no separate `FilzaMondModern.dylib`.\n\n''' + "## What's new" + after
+          s = s.replace("### Full Mond 2.2 on iOS 16.1+", "### Full Mond 2.2 on modern iOS")
+          s = s.replace("The **application, core runtime, and Mond 2.2 runtime all build with a minimum deployment target of iOS 16.1**.", "The application and integrated runtime build with a minimum deployment target of **iOS 17.0**.")
+          s = s.replace("The one-IPA universal verifier is:", "The production modern IPA verifier is:")
+          s = s.replace(".github/workflows/verify-single-universal-ipa.yml", ".github/workflows/verify-upstream-byetunes-ssh.yml")
+          s = "\n".join(line for line in s.splitlines() if "iOS 16" not in line and "iOS-16" not in line) + "\n"
+          p.write_text(s)
+
+          p = Path("RELEASE_NOTES.md")
+          s = p.read_text()
+          lines = []
+          for line in s.splitlines():
+              if "iOS 16" in line or "iOS-16" in line:
+                  continue
+              line = line.replace("Universal iOS 16.1+", "Modern iOS 17+")
+              line = line.replace("universal packaging", "modern packaging")
+              line = line.replace("universal runtime", "modern runtime")
+              lines.append(line)
+          s = "\n".join(lines) + "\n"
+          if s.startswith("# Filza 27 —"):
+              first, *rest = s.splitlines()
+              first = "# Filza 27 — Modern iOS 17+ + Mond 2.2 + 3105 1.1.1"
+              s = "\n".join([first] + rest) + "\n"
+          p.write_text(s)
+          PY
+
+          test "$(grep -c 'TARGET := iphone:clang:latest:17.0' Makefile)" -eq 1
+          ! test -e scripts/prepare-ios16-compat.sh
+          ! test -e scripts/patch-mond-ios16-backport.sh
+          ! test -d MondModern
+          ! grep -Fq 'FilzaMondModern.dylib' FilzaMondBridge.m
+          ! grep -Fq 'dlopen' FilzaMondBridge.m
+          grep -Fq 'FilzaEmbeddedPanel {' FilzaMondCurrentHost.swift
+          ! grep -Fq 'ios16Backport' FilzaMondCurrentHost.swift
+          grep -Fq 'MinimumOSVersion -string "17.0"' scripts/build_release_ipa.sh
+
+      - name: Commit runtime revert only
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git add Makefile FilzaMondBridge.m FilzaMondCurrentHost.swift scripts/build_release_ipa.sh README.md RELEASE_NOTES.md
+          git add -A MondModern scripts/prepare-ios16-compat.sh scripts/patch-mond-ios16-backport.sh
+          git status --short
+          git commit -m "Revert iOS 16 runtime support and restore modern core"
+          git push origin HEAD:upstream/filzaslop-2026-08-20
