@@ -39,7 +39,7 @@ git -C "$WORK/wolfssl" checkout --detach "$WOLFSSL_COMMIT"
   cd "$WORK/wolfssl"
   autoreconf -fi
   env CC="$CC" AR="$AR" RANLIB="$RANLIB" \
-      CFLAGS="$COMMON_CFLAGS" CPPFLAGS="-DWOLFSSL_APPLE_NATIVE_CERT_VALIDATION=0" \
+      CFLAGS="$COMMON_CFLAGS" \
       ./configure \
         --host="$HOST" \
         --enable-static --disable-shared \
