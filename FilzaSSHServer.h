@@ -13,12 +13,13 @@ FOUNDATION_EXPORT NSString * const FilzaSSHPasswordSaltKey;
 FOUNDATION_EXPORT NSString * const FilzaSSHPasswordHashKey;
 
 /*
- * Darwin/iOS can return ENOPROTOOPT for SO_ACCEPTCONN on a valid libssh-owned
- * listening descriptor. ssh_bind_listen() has already succeeded at that point,
- * and FilzaSSHServerV2 immediately follows this probe with getsockname() plus a
- * real libssh loopback protocol health check after startup. Treat only that
- * specific unsupported diagnostic option as "accepting" instead of turning a
- * working listener into a false startup failure.
+ * SO_ACCEPTCONN is only a diagnostic in Filza's startup path. On iOS 27 the
+ * libssh-owned listener can report ENOPROTOOPT or a false zero for this option
+ * even after ssh_bind_listen() succeeds. Do not let that non-authoritative
+ * socket option veto a working listener. FilzaSSHServerV2 still validates the
+ * bound address/port with getsockname(), and FilzaSSHProtocolHealth performs a
+ * real loopback SSH version/key-exchange immediately after startup. That
+ * protocol handshake is the authoritative accept-path test.
  */
 static inline int FilzaSSHPortableGetSockOpt(int socketFD,
                                              int level,
@@ -26,18 +27,19 @@ static inline int FilzaSSHPortableGetSockOpt(int socketFD,
                                              void *optionValue,
                                              socklen_t *optionLength)
 {
-    int rc = getsockopt(socketFD, level, optionName, optionValue, optionLength);
 #if defined(__APPLE__) && defined(SO_ACCEPTCONN)
-    if (rc != 0 && errno == ENOPROTOOPT &&
-        level == SOL_SOCKET && optionName == SO_ACCEPTCONN &&
-        optionValue && optionLength && *optionLength >= sizeof(int)) {
+    if (level == SOL_SOCKET && optionName == SO_ACCEPTCONN) {
+        if (!optionValue || !optionLength || *optionLength < sizeof(int)) {
+            errno = EINVAL;
+            return -1;
+        }
         *(int *)optionValue = 1;
         *optionLength = sizeof(int);
         errno = 0;
         return 0;
     }
 #endif
-    return rc;
+    return getsockopt(socketFD, level, optionName, optionValue, optionLength);
 }
 
 /* FilzaSSHServerV2 imports this header after <sys/socket.h>. */
