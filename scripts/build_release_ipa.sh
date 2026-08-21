@@ -74,6 +74,15 @@ rm -rf "$APP/Filza3105.bundle"
 cp -R "$REPO_ROOT/ThirdParty/3105/Resources/Filza3105.bundle" "$APP/Filza3105.bundle"
 bash "$REPO_ROOT/scripts/merge-3105-app-metadata.sh" "$APP/Info.plist"
 
+# The WebDAV and SSH/SFTP runtimes bind to the LAN and optionally publish
+# Bonjour services. Keep standalone/manual release packaging in exact parity
+# with the verified universal Actions IPA so iOS can present Local Network
+# permission and permit both advertised service types.
+plutil -replace NSLocalNetworkUsageDescription -string \
+  "Filza 27 uses your local network when you enable its WebDAV or SSH/SFTP server." \
+  "$APP/Info.plist"
+plutil -replace NSBonjourServices -json '["_http._tcp","_ssh._tcp"]' "$APP/Info.plist"
+
 if [[ -n "$CATALOG" ]]; then
   cp "$CATALOG" "$APP/MCMIdentifiers.plist"
 elif [[ -e "$APP/MCMIdentifiers.plist" ]]; then
@@ -83,6 +92,17 @@ fi
 for resource in meriyah.umd.js astring.umd.js yt_ejs_helper.js; do
   [[ -s "$APP/$resource" ]] || { echo "YouTubeKit app resource missing: $resource" >&2; exit 70; }
 done
+
+NETWORK_DESCRIPTION="$(plutil -extract NSLocalNetworkUsageDescription raw -o - "$APP/Info.plist")"
+[[ "$NETWORK_DESCRIPTION" == *"WebDAV"* && "$NETWORK_DESCRIPTION" == *"SSH/SFTP"* ]] || {
+  echo "local-network usage description missing WebDAV/SSH coverage" >&2
+  exit 70
+}
+BONJOUR_JSON="$(plutil -extract NSBonjourServices json -o - "$APP/Info.plist")"
+[[ "$BONJOUR_JSON" == *'"_http._tcp"'* && "$BONJOUR_JSON" == *'"_ssh._tcp"'* ]] || {
+  echo "required Bonjour service declarations missing" >&2
+  exit 70
+}
 
 if [[ -e "$OUTPUT_IPA" ]]; then
   trash "$OUTPUT_IPA"
