@@ -470,6 +470,15 @@ static int FilzaWolfSSHChannelRequestShell(WOLFSSH_CHANNEL *channel, void *conte
     return WS_SUCCESS;
 }
 
+static int FilzaWolfSSHChannelOpen(WOLFSSH_CHANNEL *channel, void *context)
+{
+    (void)context;
+    word32 channelID = 0;
+    wolfSSH_ChannelGetId(channel, &channelID, WS_CHANNEL_ID_SELF);
+    FilzaDiagnosticsAppend(@"SSH", [NSString stringWithFormat:@"wolfSSH session channel opened channel=%u", channelID]);
+    return WS_SUCCESS;
+}
+
 /* Clauntty probes and deploys rtach with extra exec channels. This jailed
  * server deliberately has no process-spawning shell, so reject exec requests
  * immediately. Clauntty then follows its built-in plain-SSH fallback instead
@@ -575,7 +584,15 @@ static void FilzaWolfSSHServeShell(WOLFSSH *ssh)
         for (WOLFSSH_CHANNEL *channel = wolfSSH_ChannelNext(ssh, NULL), *next = NULL;
              channel != NULL; channel = next) {
             next = wolfSSH_ChannelNext(ssh, channel);
-            if (wolfSSH_ChannelGetSessionType(channel) != WOLFSSH_SESSION_SHELL) continue;
+            WS_SessionType sessionType = wolfSSH_ChannelGetSessionType(channel);
+            if (sessionType == WOLFSSH_SESSION_EXEC) {
+                word32 execChannelID = 0;
+                wolfSSH_ChannelGetId(channel, &execChannelID, WS_CHANNEL_ID_SELF);
+                FilzaDiagnosticsAppend(@"SSH", [NSString stringWithFormat:@"wolfSSH rejected exec channel closed channel=%u", execChannelID]);
+                wolfSSH_ChannelExit(channel);
+                continue;
+            }
+            if (sessionType != WOLFSSH_SESSION_SHELL) continue;
             word32 channelID = 0;
             if (wolfSSH_ChannelGetId(channel, &channelID, WS_CHANNEL_ID_SELF) != WS_SUCCESS) continue;
             NSNumber *key = @(channelID);
@@ -647,6 +664,7 @@ static void FilzaWolfSSHServeClient(int clientFD)
         WOLFSSH_CTX *ctx = wolfSSH_CTX_new(WOLFSSH_ENDPOINT_SERVER, NULL);
         if (!ctx) { FilzaDiagnosticsAppend(@"SSH", @"wolfSSH_CTX_new failed"); close(clientFD); return; }
         wolfSSH_SetUserAuth(ctx, FilzaWolfSSHUserAuth);
+        wolfSSH_CTX_SetChannelOpenCb(ctx, FilzaWolfSSHChannelOpen);
         wolfSSH_CTX_SetChannelReqShellCb(ctx, FilzaWolfSSHChannelRequestShell);
         wolfSSH_CTX_SetChannelReqExecCb(ctx, FilzaWolfSSHChannelRequestExec);
         wolfSSH_CTX_SetBanner(ctx, "Filza 27 wolfSSH server");
