@@ -58,6 +58,7 @@ jobs:
           test -f scripts/build-wolfssh-stack.sh
           grep -Fq 'wolfSSH_accept' FilzaWolfSSHServer.m
           grep -Fq 'wolfSSH_SFTP_read' FilzaWolfSSHServer.m
+          grep -Fq 'silent-audio background keepalive active for wolfSSH' FilzaWolfSSHServer.m
           grep -Fq 'FilzaWolfSSHServer.m' FilzaSSHMetadata.mk
           ! grep -Fq 'FilzaSSHServerV2.m FilzaSSHPreferencesV2.m' FilzaSSHMetadata.mk
           test -f ByeTunesMetadataCompat.swift
@@ -222,6 +223,8 @@ jobs:
           plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
           plutil -replace NSSupportsLiveActivities -bool YES "$APP/Info.plist"
           plutil -replace NSSupportsLiveActivitiesFrequentUpdates -bool YES "$APP/Info.plist"
+          plutil -remove UIBackgroundModes "$APP/Info.plist" 2>/dev/null || true
+          plutil -insert UIBackgroundModes -json '["audio"]' "$APP/Info.plist"
           plutil -replace NSLocalNetworkUsageDescription -string "Filza 27 uses your local network when you enable its WebDAV or SSH/SFTP server." "$APP/Info.plist"
           plutil -replace NSBonjourServices -json '["_http._tcp","_ssh._tcp"]' "$APP/Info.plist"
           bash scripts/merge-3105-app-metadata.sh "$APP/Info.plist"
@@ -233,6 +236,7 @@ jobs:
           fi
 
           test "$(plutil -extract MinimumOSVersion raw -o - "$APP/Info.plist")" = "17.0"
+          plutil -extract UIBackgroundModes json -o - "$APP/Info.plist" | grep -Fq '"audio"'
           test ! -e "$APP/Frameworks/FilzaMondModern.dylib"
           test -s "$APP/Frameworks/FilzaApplySandboxExt.dylib"
           test -s "$APP/MondEmbedded.bundle/Info.plist"
