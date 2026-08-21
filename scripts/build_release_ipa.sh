@@ -63,6 +63,15 @@ fi
 cp "$DYLIB" "$APP/Frameworks/FilzaApplySandboxExt.dylib"
 codesign --remove-signature "$APP/Frameworks/FilzaApplySandboxExt.dylib"
 
+# Upstream FilzaSlop strips Filza/SDK URL handlers from release IPAs so other
+# apps cannot fingerprint this build through canOpenURL:. Keep the downstream
+# runtime integrations intact and remove only the packaged URL declarations.
+plutil -remove CFBundleURLTypes "$APP/Info.plist" 2>/dev/null || true
+if plutil -extract CFBundleURLTypes json -o - "$APP/Info.plist" >/dev/null 2>&1; then
+  echo "CFBundleURLTypes was not stripped from packaged Info.plist" >&2
+  exit 70
+fi
+
 cp "$REPO_ROOT/.theos/byetunes-resources/AppIconImage.png" "$APP/AppIconImage.png"
 cp "$REPO_ROOT/.theos/byetunes-resources/ByeTunes-Info.plist" "$APP/ByeTunes-Info.plist"
 cp "$REPO_ROOT/.theos/byetunes-resources/Config.plist" "$APP/Config.plist"
