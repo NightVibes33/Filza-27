@@ -39,9 +39,9 @@ jobs:
           git cherry-pick --no-commit "$SHA"
           status=$?
           set -e
-          # Upstream intentionally removed the legacy kernel source graph here;
-          # Filza 27 must retain its universal iOS 16.1+/Mond/3105 build wiring.
-          git restore --source=HEAD --staged --worktree Makefile || true
+          # Keep Filza 27's downstream build graph and documentation. The
+          # upstream Objective-C/runtime deltas are allowed to three-way merge.
+          git restore --source=HEAD --staged --worktree Makefile README.md || true
           if (( status != 0 )); then
             unresolved="$(git diff --name-only --diff-filter=U)"
             if [[ -n "$unresolved" ]]; then
@@ -51,7 +51,7 @@ jobs:
               exit 1
             fi
           fi
-          git add MCMFilzaIntegration.h MCMFilzaIntegration.m README.md
+          git add -A
           git commit -C "$SHA"
           git cherry-pick --quit 2>/dev/null || true
 
@@ -64,6 +64,8 @@ jobs:
           git cherry-pick --no-commit "$SHA"
           status=$?
           set -e
+          # Preserve the richer Filza 27 README; runtime files merge separately.
+          git restore --source=HEAD --staged --worktree README.md || true
           if (( status != 0 )); then
             unresolved="$(git diff --name-only --diff-filter=U)"
             if [[ -n "$unresolved" ]]; then
@@ -73,7 +75,7 @@ jobs:
               exit 1
             fi
           fi
-          git add MCMFilzaIntegration.h MCMFilzaIntegration.m README.md Tweak.m
+          git add -A
           git commit -C "$SHA"
           git cherry-pick --quit 2>/dev/null || true
 
