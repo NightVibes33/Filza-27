@@ -30,7 +30,9 @@ rm -rf "$PREFIX"
 mkdir -p "$PREFIX/lib" "$PREFIX/include"
 
 COMMON_CFLAGS="-arch arm64 -isysroot $SDK -miphoneos-version-min=$MIN_IOS -fPIC -O2"
-HOST="arm-apple-darwin"
+# Autoconf's CPU tuple must agree with clang -arch arm64. Using `arm-*` makes
+# wolfSSL select its 32-bit ARM SP assembly even though clang emits arm64.
+HOST="aarch64-apple-darwin"
 
 printf 'Building wolfSSL %s for iOS arm64\n' "$WOLFSSL_COMMIT"
 git clone --filter=blob:none https://github.com/wolfSSL/wolfssl.git "$WORK/wolfssl"
