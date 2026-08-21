@@ -2,7 +2,7 @@
 @import Security;
 @import UIKit;
 
-#import <CommonCrypto/CommonKeyDerivation.h>
+#import <CommonCrypto/CommonCrypto.h>
 #import <arpa/inet.h>
 #import <errno.h>
 #import <fcntl.h>
@@ -16,6 +16,7 @@
 #import <sys/utsname.h>
 #import <unistd.h>
 
+#include <wolfssl/options.h>
 #include <wolfssl/wolfcrypt/asn.h>
 #include <wolfssl/wolfcrypt/ecc.h>
 #include <wolfssl/wolfcrypt/random.h>
