@@ -1,64 +1,62 @@
 @import Foundation;
 @import UIKit;
 
-#import <arpa/inet.h>
-#import <errno.h>
-#import <netinet/in.h>
-#import <sys/socket.h>
-#import <unistd.h>
+#define LIBSSH_STATIC 1
+#import <libssh/libssh.h>
 
 #import "FilzaDiagnostics.h"
 #import "FilzaSSHServer.h"
 
 static BOOL FilzaSSHHealthProbeScheduled = NO;
 
-static BOOL FilzaSSHProbeBanner(NSInteger port, NSString **result)
+// Use libssh as the loopback client instead of a raw banner socket. ssh_connect()
+// completes version exchange and key exchange but does not authenticate, so this
+// proves the embedded server is actually servicing the SSH protocol without
+// needing to retain or recover the user's password.
+static BOOL FilzaSSHProbeProtocol(NSInteger configuredPort, NSString **result)
 {
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) {
-        if (result) *result = [NSString stringWithFormat:@"socket() failed: %s", strerror(errno)];
+    ssh_session client = ssh_new();
+    if (!client) {
+        if (result) *result = @"ssh_new() failed";
         return NO;
     }
 
-    struct timeval timeout = {.tv_sec = 2, .tv_usec = 0};
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+    const char *host = "127.0.0.1";
+    unsigned int port = (unsigned int)configuredPort;
+    long timeout = 2;
+    int verbosity = SSH_LOG_NOLOG;
+    int optionsOK = SSH_OK;
+    if (ssh_options_set(client, SSH_OPTIONS_HOST, host) != SSH_OK) optionsOK = SSH_ERROR;
+    if (ssh_options_set(client, SSH_OPTIONS_PORT, &port) != SSH_OK) optionsOK = SSH_ERROR;
+    if (ssh_options_set(client, SSH_OPTIONS_TIMEOUT, &timeout) != SSH_OK) optionsOK = SSH_ERROR;
+    (void)ssh_options_set(client, SSH_OPTIONS_LOG_VERBOSITY, &verbosity);
 
-    struct sockaddr_in address = {0};
-    address.sin_len = sizeof(address);
-    address.sin_family = AF_INET;
-    address.sin_port = htons((uint16_t)port);
-    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-
-    if (connect(fd, (struct sockaddr *)&address, sizeof(address)) != 0) {
-        int saved = errno;
-        close(fd);
-        if (result) *result = [NSString stringWithFormat:@"loopback connect failed: %s", strerror(saved)];
+    if (optionsOK != SSH_OK) {
+        NSString *message = [NSString stringWithFormat:@"libssh client options failed: %s", ssh_get_error(client) ?: "unknown"];
+        if (result) *result = message;
+        ssh_free(client);
         return NO;
     }
 
-    char banner[512] = {0};
-    ssize_t count = recv(fd, banner, sizeof(banner) - 1, 0);
-    int saved = errno;
-    if (count > 0) {
-        banner[count] = '\0';
-        // Complete identification exchange so libssh can cleanly identify this
-        // as a health probe before we close without entering userauth.
-        const char probeBanner[] = "SSH-2.0-Filza27HealthProbe\r\n";
-        (void)send(fd, probeBanner, sizeof(probeBanner) - 1, 0);
-    }
-    close(fd);
+    int rc = ssh_connect(client);
+    const char *bannerCString = rc == SSH_OK ? ssh_get_serverbanner(client) : NULL;
+    const char *kexCString = rc == SSH_OK ? ssh_get_kex_algo(client) : NULL;
+    NSString *banner = bannerCString ? [NSString stringWithUTF8String:bannerCString] : nil;
+    NSString *kex = kexCString ? [NSString stringWithUTF8String:kexCString] : nil;
 
-    if (count <= 0) {
-        if (result) *result = [NSString stringWithFormat:@"SSH banner missing: %s", strerror(saved)];
-        return NO;
-    }
+    BOOL healthy = rc == SSH_OK &&
+        ([banner hasPrefix:@"SSH-2.0-"] || [banner hasPrefix:@"SSH-1.99-"]) &&
+        kex.length > 0;
 
-    NSString *text = [[NSString alloc] initWithBytes:banner length:(NSUInteger)count encoding:NSUTF8StringEncoding] ?: @"";
-    NSRange newline = [text rangeOfCharacterFromSet:NSCharacterSet.newlineCharacterSet];
-    NSString *line = newline.location == NSNotFound ? text : [text substringToIndex:newline.location];
-    BOOL healthy = [line hasPrefix:@"SSH-2.0-"] || [line hasPrefix:@"SSH-1.99-"];
-    if (result) *result = line.length ? line : @"empty SSH identification";
+    if (healthy) {
+        if (result) *result = [NSString stringWithFormat:@"%@ kex=%@", banner, kex];
+        ssh_disconnect(client);
+    } else {
+        if (result) *result = [NSString stringWithFormat:@"ssh_connect rc=%d error=%s banner=%@ kex=%@",
+                               rc, ssh_get_error(client) ?: "unknown", banner ?: @"none", kex ?: @"none"];
+        if (ssh_is_connected(client)) ssh_disconnect(client);
+    }
+    ssh_free(client);
     return healthy;
 }
 
@@ -72,13 +70,13 @@ static void FilzaSSHScheduleProtocolHealth(NSString *reason)
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.40 * NSEC_PER_SEC)),
                    dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         NSString *probe = nil;
-        BOOL healthy = FilzaSSHProbeBanner(port, &probe);
+        BOOL healthy = FilzaSSHProbeProtocol(port, &probe);
         dispatch_async(dispatch_get_main_queue(), ^{
             FilzaSSHHealthProbeScheduled = NO;
             if (![NSUserDefaults.standardUserDefaults boolForKey:FilzaSSHEnabledKey] || !FilzaSSHServerIsRunning()) return;
 
             if (healthy) {
-                FilzaDiagnosticsAppend(@"SSH", [NSString stringWithFormat:@"protocol self-test passed reason=%@ port=%ld banner=%@",
+                FilzaDiagnosticsAppend(@"SSH", [NSString stringWithFormat:@"protocol self-test passed reason=%@ port=%ld %@",
                                                 reason ?: @"unknown", (long)port, probe ?: @"SSH-2.0"]);
                 return;
             }
