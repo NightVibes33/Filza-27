@@ -16,21 +16,36 @@ A jailed, sideloadable Filza fork combining Filza with app/container management,
 
 ## Modern iOS 17+ architecture
 
-Filza-27 now ships one integrated arm64 runtime for **iOS 17.0+**:
+Filza-27 ships one integrated arm64 runtime for **iOS 17.0+**:
 
 - `Frameworks/FilzaApplySandboxExt.dylib` contains the Filza integration, full pinned Mond 2.2 host, 3105 1.1.1, ByeTunes, WebDAV, SSH/SFTP, Gestalt routing, and runtime hooks.
 - There is **no separate `FilzaMondModern.dylib`** and no iOS 16 compatibility transform.
 - The release packager removes any stale split Mond runtime from the base IPA and asserts `MinimumOSVersion = 17.0`.
-- The latest FilzaSlop packaging hardening strips `CFBundleURLTypes` from the packaged app and fails packaging if URL handlers remain.
+- FilzaSlop packaging hardening strips `CFBundleURLTypes` from the packaged app and fails packaging if URL handlers remain.
+
+## Upstream FilzaSlop sync
+
+Filza-27 is synchronized through **`0xjohnnydev/FilzaSlop@ec490ade64b7755544833248d915e4adfc6f80d6`**. This covers the seven upstream commits GitHub previously reported as missing from this branch history:
+
+- `583fc09` — iOS 26 third-party app discovery through the accessible LaunchServices store.
+- `b7abe0d` — jailed container delete action fixes.
+- `5458ee7` — LiveContainer compatibility.
+- `dc10a15` — archive-first removal and safer deletion.
+- `75228a7` — explicit experimental LiveContainer warning.
+- `faad157` — simplified documented path list.
+- `ec490ad` — release IPA URL-scheme stripping.
+
+Filza-27 keeps its downstream runtime integrations and modern iOS 17+ packaging while retaining those upstream fixes.
 
 ## What's new
 
 ### FilzaSlop upstream runtime updates
 
-- LiveContainer compatibility with guest-specific roots and signed-code identity checks.
-- Archive-first removal flow and safer permanent-delete confirmation for MCM-backed items.
-- Generated-file deletion tracking so intentionally removed generated files stay removed.
-- Release IPA URL-scheme stripping with an explicit packaging assertion.
+- iOS 26 app discovery recovers third-party identifiers from the device-local LaunchServices store and validates them through direct class-2 ContainerManager lookups.
+- LiveContainer compatibility uses guest-specific roots and signed-code identity checks.
+- Archive-first removal and safer permanent-delete confirmation are used for MCM-backed items.
+- Generated-file deletion tracking keeps intentionally removed generated files absent.
+- Release IPA URL schemes are stripped with an explicit packaging assertion.
 
 ### Full Mond 2.2 on the modern runtime
 
@@ -57,6 +72,7 @@ See [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for the release changelog.
 | --- | --- | --- |
 | Filza file browser | ✅ | Visibility still follows actual sandbox/access state |
 | Apps Manager | ✅ 3105 1.1.1 | App/container details depend on available APIs/permissions |
+| iOS 26 app discovery | ✅ | LaunchServices store candidates + direct MCM validation |
 | Shared device pairing | ✅ | Used by ByeTunes/3105 paired features |
 | Enhanced app icons | ✅ where supported | SpringBoardServices with LaunchServices fallback |
 | `.3105` Patch Workspace v2 | ✅ | Portable projects, backup/restore, receipts/journals |
@@ -81,6 +97,32 @@ The application and integrated runtime build with a minimum deployment target of
 UI availability and filesystem-access capability are separate. Mond's `bad_query`, `cmg`, private APIs, 3105 backend paths, and cross-container write paths remain OS/build-specific. Filza-27 validates what access is actually available on the running device rather than treating the UI as proof of unrestricted access.
 
 For iOS 27 research builds, useful `bad_query` behavior is associated with specific builds; do not infer unrestricted access merely because Mond loads.
+
+### Experimental LiveContainer compatibility
+
+> [!WARNING]
+> LiveContainer compatibility is **experimental**. This mode does **not** provide MobileHouseArrest access to App Store apps or other apps installed by iOS. It exposes only guest apps and data stored inside the active LiveContainer environment.
+
+The normal standalone MobileHouseArrest path requires the signed code identity `com.apple.mobile.MobileHouseArrest`. Running Filza-27 as a LiveContainer guest uses the LiveContainer host identity instead, so system app-container access should not be expected in that mode.
+
+## Upstream path coverage
+
+When the current OS/build and active access primitive authorize them, the upstream FilzaSlop integration targets these roots:
+
+```text
+/private/var/mobile/Containers/Data/Application/
+/private/var/mobile/Containers/Shared/AppGroup/
+/private/var/mobile/Containers/Data/PluginKitPlugin/
+/private/var/mobile/Containers/Data/VPNPlugin/
+/private/var/mobile/Containers/Data/InternalDaemon/
+/private/var/mobile/Containers/Data/System/
+/private/var/mobile/Containers/Shared/SystemGroup/
+/private/var/mobile/Containers/Data/Protected/
+/private/var/containers/Shared/SystemGroup/systemgroup.com.apple.mobilegestaltcache/Library/Caches/
+/private/var/containers/Shared/SystemGroup/systemgroup.com.apple.installcoordinationd/Library/InstallCoordination/
+```
+
+These are capability-dependent targets, not a claim that every path is writable or available on every iOS build.
 
 ## Install
 
