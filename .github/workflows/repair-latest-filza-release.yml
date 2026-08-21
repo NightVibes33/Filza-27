@@ -1,56 +1,75 @@
 name: Repair Latest Filza Release
 
 on:
-  push:
-    branches: [ main ]
-    paths:
-      - .github/workflows/repair-latest-filza-release.yml
+  workflow_run:
+    workflows: ["Verify ByeTunes All Sources + YouTube + SSH IPA"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
   actions: read
   contents: write
 
+concurrency:
+  group: publish-green-filza-27
+  cancel-in-progress: false
+
 jobs:
   repair-latest-release:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     steps:
-      - name: Resolve newest green modern IPA run
+      - name: Resolve exact successful verifier run
         id: verified
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          EVENT_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          EVENT_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          EVENT_RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          EVENT_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         shell: bash
         run: |
           set -euo pipefail
-          RUN_JSON="$(gh run list \
-            --repo "$GITHUB_REPOSITORY" \
-            --workflow verify-upstream-byetunes-ssh.yml \
-            --branch main \
-            --status success \
-            --limit 1 \
-            --json databaseId,headSha,headBranch,number,status,conclusion)"
 
-          RUN_ID="$(jq -r '.[0].databaseId // empty' <<<"$RUN_JSON")"
-          RUN_NUMBER="$(jq -r '.[0].number // empty' <<<"$RUN_JSON")"
-          VERIFIED_SHA="$(jq -r '.[0].headSha // empty' <<<"$RUN_JSON")"
-          RUN_BRANCH="$(jq -r '.[0].headBranch // empty' <<<"$RUN_JSON")"
-          RUN_STATUS="$(jq -r '.[0].status // empty' <<<"$RUN_JSON")"
-          RUN_CONCLUSION="$(jq -r '.[0].conclusion // empty' <<<"$RUN_JSON")"
+          if [[ "$EVENT_NAME" == "workflow_run" ]]; then
+            test "$EVENT_RUN_CONCLUSION" = "success"
+            test "$EVENT_RUN_BRANCH" = "main"
+            RUN_ID="$EVENT_RUN_ID"
+            RUN_NUMBER="$EVENT_RUN_NUMBER"
+            VERIFIED_SHA="$EVENT_RUN_SHA"
+          else
+            RUN_JSON="$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow verify-upstream-byetunes-ssh.yml \
+              --branch main \
+              --status success \
+              --limit 1 \
+              --json databaseId,headSha,headBranch,number,status,conclusion)"
+            RUN_ID="$(jq -r '.[0].databaseId // empty' <<<"$RUN_JSON")"
+            RUN_NUMBER="$(jq -r '.[0].number // empty' <<<"$RUN_JSON")"
+            VERIFIED_SHA="$(jq -r '.[0].headSha // empty' <<<"$RUN_JSON")"
+            RUN_BRANCH="$(jq -r '.[0].headBranch // empty' <<<"$RUN_JSON")"
+            RUN_STATUS="$(jq -r '.[0].status // empty' <<<"$RUN_JSON")"
+            RUN_CONCLUSION="$(jq -r '.[0].conclusion // empty' <<<"$RUN_JSON")"
+            test "$RUN_BRANCH" = "main"
+            test "$RUN_STATUS" = "completed"
+            test "$RUN_CONCLUSION" = "success"
+          fi
 
           test -n "$RUN_ID"
           test -n "$RUN_NUMBER"
           test -n "$VERIFIED_SHA"
-          test "$RUN_BRANCH" = "main"
-          test "$RUN_STATUS" = "completed"
-          test "$RUN_CONCLUSION" = "success"
-
-          # filza-27-269 is the stale release this repair is replacing.
           test "$RUN_NUMBER" -gt 269
 
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
           echo "run_number=$RUN_NUMBER" >> "$GITHUB_OUTPUT"
           echo "sha=$VERIFIED_SHA" >> "$GITHUB_OUTPUT"
-          echo "Repairing latest release from green run $RUN_ID (#$RUN_NUMBER), commit $VERIFIED_SHA"
+          echo "Publishing exact successful verifier run $RUN_ID (#$RUN_NUMBER), commit $VERIFIED_SHA"
 
       - name: Checkout exact green commit
         uses: actions/checkout@v4
@@ -77,6 +96,7 @@ jobs:
           SOURCE_IPA="$(find verified-modern -type f -name '*.ipa' -print -quit)"
           test -n "$SOURCE_IPA"
           test -s "$SOURCE_IPA"
+
           mkdir -p release
           cp "$SOURCE_IPA" release/Filza-27.ipa
           unzip -tq release/Filza-27.ipa
@@ -97,9 +117,10 @@ jobs:
               raise SystemExit("CFBundleURLTypes unexpectedly present")
           PY
           rm -f "$APP_PLIST"
+
           sha256sum release/Filza-27.ipa | tee release/Filza-27-SHA256.txt
 
-      - name: Publish and force Latest to green Filza release
+      - name: Publish exact green IPA and force Latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_NUMBER: ${{ steps.verified.outputs.run_number }}
@@ -114,10 +135,28 @@ jobs:
             printf '\n---\n\n### Verified build metadata\n\n'
             printf -- '- Modern verifier run: `%s`\n' "$RUN_NUMBER"
             printf -- '- Commit: `%s`\n' "$VERIFIED_SHA"
-            printf -- '- This release replaces stale `filza-27-269` as Latest.\n'
+            printf -- '- Exact verifier artifact: `Filza-27-modern-unsigned-arm64`\n'
+            printf -- '- Minimum iOS: `17.0`\n'
+            printf -- '- Mond 2.2 + 3105 + ByeTunes + WebDAV + SSH/SFTP are included by the verifier contract.\n'
           } >> "$NOTES"
 
+          verify_tag_target() {
+            local ref_json object_type object_sha tag_json
+            ref_json="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG")"
+            object_type="$(jq -r '.object.type' <<<"$ref_json")"
+            object_sha="$(jq -r '.object.sha' <<<"$ref_json")"
+            for _ in 1 2 3 4; do
+              [[ "$object_type" != "tag" ]] && break
+              tag_json="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha")"
+              object_type="$(jq -r '.object.type' <<<"$tag_json")"
+              object_sha="$(jq -r '.object.sha' <<<"$tag_json")"
+            done
+            test "$object_type" = "commit"
+            test "$object_sha" = "$VERIFIED_SHA"
+          }
+
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            verify_tag_target
             gh release upload "$TAG" release/Filza-27.ipa release/Filza-27-SHA256.txt \
               --clobber --repo "$GITHUB_REPOSITORY"
             gh release edit "$TAG" \
@@ -132,12 +171,13 @@ jobs:
               --title "Filza 27 — Modern iOS 17+ + Mond 2.2" \
               --notes-file "$NOTES" \
               --latest
+            verify_tag_target
           fi
 
           LATEST_JSON="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest")"
           test "$(jq -r '.tag_name' <<<"$LATEST_JSON")" = "$TAG"
-          test "$(jq -r '.target_commitish' <<<"$LATEST_JSON")" = "$VERIFIED_SHA"
           for asset in Filza-27.ipa Filza-27-SHA256.txt; do
             test "$(jq -r --arg name "$asset" '.assets[] | select(.name == $name) | .name' <<<"$LATEST_JSON")" = "$asset"
           done
-          echo "Latest is now $TAG at $VERIFIED_SHA"
+          verify_tag_target
+          echo "Latest is now $TAG at exact verified commit $VERIFIED_SHA"
