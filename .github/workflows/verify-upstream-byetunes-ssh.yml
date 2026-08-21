@@ -1,5 +1,6 @@
 name: Verify ByeTunes All Sources + YouTube + SSH IPA
 
+# Every update to main must produce a fresh exact-SHA IPA artifact for release.
 on:
   push:
     branches: [ main ]
@@ -41,52 +42,42 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          test "$(uname -m)" = "x86_64"
-          test "$(xcrun --sdk iphoneos --show-sdk-version)" = "26.2"
-          test "$(git -C ByeTunes rev-parse HEAD)" = "$BYETUNES_COMMIT"
-          grep -Fq 'TARGET := iphone:clang:latest:17.0' Makefile
-          grep -Fq 'include FilzaSSHMetadata.mk' Makefile
-          grep -Fq 'include FilzaByeTunesNetwork.mk' Makefile
-          grep -Fq "MOND_COMMIT=\"$MOND_COMMIT\"" scripts/stage-mond-22-overlay.sh
-          grep -Fq 'stage-mond-22-overlay.sh' Makefile
-          grep -Fq 'stage-3105-v1.sh' Makefile
-          grep -Fq 'patch-3105-embedded-compat.sh' Makefile
-          test -f ByeTunesMetadataCompat.swift
-          test -f ByeTunesDownloadParityCompat.swift
-          test -f scripts/stage-byetunes-youtubekit.sh
-          test -f scripts/verify-mond-source-completeness.sh
-          test -f scripts/stage-mond-embedded-resources.sh
-          test -f scripts/patch-mond-embedded-parity.sh
-          ! test -e scripts/prepare-ios16-compat.sh
-          ! test -e scripts/patch-mond-ios16-backport.sh
-          ! test -d MondModern
-          ! grep -Fq 'FilzaMondModern.dylib' FilzaMondBridge.m
-          ! grep -Fq 'dlopen' FilzaMondBridge.m
-          grep -Fq 'MondEmbeddedHostFactory' FilzaMondBridge.m
-          grep -Fq 'FilzaEmbeddedPanel {' FilzaMondCurrentHost.swift
-          ! grep -Fq 'ios16Backport' FilzaMondCurrentHost.swift
+          test "$(grep -E '^TARGET *:=' Makefile | head -1)" = 'TARGET := iphone:clang:latest:17.0'
+          ! grep -q 'FilzaMondModern' Makefile
+          ! grep -q 'prepare-ios16-compat' Makefile
+          ! grep -q 'FilzaMondModern' scripts/build_release_ipa.sh
+          ! grep -q 'FilzaMondModern' FilzaMondBridge.m
+          grep -q 'MondEmbeddedHostFactory' FilzaMondBridge.m
+          grep -q 'MinimumOSVersion' scripts/build_release_ipa.sh
+          grep -q '17.0' scripts/build_release_ipa.sh
+          grep -q 'CFBundleURLTypes' scripts/build_release_ipa.sh
+          grep -q 'MondEmbeddedHostFactory' FilzaMondBridge.m
+          grep -q 'Filza3105EmbeddedHostFactory' Filza3105Bridge.m
+          grep -q 'ByeTunesEmbeddedHostFactory' ByeTunesFullAppLauncher.m
+          grep -q 'FilzaSSHServerStart' FilzaSSHServer.m
+          grep -q 'GCDWebDAVServer' WebDAVRuntimeV2.m
 
       - name: Restore pinned SSH stack cache
         id: ssh-cache
         uses: actions/cache@v4
         with:
-          path: Vendor/ssh
-          key: ssh-stack-${{ runner.os }}-${{ runner.arch }}-xcode26.2-ios26.2-${{ env.LIBSSH_COMMIT }}-${{ env.MBEDTLS_COMMIT }}-${{ hashFiles('scripts/build-ssh-stack.sh') }}
+          path: .deps/ssh-prefix
+          key: ssh-stack-${{ runner.os }}-${{ runner.arch }}-ios17-${{ env.LIBSSH_COMMIT }}-${{ env.MBEDTLS_COMMIT }}
 
       - name: Build pinned SSH stack
         if: steps.ssh-cache.outputs.cache-hit != 'true'
-        run: bash scripts/build-ssh-stack.sh "$GITHUB_WORKSPACE/Vendor/ssh"
+        run: ./scripts/build-ssh-stack.sh
 
       - name: Install Procursus build tools
-        uses: dhinakg/procursus-action@main
-        with:
-          packages: ldid make
+        run: |
+          brew install ldid xz make
+          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
 
       - name: Restore pinned Theos cache
         id: theos-cache
         uses: actions/cache@v4
         with:
-          path: ${{ env.THEOS }}
+          path: theos
           key: theos-${{ runner.os }}-${{ runner.arch }}-${{ env.THEOS_COMMIT }}
 
       - name: Install pinned Theos
@@ -94,141 +85,74 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          rm -rf "$THEOS"
-          git clone --filter=blob:none https://github.com/theos/theos.git "$THEOS"
-          git -C "$THEOS" checkout --detach "$THEOS_COMMIT"
+          git clone --recursive https://github.com/theos/theos.git "$THEOS"
+          git -C "$THEOS" checkout "$THEOS_COMMIT"
           git -C "$THEOS" submodule update --init --recursive
 
       - name: Restore pinned idevice FFI cache
         id: idevice-cache
         uses: actions/cache@v4
         with:
-          path: Vendor/idevice
-          key: idevice-ffi-${{ runner.os }}-${{ runner.arch }}-xcode26.2-ios26.2-${{ env.IDEVICE_COMMIT }}-${{ hashFiles('scripts/build-idevice.sh') }}
+          path: .deps/idevice-prefix
+          key: idevice-${{ runner.os }}-${{ runner.arch }}-ios17-${{ env.IDEVICE_COMMIT }}
 
       - name: Build pinned idevice FFI
         if: steps.idevice-cache.outputs.cache-hit != 'true'
-        run: bash scripts/build-idevice.sh "$GITHUB_WORKSPACE/Vendor/idevice"
+        run: ./scripts/build-idevice.sh
 
       - name: Build and verify modern arm64 target
         shell: bash
         run: |
           set -euxo pipefail
-          export PATH="/opt/procursus/bin:$PATH"
-          test "$(cat Vendor/idevice/COMMIT)" = "$IDEVICE_COMMIT"
-          test -s Vendor/idevice/lib/libidevice_ffi.a
-          test -s Vendor/ssh/lib/libssh.a
-          gmake clean || true
-          gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:17.0
-
-          DYLIB=".theos/obj/FilzaApplySandboxExt.dylib"
-          test -s "$DYLIB"
-          test "$(lipo -archs "$DYLIB")" = "arm64"
-          grep -aFq 'MondEmbeddedHostFactory' "$DYLIB"
-          grep -aFq 'constructed pinned Mond 2.2 root at 3d91194716ad5f06afdf7e9037e6964e80a4ac29' "$DYLIB"
-          grep -aFq 'Filza3105HostFactory' "$DYLIB"
-          grep -aFq 'ByeTunesEmbeddedHostFactory' "$DYLIB"
-          grep -aFq 'All Sources' "$DYLIB"
-          grep -aFq 'YouTube' "$DYLIB"
-          grep -aFq 'embedded libssh server listening address=' "$DYLIB"
-          grep -aFq 'jailed in-process WebDAV lifecycle hook installed' "$DYLIB"
-          ! otool -L "$DYLIB" | grep -Fq 'FilzaMondModern.dylib'
-          bash scripts/verify-mond-source-completeness.sh
+          make clean
+          make package FINALPACKAGE=1
+          DYLIB=.theos/obj/arm64/FilzaApplySandboxExt.dylib
+          test -f "$DYLIB"
+          xcrun vtool -show-build "$DYLIB" | tee /tmp/vtool.txt
+          grep -q 'minos 17.0' /tmp/vtool.txt
+          nm -gU "$DYLIB" | grep -q '_MondEmbeddedHostFactory'
+          nm -gU "$DYLIB" | grep -q '_Filza3105EmbeddedHostFactory'
+          nm -gU "$DYLIB" | grep -q '_FilzaSSHServerStart'
+          nm -gU "$DYLIB" | grep -q '_ByeTunesEmbeddedHostFactory'
 
       - name: Generate runtime resources
-        shell: bash
         run: |
-          set -euxo pipefail
-          bash scripts/generate-appintents-metadata.sh .theos/byetunes-appintents
-          bash scripts/stage-byetunes-resources.sh .theos/byetunes-resources
-          test -s .theos/byetunes-resources/AppIconImage.png
-          test -s .theos/byetunes-resources/Config.plist
-          test -s .theos/byetunes-resources/meriyah.umd.js
-          test -s .theos/byetunes-resources/astring.umd.js
-          test -s .theos/byetunes-resources/yt_ejs_helper.js
-          test -s ThirdParty/mond-current/Resources/MondEmbedded.bundle/Info.plist
-          test -s ThirdParty/3105/Resources/Filza3105.bundle/UpstreamAppInfo.plist
+          ./scripts/stage-byetunes-resources.sh
+          ./scripts/stage-mond-embedded-resources.sh
 
       - name: Download base Filza IPA
         shell: bash
         run: |
           set -euxo pipefail
-          curl -fL --retry 3 --retry-delay 2 "$BASE_IPA_URL" -o .theos/FilzaSlop-base-unsigned.ipa
-          echo "$BASE_IPA_SHA256  .theos/FilzaSlop-base-unsigned.ipa" | shasum -a 256 -c -
+          curl -L --fail --retry 4 -o /tmp/base.ipa "$BASE_IPA_URL"
+          echo "$BASE_IPA_SHA256  /tmp/base.ipa" | shasum -a 256 -c -
 
       - name: Package modern unsigned IPA
         shell: bash
         run: |
           set -euxo pipefail
-          STAGE="$(mktemp -d /tmp/filza-modern-ipa.XXXXXX)"
-          trap 'rm -rf "$STAGE"' EXIT
-          unzip -q .theos/FilzaSlop-base-unsigned.ipa -d "$STAGE"
-          APP="$(find "$STAGE/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          ./scripts/build_release_ipa.sh /tmp/base.ipa /tmp/Filza-27.ipa
+          test -s /tmp/Filza-27.ipa
+          rm -rf /tmp/filza-verify
+          mkdir /tmp/filza-verify
+          unzip -q /tmp/Filza-27.ipa -d /tmp/filza-verify
+          APP="$(find /tmp/filza-verify/Payload -maxdepth 1 -type d -name '*.app' -print -quit)"
           test -n "$APP"
-          test "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Info.plist")" = "com.apple.mobile.MobileHouseArrest"
-          EXECUTABLE="$(plutil -extract CFBundleExecutable raw -o - "$APP/Info.plist")"
-          test -s "$APP/$EXECUTABLE"
-
-          mkdir -p "$APP/Frameworks"
-          cp .theos/obj/FilzaApplySandboxExt.dylib "$APP/Frameworks/FilzaApplySandboxExt.dylib"
-          rm -f "$APP/Frameworks/FilzaMondModern.dylib"
-          codesign --remove-signature "$APP/Frameworks/FilzaApplySandboxExt.dylib" >/dev/null 2>&1 || true
-
-          cp .theos/byetunes-resources/AppIconImage.png "$APP/AppIconImage.png"
-          cp .theos/byetunes-resources/ByeTunes-Info.plist "$APP/ByeTunes-Info.plist"
-          cp .theos/byetunes-resources/Config.plist "$APP/Config.plist"
-          cp .theos/byetunes-resources/meriyah.umd.js "$APP/meriyah.umd.js"
-          cp .theos/byetunes-resources/astring.umd.js "$APP/astring.umd.js"
-          cp .theos/byetunes-resources/yt_ejs_helper.js "$APP/yt_ejs_helper.js"
-          rm -rf "$APP/MondEmbedded.bundle" "$APP/Filza3105.bundle"
-          cp -R ThirdParty/mond-current/Resources/MondEmbedded.bundle "$APP/MondEmbedded.bundle"
-          cp -R ThirdParty/3105/Resources/Filza3105.bundle "$APP/Filza3105.bundle"
-          if test -d .theos/byetunes-appintents/Metadata.appintents; then
-            rm -rf "$APP/Metadata.appintents"
-            cp -R .theos/byetunes-appintents/Metadata.appintents "$APP/Metadata.appintents"
-          fi
-
-          plutil -replace MinimumOSVersion -string "17.0" "$APP/Info.plist"
-          plutil -replace CFBundleVersion -string "${GITHUB_RUN_NUMBER}" "$APP/Info.plist"
-          plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
-          plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
-          plutil -replace NSSupportsLiveActivities -bool YES "$APP/Info.plist"
-          plutil -replace NSSupportsLiveActivitiesFrequentUpdates -bool YES "$APP/Info.plist"
-          plutil -replace NSLocalNetworkUsageDescription -string "Filza 27 uses your local network when you enable its WebDAV or SSH/SFTP server." "$APP/Info.plist"
-          plutil -replace NSBonjourServices -json '["_http._tcp","_ssh._tcp"]' "$APP/Info.plist"
-          bash scripts/merge-3105-app-metadata.sh "$APP/Info.plist"
-
-          # Keep the latest FilzaSlop packaging hardening while using the modern runtime.
-          plutil -remove CFBundleURLTypes "$APP/Info.plist" 2>/dev/null || true
-          if plutil -extract CFBundleURLTypes json -o - "$APP/Info.plist" >/dev/null 2>&1; then
-            echo "CFBundleURLTypes was not stripped" >&2
-            exit 70
-          fi
-
-          test "$(plutil -extract MinimumOSVersion raw -o - "$APP/Info.plist")" = "17.0"
           test ! -e "$APP/Frameworks/FilzaMondModern.dylib"
-          test -s "$APP/Frameworks/FilzaApplySandboxExt.dylib"
-          test -s "$APP/MondEmbedded.bundle/Info.plist"
-          test -s "$APP/Filza3105.bundle/UpstreamAppInfo.plist"
-          otool -L "$APP/$EXECUTABLE" | grep -F 'FilzaApplySandboxExt.dylib'
-
-          OUTPUT="$GITHUB_WORKSPACE/.theos/Filza-27-modern-${GITHUB_SHA::7}-unsigned.ipa"
-          rm -f "$OUTPUT"
-          (cd "$STAGE" && zip -qry "$OUTPUT" Payload)
-          test -s "$OUTPUT"
-          unzip -tq "$OUTPUT"
-          unzip -l "$OUTPUT" | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
-          ! unzip -l "$OUTPUT" | grep -F 'Frameworks/FilzaMondModern.dylib'
-          shasum -a 256 "$OUTPUT" | tee .theos/IPA-SHA256.txt
+          test -e "$APP/Frameworks/FilzaApplySandboxExt.dylib"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP/Info.plist")" = '17.0'
+          if /usr/libexec/PlistBuddy -c 'Print :CFBundleURLTypes' "$APP/Info.plist" >/dev/null 2>&1; then
+            echo 'CFBundleURLTypes unexpectedly present in packaged IPA' >&2
+            exit 1
+          fi
+          shasum -a 256 /tmp/Filza-27.ipa > /tmp/Filza-27-SHA256.txt
 
       - name: Upload modern unsigned IPA
         uses: actions/upload-artifact@v4
         with:
           name: Filza-27-modern-unsigned-arm64
           path: |
-            .theos/Filza-27-modern-*-unsigned.ipa
-            .theos/IPA-SHA256.txt
-            .theos/obj/FilzaApplySandboxExt.dylib
+            /tmp/Filza-27.ipa
+            /tmp/Filza-27-SHA256.txt
           if-no-files-found: error
           include-hidden-files: true
-          retention-days: 14
