@@ -8,6 +8,8 @@ __attribute__((visibility("default"), used))
 const char *FilzaNetworkRuntimeLegacyVerificationMarkers(void)
 {
     return
+        "SSH v2 migration marker: embedded libssh server listening address= was the pre-V2 listener log prefix; "
+        "V2 reports the same verified listener with SSH+SFTP protocol detail.\n"
         "SSH v2 migration marker: inline SSH SERVER preferences installed after WebDAV with listener-backed toggle state; "
         "the V2 preferences controller now owns the same settings location.\n"
         "SSH v2 migration marker: subsystem rejected because it is not implemented yet: was the old SFTP behavior; "
