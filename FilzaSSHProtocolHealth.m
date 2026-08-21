@@ -60,31 +60,33 @@ static BOOL FilzaSSHProbeProtocol(NSInteger configuredPort, NSString **result)
     return healthy;
 }
 
-static void FilzaSSHScheduleProtocolHealth(NSString *reason)
+void FilzaSSHProtocolHealthSchedule(NSString *reason)
 {
-    if (FilzaSSHHealthProbeScheduled) return;
-    if (![NSUserDefaults.standardUserDefaults boolForKey:FilzaSSHEnabledKey] || !FilzaSSHServerIsRunning()) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (FilzaSSHHealthProbeScheduled) return;
+        if (![NSUserDefaults.standardUserDefaults boolForKey:FilzaSSHEnabledKey] || !FilzaSSHServerIsRunning()) return;
 
-    FilzaSSHHealthProbeScheduled = YES;
-    NSInteger port = FilzaSSHConfiguredPort();
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.40 * NSEC_PER_SEC)),
-                   dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-        NSString *probe = nil;
-        BOOL healthy = FilzaSSHProbeProtocol(port, &probe);
-        dispatch_async(dispatch_get_main_queue(), ^{
-            FilzaSSHHealthProbeScheduled = NO;
-            if (![NSUserDefaults.standardUserDefaults boolForKey:FilzaSSHEnabledKey] || !FilzaSSHServerIsRunning()) return;
+        FilzaSSHHealthProbeScheduled = YES;
+        NSInteger port = FilzaSSHConfiguredPort();
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.40 * NSEC_PER_SEC)),
+                       dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            NSString *probe = nil;
+            BOOL healthy = FilzaSSHProbeProtocol(port, &probe);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                FilzaSSHHealthProbeScheduled = NO;
+                if (![NSUserDefaults.standardUserDefaults boolForKey:FilzaSSHEnabledKey] || !FilzaSSHServerIsRunning()) return;
 
-            if (healthy) {
-                FilzaDiagnosticsAppend(@"SSH", [NSString stringWithFormat:@"protocol self-test passed reason=%@ port=%ld %@",
-                                                reason ?: @"unknown", (long)port, probe ?: @"SSH-2.0"]);
-                return;
-            }
+                if (healthy) {
+                    FilzaDiagnosticsAppend(@"SSH", [NSString stringWithFormat:@"protocol self-test passed reason=%@ port=%ld %@",
+                                                    reason ?: @"unknown", (long)port, probe ?: @"SSH-2.0"]);
+                    return;
+                }
 
-            FilzaDiagnosticsAppend(@"SSH", [NSString stringWithFormat:@"protocol self-test FAILED reason=%@ port=%ld result=%@; stopping listener",
-                                            reason ?: @"unknown", (long)port, probe ?: @"unknown"]);
-            [NSUserDefaults.standardUserDefaults setBool:NO forKey:FilzaSSHEnabledKey];
-            FilzaSSHServerStop();
+                FilzaDiagnosticsAppend(@"SSH", [NSString stringWithFormat:@"protocol self-test FAILED reason=%@ port=%ld result=%@; stopping listener",
+                                                reason ?: @"unknown", (long)port, probe ?: @"unknown"]);
+                [NSUserDefaults.standardUserDefaults setBool:NO forKey:FilzaSSHEnabledKey];
+                FilzaSSHServerStop();
+            });
         });
     });
 }
@@ -93,19 +95,13 @@ __attribute__((constructor)) static void FilzaSSHProtocolHealthInit(void)
 {
     @autoreleasepool {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [NSNotificationCenter.defaultCenter addObserverForName:NSUserDefaultsDidChangeNotification
-                                                            object:NSUserDefaults.standardUserDefaults
-                                                             queue:NSOperationQueue.mainQueue
-                                                        usingBlock:^(__unused NSNotification *note) {
-                FilzaSSHScheduleProtocolHealth(@"preferences changed");
-            }];
             [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification
                                                             object:nil
                                                              queue:NSOperationQueue.mainQueue
                                                         usingBlock:^(__unused NSNotification *note) {
-                FilzaSSHScheduleProtocolHealth(@"application active");
+                FilzaSSHProtocolHealthSchedule(@"application active");
             }];
-            FilzaSSHScheduleProtocolHealth(@"runtime initialized");
+            FilzaSSHProtocolHealthSchedule(@"runtime initialized");
         });
     }
 }
