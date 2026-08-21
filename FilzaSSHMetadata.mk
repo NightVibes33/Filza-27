@@ -11,7 +11,7 @@ SSH_MBEDCRYPTO := $(SSH_VENDOR)/lib/libmbedcrypto.a
 
 FilzaApplySandboxExt_FILES := $(filter-out WebDAVRuntimeFix.m,$(FilzaApplySandboxExt_FILES))
 FilzaApplySandboxExt_FILES += WebDAVRuntimeV2.m NetworkRuntimeVerificationMarkers.m
-FilzaApplySandboxExt_FILES += FilzaSSHServerV2.m FilzaSSHPreferencesV2.m FilzaSSHPublicAccess.m
+FilzaApplySandboxExt_FILES += FilzaSSHServerV2.m FilzaSSHPreferencesV2.m FilzaSSHProtocolHealth.m FilzaSSHPublicAccess.m
 # libssh's public sftp.h hides its server declarations behind WITH_SERVER;
 # these are consumer-side declaration guards, separate from the CMake options
 # already used when the pinned static library itself is built.
@@ -22,6 +22,7 @@ before-FilzaApplySandboxExt-all::
 	@test -f "FilzaSSHServer.h" || (echo "Missing FilzaSSHServer.h" >&2; exit 1)
 	@test -f "FilzaSSHServerV2.m" || (echo "Missing FilzaSSHServerV2.m" >&2; exit 1)
 	@test -f "FilzaSSHPreferencesV2.m" || (echo "Missing FilzaSSHPreferencesV2.m" >&2; exit 1)
+	@test -f "FilzaSSHProtocolHealth.m" || (echo "Missing SSH protocol health probe" >&2; exit 1)
 	@test -f "WebDAVRuntimeV2.m" || (echo "Missing WebDAVRuntimeV2.m" >&2; exit 1)
 	@test -f "NetworkRuntimeVerificationMarkers.m" || (echo "Missing network runtime migration markers" >&2; exit 1)
 	@test -f "FilzaSSHPublicAccess.m" || (echo "Missing FilzaSSHPublicAccess.m" >&2; exit 1)
@@ -29,7 +30,10 @@ before-FilzaApplySandboxExt-all::
 	@test -f "$(SSH_VENDOR)/include/libssh/sftpserver.h" || (echo "Missing libssh SFTP server headers" >&2; exit 1)
 	@grep -Fq 'sftp_channel_default_subsystem_request' FilzaSSHServerV2.m
 	@grep -Fq 'sftp_channel_default_data_callback' FilzaSSHServerV2.m
+	@grep -Fq '&context->sftp' FilzaSSHServerV2.m
 	@grep -Fq 'SO_ACCEPTCONN' FilzaSSHServerV2.m
+	@grep -Fq 'SSH-2.0-' FilzaSSHProtocolHealth.m
+	@grep -Fq 'protocol self-test passed' FilzaSSHProtocolHealth.m
 	@grep -Fq 'PROPFIND / HTTP/1.1' WebDAVRuntimeV2.m
 	@grep -Fq 'GCDWebServerOption_BindToLocalhost: @NO' WebDAVRuntimeV2.m
 	@grep -Fq 'NAT-PMP (RFC 6886)' FilzaSSHPublicAccess.m
