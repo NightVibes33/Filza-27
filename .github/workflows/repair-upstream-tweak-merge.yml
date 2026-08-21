@@ -1,0 +1,88 @@
+name: Temporary repair upstream Tweak merge
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/repair-upstream-tweak-merge.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'upstream/filzaslop-2026-08-20'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: upstream/filzaslop-2026-08-20
+          fetch-depth: 0
+          submodules: false
+
+      - name: Restore downstream Tweak and reapply compatible upstream delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote remove filzaslop-upstream 2>/dev/null || true
+          git remote add filzaslop-upstream https://github.com/0xjohnnydev/FilzaSlop.git
+          git fetch --no-tags filzaslop-upstream main
+
+          # Start from the exact current Filza 27 Tweak so the downstream
+          # iOS 18.5 kernel path and its headers/gating remain intact.
+          git restore --source=origin/main --staged --worktree Tweak.m
+
+          # Apply only the archive/safer-deletion Tweak delta from upstream.
+          git show --format= --binary dc10a155beb76efff23fc1fb773c87d73424fd8a -- Tweak.m > /tmp/archive-tweak.patch
+          git apply --3way --index /tmp/archive-tweak.patch
+
+          # LiveContainer needs to avoid starting PosterBoard/probes as a guest,
+          # but it does not require removing the exact-target kernel path.
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('Tweak.m')
+          text = path.read_text()
+          old = '''static void runMCMPath(void) {
+              MCMFilzaStart();
+              PBWallpaperFeatureStart();
+          '''
+          new = '''static void runMCMPath(void) {
+              MCMFilzaStart();
+              if (MCMFilzaIsRunningInLiveContainer()) return;
+              PBWallpaperFeatureStart();
+          '''
+          if new not in text:
+              if old not in text:
+                  raise SystemExit('runMCMPath anchor changed')
+              text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+
+          git add Tweak.m
+
+      - name: Verify no downstream regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F '#include <sys/sysctl.h>' Tweak.m
+          grep -F '#include "kexploit/kexploit_opa334.h"' Tweak.m
+          grep -F '#include "kexploit/kutils.h"' Tweak.m
+          grep -F '#include "sandbox_escape.h"' Tweak.m
+          grep -F 'static BOOL isExactIOS185Target(void)' Tweak.m
+          grep -F 'static void runIOS185KernelPath(void)' Tweak.m
+          grep -F 'if (isExactIOS185Target()) {' Tweak.m
+          grep -F 'if (MCMFilzaIsRunningInLiveContainer()) return;' Tweak.m
+          grep -F 'archiveSelectedItems' Tweak.m
+          grep -F 'MCMFilzaRecordDeletedGeneratedPath' Tweak.m
+          grep -F 'hook_fileSystemDoTrashSelectedItems' Tweak.m
+          git diff --cached --check
+
+      - name: Commit and push repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git commit -m "Preserve Filza 27 kernel path during upstream sync"
+          git push origin HEAD:upstream/filzaslop-2026-08-20
