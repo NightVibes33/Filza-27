@@ -60,6 +60,7 @@ jobs:
           grep -Fq 'if (ssh->channelListSz >= 1)' scripts/wolfssh-allow-multiple-session-channels.patch
           grep -Fq 'wolfSSH_CTX_SetChannelOpenCb' FilzaWolfSSHServer.m
           grep -Fq 'wolfSSH rejected exec channel closed' FilzaWolfSSHServer.m
+          grep -Fq 'consumed stale close acknowledgement after local channel exit' FilzaWolfSSHServer.m
           grep -Fq 'wolfSSH_accept' FilzaWolfSSHServer.m
           grep -Fq 'wolfSSH_SFTP_read' FilzaWolfSSHServer.m
           grep -Fq 'silent-audio background keepalive active for wolfSSH' FilzaWolfSSHServer.m
