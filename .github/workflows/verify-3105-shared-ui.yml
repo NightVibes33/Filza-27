@@ -13,12 +13,51 @@ concurrency:
 
 jobs:
   source-contract:
-    runs-on: macos-26-intel
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout complete source tree
         uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - name: Provide plutil compatibility for source staging
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p "$RUNNER_TEMP/filza-tools"
+          cat > "$RUNNER_TEMP/filza-tools/plutil" <<'PY'
+          #!/usr/bin/env python3
+          import plistlib
+          import sys
+
+          args = sys.argv[1:]
+          try:
+              if len(args) == 2 and args[0] == "-lint":
+                  with open(args[1], "rb") as f:
+                      plistlib.load(f)
+                  print(f"{args[1]}: OK")
+                  raise SystemExit(0)
+
+              if len(args) == 6 and args[0] == "-extract" and args[2] == "raw" and args[3] == "-o" and args[4] == "-":
+                  key, path = args[1], args[5]
+                  with open(path, "rb") as f:
+                      value = plistlib.load(f)[key]
+                  if isinstance(value, bool):
+                      print("true" if value else "false")
+                  elif isinstance(value, (str, int, float)):
+                      print(value)
+                  else:
+                      raise TypeError(f"raw extraction unsupported for {type(value).__name__}")
+                  raise SystemExit(0)
+          except Exception as exc:
+              print(f"plutil compatibility error: {exc}", file=sys.stderr)
+              raise SystemExit(1)
+
+          print("unsupported plutil compatibility invocation: " + " ".join(args), file=sys.stderr)
+          raise SystemExit(2)
+          PY
+          chmod +x "$RUNNER_TEMP/filza-tools/plutil"
+          echo "$RUNNER_TEMP/filza-tools" >> "$GITHUB_PATH"
 
       - name: Verify pinned 3105 1.1.1 integration
         shell: bash
