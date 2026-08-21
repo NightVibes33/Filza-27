@@ -46,6 +46,7 @@ git -C "$WORK/wolfssl" checkout --detach "$WOLFSSL_COMMIT"
         --host="$HOST" \
         --enable-static --disable-shared \
         --enable-wolfssh --enable-keygen \
+        --enable-harden \
         --disable-examples
   make -j"$JOBS" src/libwolfssl.la
 )
