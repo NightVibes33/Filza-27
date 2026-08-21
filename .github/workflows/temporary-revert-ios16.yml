@@ -1,0 +1,312 @@
+name: Temporary revert iOS 16 support
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - .github/workflows/temporary-revert-ios16.yml
+
+permissions:
+  contents: write
+
+jobs:
+  revert-ios16:
+    runs-on: macos-26-intel
+    steps:
+      - name: Checkout sync branch
+        uses: actions/checkout@v4
+        with:
+          ref: upstream/filzaslop-2026-08-20
+          fetch-depth: 0
+          submodules: false
+
+      - name: Restore modern iOS runtime
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Remove the iOS 16-only/split-runtime build surface.
+          rm -f .github/workflows/verify-ios16-support.yml
+          rm -f .github/workflows/verify-single-universal-ipa.yml
+          rm -f scripts/prepare-ios16-compat.sh
+          rm -f scripts/patch-mond-ios16-backport.sh
+          rm -rf MondModern
+
+          # Restore the pre-universal Mond bridge: Mond is compiled directly into
+          # the modern core instead of lazy-loading a second 16.1 dylib.
+          git show 5e4f3eb5685ed9c8695cb3c52f30a3308dc82665:FilzaMondBridge.m > FilzaMondBridge.m
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          # Main build stays modern and must not advertise a deployment-target transform.
+          p = Path("Makefile")
+          s = p.read_text()
+          s = s.replace(
+              "# Build against the modern iOS SDK because Mond 2.2 and the complete ByeTunes app use\n# modern SwiftUI APIs. Release workflows may lower the deployment target to iOS 16.1\n# after applying the explicit compatibility transforms.\n",
+              "# Filza 27 ships one modern runtime. Mond 2.2, 3105, ByeTunes, WebDAV and SSH\n# are compiled together for iOS 17.0+; no iOS 16 compatibility transform is applied.\n",
+              1,
+          )
+          s = s.replace(
+              "# filenames remain stable so the existing source graph and iOS 16 stripping path\n# do not regress when upstream moves files.\n",
+              "# filenames remain stable so the existing source graph does not regress when\n# upstream moves files.\n",
+              1,
+          )
+          p.write_text(s)
+
+          # Remove the runtime behavior added solely for the iOS 16 Mond backport,
+          # while preserving the later shared FilzaEmbeddedPanel presentation.
+          p = Path("FilzaMondCurrentHost.swift")
+          s = p.read_text()
+          start = s.index("        let ios16Backport = ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 16\n")
+          end_anchor = "        if MondEmbeddedParity.defaults.bool(forKey: \"ka_on\") {\n"
+          end = s.index(end_anchor, start)
+          modern_defaults = '''        // Mirror Mond 2.2's standalone defaults. The embedded build does\n        // not compile mond.swift, so these defaults must be registered here.\n        MondEmbeddedParity.defaults.register(defaults: [\n            "method": "bad_query",\n            "atomic_write": true\n        ])\n\n'''
+          s = s[:start] + modern_defaults + s[end:]
+
+          log_start = s.index("        NSLog(\n            \"[Filza/Mond] Mond runtime configured commit=")
+          log_end = s.index("        )\n", log_start) + len("        )\n")
+          modern_log = '''        FilzaDiagnosticsAppend(\n            "mond",\n            "Mond runtime configured commit=3d91194716ad5f06afdf7e9037e6964e80a4ac29 version=2.2 embedded-parity=accent+defaults+bundle bundle=\\(MondEmbeddedParity.bundle.bundleIdentifier ?? \"unknown\")"\n        )\n'''
+          s = s[:log_start] + modern_log + s[log_end:]
+
+          appear_start = s.index("                    let major = ProcessInfo.processInfo.operatingSystemVersion.majorVersion\n")
+          appear_end = s.index("\n                    grant_all(state: state)", appear_start)
+          modern_appear = '''                    if !is_supported() {\n                        MondCurrentAlertinator.shared.alert(\n                            title: "Not supported!",\n                            body: "Your iOS version may not be supported by mond.\\nMond only supports iOS 27.0 developer beta 1 - 4."\n                        )\n                    }\n'''
+          s = s[:appear_start] + modern_appear + s[appear_end:]
+          p.write_text(s)
+
+          # Full-feature CI is now the production modern verifier.
+          p = Path(".github/workflows/verify-upstream-byetunes-ssh.yml")
+          s = p.read_text()
+          s = s.replace("          test -f scripts/prepare-ios16-compat.sh\n", "", 1)
+          anchor = "          test -f scripts/patch-mond-embedded-parity.sh\n"
+          guard = (
+              anchor
+              + "          ! test -e scripts/prepare-ios16-compat.sh\n"
+              + "          ! test -e scripts/patch-mond-ios16-backport.sh\n"
+              + "          ! test -d MondModern\n"
+              + "          ! grep -Fq 'FilzaMondModern.dylib' FilzaMondBridge.m\n"
+              + "          ! grep -Fq 'dlopen' FilzaMondBridge.m\n"
+          )
+          if anchor not in s:
+              raise SystemExit("modern verifier anchor missing")
+          s = s.replace(anchor, guard, 1)
+          p.write_text(s)
+
+          # 3105/shared-panel verification must validate the direct modern Mond host,
+          # not the removed split universal module.
+          p = Path(".github/workflows/verify-3105-shared-ui.yml")
+          s = p.read_text()
+          s = s.replace("    branches: [ main, mond-ios16-full ]", "    branches: [ main ]", 1)
+          s = s.replace("          grep -Fq 'SHARED_PANEL := $(ROOT)/ThirdParty/3105/Sources/FilzaEmbeddedPanel.swift' MondModern/Makefile\n", "", 1)
+          old = '''          # Mond remains a separately lazy-loaded module so iOS 16 core linking\n          # does not become coupled to the embedded Mond implementation.\n          grep -Fq 'Frameworks/FilzaMondModern.dylib' FilzaMondBridge.m\n          grep -Fq 'dlopen' FilzaMondBridge.m\n'''
+          new = '''          # Mond is compiled directly into the modern iOS 17+ core.\n          ! test -d MondModern\n          ! grep -Fq 'FilzaMondModern.dylib' FilzaMondBridge.m\n          ! grep -Fq 'dlopen' FilzaMondBridge.m\n          grep -Fq 'MondEmbeddedHostFactory' FilzaMondBridge.m\n'''
+          if old not in s:
+              raise SystemExit("3105 split-runtime contract anchor missing")
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          # Manual release packaging also enforces the modern deployment floor and
+          # removes any stale split-runtime dylib from the base bundle.
+          p = Path("scripts/build_release_ipa.sh")
+          s = p.read_text()
+          s = s.replace("verified universal Actions IPA", "verified modern Actions IPA")
+          anchor = 'codesign --remove-signature "$APP/Frameworks/FilzaApplySandboxExt.dylib"\n'
+          replacement = anchor + 'rm -f "$APP/Frameworks/FilzaMondModern.dylib"\nplutil -replace MinimumOSVersion -string "17.0" "$APP/Info.plist"\n'
+          if anchor not in s:
+              raise SystemExit("release package core anchor missing")
+          s = s.replace(anchor, replacement, 1)
+          verify_anchor = 'for resource in meriyah.umd.js astring.umd.js yt_ejs_helper.js; do\n'
+          s = s.replace(
+              verify_anchor,
+              '[[ "$(plutil -extract MinimumOSVersion raw -o - "$APP/Info.plist")" == "17.0" ]] || { echo "unexpected MinimumOSVersion" >&2; exit 70; }\n[[ ! -e "$APP/Frameworks/FilzaMondModern.dylib" ]] || { echo "stale split Mond runtime present" >&2; exit 70; }\n\n' + verify_anchor,
+              1,
+          )
+          p.write_text(s)
+
+          # Current user-facing docs should describe the supported modern build.
+          p = Path("README.md")
+          s = p.read_text()
+          if "## Universal iOS 16.1+ architecture" in s and "## What's new" in s:
+              before, rest = s.split("## Universal iOS 16.1+ architecture", 1)
+              _, after = rest.split("## What's new", 1)
+              s = before + '''## Modern iOS 17+ architecture\n\n`Filza-27.ipa` is built as one modern arm64 runtime with a minimum deployment target of **iOS 17.0**. Mond 2.2, 3105 1.1.1, ByeTunes, WebDAV, SSH/SFTP, Gestalt, and the current Filza integration are compiled into the same core dylib. There is no iOS 16 compatibility transform and no separate `FilzaMondModern.dylib`.\n\n''' + "## What's new" + after
+          s = s.replace("### Full Mond 2.2 on iOS 16.1+", "### Full Mond 2.2 on modern iOS")
+          s = s.replace("The **application, core runtime, and Mond 2.2 runtime all build with a minimum deployment target of iOS 16.1**.", "The application and integrated runtime build with a minimum deployment target of **iOS 17.0**.")
+          s = s.replace("The one-IPA universal verifier is:", "The production modern IPA verifier is:")
+          s = s.replace(".github/workflows/verify-single-universal-ipa.yml", ".github/workflows/verify-upstream-byetunes-ssh.yml")
+          # Remove remaining current-support claims for iOS 16; historical source pins remain in git history.
+          s = "\n".join(line for line in s.splitlines() if "iOS 16" not in line and "iOS-16" not in line) + "\n"
+          p.write_text(s)
+
+          p = Path("RELEASE_NOTES.md")
+          s = p.read_text()
+          lines = []
+          for line in s.splitlines():
+              if "iOS 16" in line or "iOS-16" in line:
+                  continue
+              line = line.replace("Universal iOS 16.1+", "Modern iOS 17+")
+              line = line.replace("universal packaging", "modern packaging")
+              line = line.replace("universal runtime", "modern runtime")
+              lines.append(line)
+          s = "\n".join(lines) + "\n"
+          if s.startswith("# Filza 27 —"):
+              first, *rest = s.splitlines()
+              first = "# Filza 27 — Modern iOS 17+ + Mond 2.2 + 3105 1.1.1"
+              s = "\n".join([first] + rest) + "\n"
+          p.write_text(s)
+          PY
+
+          cat > .github/workflows/publish-green-ipa-release.yml <<'YAML'
+          name: Publish Green Filza 27 IPA
+
+          on:
+            push:
+              branches: [ main ]
+
+          permissions:
+            actions: read
+            contents: write
+
+          concurrency:
+            group: publish-green-filza-27
+            cancel-in-progress: true
+
+          jobs:
+            release:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Checkout release metadata
+                  uses: actions/checkout@v4
+
+                - name: Wait for exact-SHA modern IPA build
+                  id: modern
+                  env:
+                    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    for attempt in $(seq 1 90); do
+                      RUN_JSON="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow verify-upstream-byetunes-ssh.yml --commit "$GITHUB_SHA" --limit 1 --json databaseId,status,conclusion,headSha,number 2>/dev/null || true)"
+                      RUN_ID="$(jq -r '.[0].databaseId // empty' <<<"$RUN_JSON")"
+                      if [[ -z "$RUN_ID" ]]; then sleep 10; continue; fi
+                      RUN_STATUS="$(jq -r '.[0].status // empty' <<<"$RUN_JSON")"
+                      RUN_CONCLUSION="$(jq -r '.[0].conclusion // empty' <<<"$RUN_JSON")"
+                      RUN_SHA="$(jq -r '.[0].headSha // empty' <<<"$RUN_JSON")"
+                      RUN_NUMBER="$(jq -r '.[0].number // empty' <<<"$RUN_JSON")"
+                      test "$RUN_SHA" = "$GITHUB_SHA"
+                      if [[ "$RUN_STATUS" != "completed" ]]; then sleep 10; continue; fi
+                      test "$RUN_CONCLUSION" = "success" || { echo "Refusing release: modern build $RUN_ID concluded $RUN_CONCLUSION."; exit 1; }
+                      echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+                      echo "run_number=$RUN_NUMBER" >> "$GITHUB_OUTPUT"
+                      exit 0
+                    done
+                    echo "Timed out waiting for modern IPA verification."
+                    exit 1
+
+                - name: Download exact modern artifact
+                  env:
+                    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                    MODERN_RUN_ID: ${{ steps.modern.outputs.run_id }}
+                  shell: bash
+                  run: |
+                    set -euxo pipefail
+                    gh run download "$MODERN_RUN_ID" --repo "$GITHUB_REPOSITORY" --name FilzaSlop-ByeTunes-All-YouTube-SSH-unsigned-arm64 --dir verified-modern
+
+                - name: Verify release IPA
+                  shell: bash
+                  run: |
+                    set -euxo pipefail
+                    SOURCE_IPA="$(find verified-modern -type f -name '*.ipa' -print -quit)"
+                    test -n "$SOURCE_IPA"
+                    test -s "$SOURCE_IPA"
+                    mkdir -p release
+                    cp "$SOURCE_IPA" release/Filza-27.ipa
+                    unzip -tq release/Filza-27.ipa
+                    unzip -l release/Filza-27.ipa | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
+                    unzip -l release/Filza-27.ipa | grep -F 'MondEmbedded.bundle/Info.plist'
+                    unzip -l release/Filza-27.ipa | grep -F 'Filza3105.bundle/UpstreamAppInfo.plist'
+                    ! unzip -l release/Filza-27.ipa | grep -F 'Frameworks/FilzaMondModern.dylib'
+                    APP_PLIST="$(mktemp)"
+                    unzip -p release/Filza-27.ipa 'Payload/*.app/Info.plist' > "$APP_PLIST"
+                    python3 - "$APP_PLIST" <<'PY'
+                    import plistlib, sys
+                    with open(sys.argv[1], "rb") as f:
+                        info = plistlib.load(f)
+                    if info.get("MinimumOSVersion") != "17.0":
+                        raise SystemExit(f"unexpected MinimumOSVersion: {info.get('MinimumOSVersion')!r}")
+                    PY
+                    rm -f "$APP_PLIST"
+                    sha256sum release/Filza-27.ipa | tee release/Filza-27-SHA256.txt
+
+                - name: Build release notes
+                  env:
+                    MODERN_RUN_ID: ${{ steps.modern.outputs.run_id }}
+                    MODERN_RUN_NUMBER: ${{ steps.modern.outputs.run_number }}
+                    VERIFIED_SHA: ${{ github.sha }}
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    test -s RELEASE_NOTES.md
+                    cp RELEASE_NOTES.md release/RELEASE_NOTES.md
+                    {
+                      printf '\n---\n\n### Verified build metadata\n\n'
+                      printf -- '- Modern full-feature workflow run: `%s` (#%s)\n' "$MODERN_RUN_ID" "$MODERN_RUN_NUMBER"
+                      printf -- '- Commit: `%s`\n' "$VERIFIED_SHA"
+                      printf -- '- `Filza-27.ipa`: integrated arm64 build, minimum iOS 17.0\n'
+                      printf -- '- Mond 2.2 is compiled directly into `FilzaApplySandboxExt.dylib`\n'
+                      printf -- '- No iOS 16 compatibility transform or split Mond runtime is packaged\n'
+                      printf -- '- Checksum: `Filza-27-SHA256.txt`\n'
+                    } >> release/RELEASE_NOTES.md
+
+                - name: Publish GitHub Release
+                  env:
+                    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                    MODERN_RUN_NUMBER: ${{ steps.modern.outputs.run_number }}
+                    VERIFIED_SHA: ${{ github.sha }}
+                  shell: bash
+                  run: |
+                    set -euxo pipefail
+                    TAG="filza-27-${MODERN_RUN_NUMBER}"
+                    ASSETS=(release/Filza-27.ipa release/Filza-27-SHA256.txt)
+                    if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+                      gh release delete-asset "$TAG" Filza-27-iOS16.ipa --yes --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || true
+                      gh release delete-asset "$TAG" Filza-27-iOS16-SHA256.txt --yes --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || true
+                      gh release upload "$TAG" "${ASSETS[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+                      gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "Filza 27 — Modern iOS 17+ + Mond 2.2" --notes-file release/RELEASE_NOTES.md --latest
+                    else
+                      gh release create "$TAG" "${ASSETS[@]}" --repo "$GITHUB_REPOSITORY" --target "$VERIFIED_SHA" --title "Filza 27 — Modern iOS 17+ + Mond 2.2" --notes-file release/RELEASE_NOTES.md --latest
+                    fi
+                    FINAL_JSON="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
+                    for asset in Filza-27.ipa Filza-27-SHA256.txt; do
+                      test "$(jq -r --arg name "$asset" '.assets[] | select(.name == $name) | .name' <<<"$FINAL_JSON")" = "$asset"
+                    done
+                    test "$(jq -r '.target_commitish' <<<"$FINAL_JSON")" = "$VERIFIED_SHA"
+                    echo "Release $TAG verified for exact SHA $VERIFIED_SHA with the modern iOS 17+ runtime"
+          YAML
+
+          # Guardrails: modern deployment only, no split/runtime compatibility artifacts.
+          test "$(grep -c 'TARGET := iphone:clang:latest:17.0' Makefile)" -eq 1
+          ! test -e .github/workflows/verify-ios16-support.yml
+          ! test -e .github/workflows/verify-single-universal-ipa.yml
+          ! test -e scripts/prepare-ios16-compat.sh
+          ! test -e scripts/patch-mond-ios16-backport.sh
+          ! test -d MondModern
+          ! grep -Fq 'FilzaMondModern.dylib' FilzaMondBridge.m
+          ! grep -Fq 'dlopen' FilzaMondBridge.m
+          grep -Fq 'FilzaEmbeddedPanel {' FilzaMondCurrentHost.swift
+          ! grep -Fq 'ios16Backport' FilzaMondCurrentHost.swift
+          ! grep -Fq 'iOS 16 compatibility mode' FilzaMondCurrentHost.swift
+          grep -Fq 'MinimumOSVersion -string "17.0"' scripts/build_release_ipa.sh
+          grep -Fq 'TARGET=iphone:clang:latest:17.0' .github/workflows/verify-upstream-byetunes-ssh.yml
+
+      - name: Commit modern runtime revert
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git add -A
+          git status --short
+          git commit -m "Revert iOS 16 support and restore modern runtime"
+          git push origin HEAD:upstream/filzaslop-2026-08-20
