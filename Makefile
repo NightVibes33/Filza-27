@@ -1,6 +1,5 @@
-# Build against the modern iOS SDK because Mond 2.2 and the complete ByeTunes app use
-# modern SwiftUI APIs. Release workflows may lower the deployment target to iOS 16.1
-# after applying the explicit compatibility transforms.
+# Filza 27 ships one modern runtime. Mond 2.2, 3105, ByeTunes, WebDAV and SSH
+# are compiled together for iOS 17.0+; no iOS 16 compatibility transform is applied.
 TARGET := iphone:clang:latest:17.0
 ARCHS = arm64
 
@@ -44,8 +43,8 @@ THREEONE_SWIFT_FILES := $(shell find $(THREEONE_ROOT)/Sources -type f -name '*.s
 
 # Mond 2.2 is staged as the exact current upstream tree, then mechanically
 # namespaced so it can coexist in Filza's Swift module. The legacy generated
-# filenames remain stable so the existing source graph and iOS 16 stripping path
-# do not regress when upstream moves files.
+# filenames remain stable so the existing source graph does not regress when
+# upstream moves files.
 MOND_SWIFT_FILES := \
     $(MOND_GEN)/Mond/exploit_cmg.swift \
     $(MOND_GEN)/Mond/exploit_unsbx.swift \

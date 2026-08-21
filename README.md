@@ -8,38 +8,25 @@ A jailed, sideloadable Filza fork combining Filza with app/container management,
 
 ### [Download the latest `Filza-27.ipa`](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza-27.ipa)
 
-- One IPA for **iOS 16.1+**.
 - Checksum: [`Filza-27-SHA256.txt`](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza-27-SHA256.txt)
 - Every public release is produced from an exact-SHA green GitHub Actions build on `main`.
 
-The release pipeline publishes **one IPA**, not separate modern and iOS 16 packages.
 
 > **This is not a full jailbreak.** Filza-27 exposes only files and containers the app can actually access. It does not claim kernel read/write, unrestricted `/`, a root shell, an SPTM bypass, or a writable system volume.
 
-## Universal iOS 16.1+ architecture
+## Modern iOS 17+ architecture
 
-`Filza-27.ipa` has `MinimumOSVersion = 16.1` and contains two runtime layers in the same app bundle:
-
-- `Frameworks/FilzaApplySandboxExt.dylib` — iOS **16.1+** core containing Filza integration, 3105, ByeTunes, SSH, WebDAV, native Gestalt fallback, and runtime routing.
-- `Frameworks/FilzaMondModern.dylib` — full pinned **Mond 2.2**, backported and compiled for iOS **16.1+**.
-
-The core does not link the Mond module eagerly. When Mond is requested, the bridge lazy-loads `FilzaMondModern.dylib` from the app's Frameworks directory. If the Mond host cannot load, Filza falls back to the native Gestalt Manager.
-
-The Mond compatibility stage preserves the upstream feature flow while replacing iOS-17-only SwiftUI/state conveniences with iOS-16-compatible equivalents. PosterBoard selects descriptor store **59 on iOS 16** and **61 on iOS 17+**.
 
 ## What's new
 
-### Full Mond 2.2 on iOS 16.1+
+### Full Mond 2.2 on modern iOS
 
 - Mond pinned to `rooootdev/mond@3d91194716ad5f06afdf7e9037e6964e80a4ac29`.
-- Full Mond 2.2 navigation and shared `AppState` lifecycle available from iOS 16.1+.
 - **CacheExtra Fields** editor included.
 - **Persist after reboot** and **Ignore exploit failure** settings included.
 - **MobileGestalt**, **PosterBoard / Tendies**, and **HouseArrest / Santander** routes included.
 - **Run Exploit** and **Generate Token** retain the upstream Mond flow.
 - Tendies `Observation/@Observable` state is backported to Combine `ObservableObject/@Published`.
-- iOS-17-only empty-state, toolbar-placement, and two-value `onChange` APIs are replaced with iOS-16 equivalents in the generated embedded copy.
-- PosterBoard descriptor-store routing is runtime-correct for iOS 16 vs iOS 17+.
 - Current MobileGestalt persistence and iOS 27 region-key behavior from the pinned upstream revision are retained.
 
 ### 3105 1.1.1 + unified third-party presentation
@@ -59,7 +46,6 @@ See [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for the release changelog.
 
 ## Included features
 
-| Feature | iOS 16.1+ | Notes |
 | --- | --- | --- |
 | Filza file browser | ✅ | Actual filesystem visibility still follows sandbox/access state |
 | Apps Manager | ✅ 3105 1.1.1 | App/container details depend on available APIs/permissions |
@@ -71,7 +57,6 @@ See [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for the release changelog.
 | YouTube metadata provider | ✅ | Required solver resources packaged |
 | Mond 2.2 UI/runtime | ✅ | Mond dylib itself has minOS 16.1 |
 | MobileGestalt editor | ✅ | Mond route; native Gestalt remains fallback |
-| CacheExtra Fields | ✅ | iOS-16-compatible UI backport |
 | PosterBoard | ✅ | Store 59 on iOS16, 61 on iOS17+ |
 | Tendies browser/download/import | ✅ | Applying requires writable PosterBoard access |
 | HouseArrest / Santander | ✅ | Direct access first; exploit-backed grants remain version-specific |
@@ -83,11 +68,10 @@ See [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for the release changelog.
 
 ## Compatibility
 
-The **application, core runtime, and Mond 2.2 runtime all build with a minimum deployment target of iOS 16.1**.
+The application and integrated runtime build with a minimum deployment target of **iOS 17.0**.
 
 That does not mean every access primitive works on every OS version. Mond's `bad_query`, `cmg`, private APIs, 3105 backend paths, and cross-container write paths remain OS/build-specific. Filza-27 keeps the UI/runtime portable while validating what access is actually available on the running device.
 
-For iOS 16, the PosterBoard format/path compatibility is handled by using descriptor store `59`. For iOS 17 and newer, Mond uses store `61`.
 
 For iOS 27 research builds, useful `bad_query` behavior is associated with specific builds; do not infer unrestricted access merely because Mond loads. Exact access varies by device/build.
 
@@ -135,7 +119,6 @@ The normal presented ByeTunes route uses the same `FilzaEmbeddedPanel` as 3105. 
 
 ### Mond 2.2 / Gestalt / PosterBoard
 
-Mond is staged from the exact pinned upstream revision. Only the generated embedded copy receives the host and iOS-16 compatibility adaptations required to run inside Filza; the upstream snapshot remains unchanged.
 
 Available Mond routes include:
 
@@ -156,7 +139,6 @@ The MobileGestalt cache used by the editor is:
 /private/var/containers/Shared/SystemGroup/systemgroup.com.apple.mobilegestaltcache/Library/Caches/com.apple.MobileGestalt.plist
 ```
 
-On iOS 16.1+, the Mond host is attempted normally. Native Gestalt is used only if the Mond host cannot be loaded. The presented Mond root uses the same `FilzaEmbeddedPanel` and page-sheet dismissal contract as 3105.
 
 ## Shared third-party UI contract
 
@@ -196,17 +178,14 @@ The full feature verifier is:
 .github/workflows/verify-upstream-byetunes-ssh.yml
 ```
 
-The one-IPA universal verifier is:
+The production modern IPA verifier is:
 
 ```text
-.github/workflows/verify-single-universal-ipa.yml
+.github/workflows/verify-upstream-byetunes-ssh.yml
 ```
 
-It builds Mond 2.2 with deployment target **16.1**, builds the iOS 16.1-compatible core containing the staged 3105 1.1.1 integration and ByeTunes, packages both runtime layers into the **same IPA**, and verifies that the app/core do not eagerly link the Mond module.
 
-CI verifies both Mach-O deployment targets, the iOS-16 generated-source backport, expected symbols/resources, PosterBoard 59/61 routing, and final IPA structure. The 3105 staging script independently verifies the exact 1.1.1 metadata and embedding contracts before compilation.
 
-The supplemental iOS 16 workflow verifies the core graph as a diagnostic build only; it no longer publishes a second IPA.
 
 After the exact-SHA universal and full-feature verifiers succeed, the release workflow publishes only:
 
@@ -218,7 +197,6 @@ Filza-27-SHA256.txt
 ## Current limitations
 
 - A green Actions build proves compilation, linking, deployment targets, packaging, and artifact verification; it cannot prove every private API behaves identically on every device/build.
-- Mond loading on iOS 16.1+ does not make an exploit-backed filesystem grant universal across iOS versions.
 - PosterBoard/Tendies application requires writable access to the required PosterBoard data location.
 - `/System/Library` can be readable while remaining on iOS's signed read-only system volume.
 - Access to an App Group or data container does not imply access to the entire filesystem.

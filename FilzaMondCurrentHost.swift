@@ -97,20 +97,11 @@ private enum MondEmbeddedRuntime {
             dup2(pipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
         }
 
-        let ios16Backport = ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 16
-
-        // Mirror Mond 2.2's standalone defaults. On iOS 16, keep the full UI
-        // navigable even when an exploit-backed grant is unavailable so native
-        // file permissions/direct access can still be used by compatible routes.
+        // Mirror Mond 2.2's standalone defaults. The embedded build does
+        // not compile mond.swift, so these defaults must be registered here.
         MondEmbeddedParity.defaults.register(defaults: [
             "method": "bad_query",
-            "atomic_write": true,
-            "ignore_failure": ios16Backport
-        ])
-        UserDefaults.standard.register(defaults: [
-            "method": "bad_query",
-            "atomic_write": true,
-            "ignore_failure": ios16Backport
+            "atomic_write": true
         ])
 
         if MondEmbeddedParity.defaults.bool(forKey: "ka_on") {
@@ -119,10 +110,9 @@ private enum MondEmbeddedRuntime {
 
         installDocumentPickerCompatibility()
 
-        NSLog(
-            "[Filza/Mond] Mond runtime configured commit=3d91194716ad5f06afdf7e9037e6964e80a4ac29 version=2.2 ios16-backport=%@ bundle=%@ embedded-parity=accent+defaults+bundle",
-            ios16Backport ? "yes" : "no",
-            MondEmbeddedParity.bundle.bundleIdentifier ?? "unknown"
+        FilzaDiagnosticsAppend(
+            "mond",
+            "Mond runtime configured commit=3d91194716ad5f06afdf7e9037e6964e80a4ac29 version=2.2 embedded-parity=accent+defaults+bundle bundle=\(MondEmbeddedParity.bundle.bundleIdentifier ?? "unknown")"
         )
     }
 
@@ -172,13 +162,10 @@ private struct MondEmbeddedRoot: View {
                     state.append_poster_file(url)
                 }
                 .onAppear {
-                    let major = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
-                    if major == 16 {
-                        print("(mond) iOS 16 compatibility mode active: MobileGestalt, PosterBoard/Tendies and CacheExtra UI enabled")
-                    } else if !is_supported() {
+                    if !is_supported() {
                         MondCurrentAlertinator.shared.alert(
-                            title: "Exploit backend may be unsupported",
-                            body: "Mond's interface can still open, but exploit-backed filesystem access is version-specific and may not be available on this iOS build."
+                            title: "Not supported!",
+                            body: "Your iOS version may not be supported by mond.\nMond only supports iOS 27.0 developer beta 1 - 4."
                         )
                     }
 
