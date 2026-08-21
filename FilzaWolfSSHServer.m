@@ -1,4 +1,5 @@
 @import Foundation;
+@import AVFoundation;
 @import Security;
 @import UIKit;
 
