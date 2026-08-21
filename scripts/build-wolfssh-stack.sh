@@ -4,6 +4,19 @@ set -euo pipefail
 PREFIX="${1:-$PWD/Vendor/wolfssh}"
 WOLFSSH_COMMIT="${WOLFSSH_COMMIT:-e7c8dc2c2c54e5f0f2986be592e2243725a4dd33}"
 WOLFSSL_COMMIT="${WOLFSSL_COMMIT:-9ab8a4b19debdade06b10d30cf70167de8f9b915}"
+
+# GitHub's macOS image includes autoconf but does not guarantee Automake's
+# aclocal or GNU libtool. wolfSSL/wolfSSH master are source checkouts, so their
+# configure scripts must be regenerated reproducibly before cross-compiling.
+if ! command -v aclocal >/dev/null 2>&1 || ! command -v automake >/dev/null 2>&1; then
+  command -v brew >/dev/null 2>&1 || { echo "Homebrew is required to install automake" >&2; exit 2; }
+  brew install automake
+fi
+if ! command -v glibtoolize >/dev/null 2>&1 && ! command -v libtoolize >/dev/null 2>&1; then
+  command -v brew >/dev/null 2>&1 || { echo "Homebrew is required to install GNU libtool" >&2; exit 2; }
+  brew install libtool
+fi
+
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 CC="$(xcrun --sdk iphoneos --find clang)"
 AR="$(xcrun --sdk iphoneos --find ar)"
