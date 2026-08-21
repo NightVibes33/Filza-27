@@ -461,36 +461,49 @@ static BOOL FilzaWolfSSHRetryable(int rc, int error)
            error == WS_CHAN_RXD || error == WS_REKEYING || error == WS_WINDOW_FULL;
 }
 
-/* wolfSSH_accept() can finish authentication before a client has completed its
- * PTY/shell channel requests. Keep turning wolfSSH's protocol state machine
- * until the channel can carry the prompt instead of treating that state as EOF. */
-static BOOL FilzaWolfSSHSend(WOLFSSH *ssh, NSString *text)
+static int FilzaWolfSSHChannelRequestShell(WOLFSSH_CHANNEL *channel, void *context)
+{
+    (void)context;
+    word32 channelID = 0;
+    wolfSSH_ChannelGetId(channel, &channelID, WS_CHANNEL_ID_SELF);
+    FilzaDiagnosticsAppend(@"SSH", [NSString stringWithFormat:@"wolfSSH shell request accepted channel=%u", channelID]);
+    return WS_SUCCESS;
+}
+
+/* Clauntty probes and deploys rtach with extra exec channels. This jailed
+ * server deliberately has no process-spawning shell, so reject exec requests
+ * immediately. Clauntty then follows its built-in plain-SSH fallback instead
+ * of waiting forever for an exec channel that will never close. */
+static int FilzaWolfSSHChannelRequestExec(WOLFSSH_CHANNEL *channel, void *context)
+{
+    (void)context;
+    word32 channelID = 0;
+    wolfSSH_ChannelGetId(channel, &channelID, WS_CHANNEL_ID_SELF);
+    const char *raw = wolfSSH_ChannelGetSessionCommand(channel);
+    NSString *command = raw ? [NSString stringWithUTF8String:raw] : @"";
+    FilzaDiagnosticsAppend(@"SSH", [NSString stringWithFormat:@"wolfSSH exec request rejected channel=%u command=%@; client should use plain SSH fallback", channelID, command]);
+    return WS_ERROR;
+}
+
+static BOOL FilzaWolfSSHChannelSend(WOLFSSH *ssh, WOLFSSH_CHANNEL *channel, NSString *text)
 {
     NSData *data = [text dataUsingEncoding:NSUTF8StringEncoding];
     const byte *bytes = data.bytes;
     NSUInteger offset = 0;
     while (offset < data.length) {
-        int sent = wolfSSH_stream_send(ssh, bytes + offset, (word32)MIN((NSUInteger)32768, data.length - offset));
+        int sent = wolfSSH_ChannelSend(channel, bytes + offset,
+                                      (word32)MIN((NSUInteger)32768, data.length - offset));
         if (sent > 0) {
             offset += (NSUInteger)sent;
             continue;
         }
-
         int error = wolfSSH_get_error(ssh);
-        if (!FilzaWolfSSHRetryable(sent, error)) {
-            FilzaDiagnosticsAppend(@"SSH", [NSString stringWithFormat:@"wolfSSH shell send ended rc=%d error=%d", sent, error]);
-            return NO;
-        }
-
-        /* This is the same channel-driving pattern used by wolfSSH's official
-         * echoserver. It completes pending channel-open, PTY and shell requests. */
-        int worker = wolfSSH_worker(ssh, NULL);
+        if (!FilzaWolfSSHRetryable(sent, error)) return NO;
+        word32 ignoredChannel = 0;
+        int worker = wolfSSH_worker(ssh, &ignoredChannel);
         int workerError = wolfSSH_get_error(ssh);
-        if (worker == WS_CHANNEL_CLOSED || worker == WS_EOF || workerError == WS_EOF) return NO;
-        if (worker != WS_SUCCESS && !FilzaWolfSSHRetryable(worker, workerError)) {
-            FilzaDiagnosticsAppend(@"SSH", [NSString stringWithFormat:@"wolfSSH shell channel setup ended rc=%d error=%d", worker, workerError]);
-            return NO;
-        }
+        if (worker == WS_EOF || workerError == WS_EOF || workerError == WS_SOCKET_ERROR_E) return NO;
+        if (worker != WS_SUCCESS && !FilzaWolfSSHRetryable(worker, workerError)) return NO;
     }
     return YES;
 }
@@ -517,43 +530,105 @@ static void FilzaWolfSSHServeSFTP(WOLFSSH *ssh)
     }
 }
 
+static void FilzaWolfSSHProcessChannelBytes(WOLFSSH *ssh,
+                                             WOLFSSH_CHANNEL *channel,
+                                             NSMutableData *line,
+                                             NSString **cwd,
+                                             const byte *buffer,
+                                             int count,
+                                             BOOL *closeChannel)
+{
+    for (int i = 0; i < count; i++) {
+        byte ch = buffer[i];
+        if (ch == '\r' || ch == '\n') {
+            if (!line.length) continue;
+            NSString *command = [[NSString alloc] initWithData:line encoding:NSUTF8StringEncoding] ?: @"";
+            [line setLength:0];
+            NSString *output = FilzaSSHExecute(command, cwd, closeChannel);
+            if (!FilzaWolfSSHChannelSend(ssh, channel, @"\r\n") ||
+                !FilzaWolfSSHChannelSend(ssh, channel, output)) {
+                *closeChannel = YES;
+                break;
+            }
+            if (!*closeChannel &&
+                !FilzaWolfSSHChannelSend(ssh, channel, [NSString stringWithFormat:@"filza:%@$ ", *cwd])) {
+                *closeChannel = YES;
+                break;
+            }
+        } else if (ch == 0x7f || ch == 0x08) {
+            if (line.length) [line setLength:line.length - 1];
+        } else if (ch >= 0x20 || ch == '\t') {
+            [line appendBytes:&ch length:1];
+        }
+    }
+}
+
 static void FilzaWolfSSHServeShell(WOLFSSH *ssh)
 {
-    __block NSString *cwd = FilzaSSHInitialDirectory();
-    NSMutableData *line = NSMutableData.data;
-    if (!FilzaWolfSSHSend(ssh, @"Filza 27 wolfSSH\r\n") ||
-        !FilzaWolfSSHSend(ssh, [NSString stringWithFormat:@"filza:%@$ ", cwd])) return;
-    FilzaDiagnosticsAppend(@"SSH", @"wolfSSH interactive shell channel ready");
+    NSMutableDictionary<NSNumber *, NSMutableData *> *lines = NSMutableDictionary.dictionary;
+    NSMutableDictionary<NSNumber *, NSString *> *directories = NSMutableDictionary.dictionary;
     byte buffer[4096];
-    BOOL closeSession = NO;
-    while (!closeSession && atomic_load(&FilzaSSHRunning)) {
-        int rc = wolfSSH_stream_read(ssh, buffer, sizeof(buffer));
-        if (rc <= 0) {
-            int error = wolfSSH_get_error(ssh);
-            if (rc == WS_EOF || rc == WS_CHANNEL_CLOSED || error == WS_EOF) break;
-            if (FilzaWolfSSHRetryable(rc, error) || rc == WS_SUCCESS) continue;
-            FilzaDiagnosticsAppend(@"SSH", [NSString stringWithFormat:@"wolfSSH shell read ended rc=%d error=%d", rc, error]);
+
+    while (atomic_load(&FilzaSSHRunning)) {
+        /* Initialize every shell channel, including channels Clauntty opens
+         * after its initial connection PTY. */
+        for (WOLFSSH_CHANNEL *channel = wolfSSH_ChannelNext(ssh, NULL), *next = NULL;
+             channel != NULL; channel = next) {
+            next = wolfSSH_ChannelNext(ssh, channel);
+            if (wolfSSH_ChannelGetSessionType(channel) != WOLFSSH_SESSION_SHELL) continue;
+            word32 channelID = 0;
+            if (wolfSSH_ChannelGetId(channel, &channelID, WS_CHANNEL_ID_SELF) != WS_SUCCESS) continue;
+            NSNumber *key = @(channelID);
+            if (lines[key]) continue;
+            lines[key] = NSMutableData.data;
+            directories[key] = FilzaSSHInitialDirectory();
+            if (!FilzaWolfSSHChannelSend(ssh, channel, @"Filza 27 wolfSSH\r\n") ||
+                !FilzaWolfSSHChannelSend(ssh, channel,
+                    [NSString stringWithFormat:@"filza:%@$ ", directories[key]])) {
+                [lines removeObjectForKey:key];
+                [directories removeObjectForKey:key];
+                continue;
+            }
+            FilzaDiagnosticsAppend(@"SSH", [NSString stringWithFormat:@"wolfSSH interactive shell channel ready channel=%u", channelID]);
+        }
+
+        word32 channelID = 0;
+        int rc = wolfSSH_worker(ssh, &channelID);
+        int error = wolfSSH_get_error(ssh);
+        if (rc == WS_EOF || error == WS_EOF || error == WS_SOCKET_ERROR_E) break;
+        if (error == WS_CHANNEL_CLOSED) {
+            [lines removeObjectForKey:@(channelID)];
+            [directories removeObjectForKey:@(channelID)];
+            continue;
+        }
+        if (error != WS_CHAN_RXD) {
+            if (rc == WS_SUCCESS || FilzaWolfSSHRetryable(rc, error)) continue;
+            FilzaDiagnosticsAppend(@"SSH", [NSString stringWithFormat:@"wolfSSH channel worker ended rc=%d error=%d", rc, error]);
             break;
         }
-        for (int i = 0; i < rc; i++) {
-            byte ch = buffer[i];
-            if (ch == '\r' || ch == '\n') {
-                if (!line.length) continue;
-                NSString *command = [[NSString alloc] initWithData:line encoding:NSUTF8StringEncoding] ?: @"";
-                [line setLength:0];
-                NSString *output = FilzaSSHExecute(command, &cwd, &closeSession);
-                if (!FilzaWolfSSHSend(ssh, @"\r\n") || !FilzaWolfSSHSend(ssh, output)) {
-                    closeSession = YES;
-                    break;
-                }
-                if (!closeSession && !FilzaWolfSSHSend(ssh, [NSString stringWithFormat:@"filza:%@$ ", cwd])) {
-                    closeSession = YES;
-                    break;
-                }
-            } else if (ch == 0x7f || ch == 0x08) {
-                if (line.length) [line setLength:line.length - 1];
-            } else if (ch >= 0x20 || ch == '\t') {
-                [line appendBytes:&ch length:1];
+
+        WOLFSSH_CHANNEL *channel = wolfSSH_ChannelFind(ssh, channelID, WS_CHANNEL_ID_SELF);
+        if (!channel) continue;
+        NSNumber *key = @(channelID);
+        NSMutableData *line = lines[key];
+        NSString *cwd = directories[key];
+        if (!line || !cwd) {
+            /* Drain data for rejected/non-shell channels so one channel cannot
+             * block the entire SSH transport. */
+            while (wolfSSH_ChannelRead(channel, buffer, sizeof(buffer)) > 0) {}
+            continue;
+        }
+
+        int count = 0;
+        while ((count = wolfSSH_ChannelRead(channel, buffer, sizeof(buffer))) > 0) {
+            BOOL closeChannel = NO;
+            FilzaWolfSSHProcessChannelBytes(ssh, channel, line, &cwd, buffer, count, &closeChannel);
+            directories[key] = cwd;
+            if (closeChannel) {
+                [lines removeObjectForKey:key];
+                [directories removeObjectForKey:key];
+                wolfSSH_ChannelExit(channel);
+                break;
             }
         }
     }
@@ -572,6 +647,8 @@ static void FilzaWolfSSHServeClient(int clientFD)
         WOLFSSH_CTX *ctx = wolfSSH_CTX_new(WOLFSSH_ENDPOINT_SERVER, NULL);
         if (!ctx) { FilzaDiagnosticsAppend(@"SSH", @"wolfSSH_CTX_new failed"); close(clientFD); return; }
         wolfSSH_SetUserAuth(ctx, FilzaWolfSSHUserAuth);
+        wolfSSH_CTX_SetChannelReqShellCb(ctx, FilzaWolfSSHChannelRequestShell);
+        wolfSSH_CTX_SetChannelReqExecCb(ctx, FilzaWolfSSHChannelRequestExec);
         wolfSSH_CTX_SetBanner(ctx, "Filza 27 wolfSSH server");
         if (wolfSSH_CTX_UsePrivateKey_buffer(ctx, hostKey.bytes, (word32)hostKey.length, WOLFSSH_FORMAT_ASN1) < 0) {
             FilzaDiagnosticsAppend(@"SSH", @"wolfSSH rejected persistent ECDSA host key");
