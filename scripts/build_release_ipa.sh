@@ -62,6 +62,8 @@ fi
 
 cp "$DYLIB" "$APP/Frameworks/FilzaApplySandboxExt.dylib"
 codesign --remove-signature "$APP/Frameworks/FilzaApplySandboxExt.dylib"
+rm -f "$APP/Frameworks/FilzaMondModern.dylib"
+plutil -replace MinimumOSVersion -string "17.0" "$APP/Info.plist"
 
 # Upstream FilzaSlop strips Filza/SDK URL handlers from release IPAs so other
 # apps cannot fingerprint this build through canOpenURL:. Keep the downstream
@@ -85,7 +87,7 @@ bash "$REPO_ROOT/scripts/merge-3105-app-metadata.sh" "$APP/Info.plist"
 
 # The WebDAV and SSH/SFTP runtimes bind to the LAN and optionally publish
 # Bonjour services. Keep standalone/manual release packaging in exact parity
-# with the verified universal Actions IPA so iOS can present Local Network
+# with the verified modern Actions IPA so iOS can present Local Network
 # permission and permit both advertised service types.
 plutil -replace NSLocalNetworkUsageDescription -string \
   "Filza 27 uses your local network when you enable its WebDAV or SSH/SFTP server." \
@@ -97,6 +99,9 @@ if [[ -n "$CATALOG" ]]; then
 elif [[ -e "$APP/MCMIdentifiers.plist" ]]; then
   trash "$APP/MCMIdentifiers.plist"
 fi
+
+[[ "$(plutil -extract MinimumOSVersion raw -o - "$APP/Info.plist")" == "17.0" ]] || { echo "unexpected MinimumOSVersion" >&2; exit 70; }
+[[ ! -e "$APP/Frameworks/FilzaMondModern.dylib" ]] || { echo "stale split Mond runtime present" >&2; exit 70; }
 
 for resource in meriyah.umd.js astring.umd.js yt_ejs_helper.js; do
   [[ -s "$APP/$resource" ]] || { echo "YouTubeKit app resource missing: $resource" >&2; exit 70; }

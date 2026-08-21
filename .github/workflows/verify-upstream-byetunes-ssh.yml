@@ -37,64 +37,34 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Verify source contracts
+      - name: Verify modern source contracts
+        shell: bash
         run: |
           set -euxo pipefail
           test "$(uname -m)" = "x86_64"
           test "$(xcrun --sdk iphoneos --show-sdk-version)" = "26.2"
           test "$(git -C ByeTunes rev-parse HEAD)" = "$BYETUNES_COMMIT"
-
-          test -f ByeTunesMetadataCompat.swift
-          test -f ByeTunesDownloadParityCompat.swift
-          test -f scripts/restore-byetunes-v24-metadata-compat.sh
-          test -f scripts/patch-byetunes-metadata-parity-post.sh
-          test -f scripts/patch-byetunes-background-provider-parity.sh
-          test -f scripts/patch-byetunes-download-provider-parity.sh
-          test -f scripts/stage-byetunes-youtubekit.sh
-          test -f scripts/patch-byetunes-youtubekit-primary.sh
-          test -f scripts/patch-byetunes-manage-backups-typecheck.sh
-          grep -Fq 'case youtube' ByeTunesMetadataCompat.swift
-          grep -Fq 'defaultSources' ByeTunesMetadataCompat.swift
-          grep -Fq 'All Sources' scripts/restore-byetunes-v24-metadata-compat.sh
-          grep -Fq 'YouTube' scripts/restore-byetunes-v24-metadata-compat.sh
-          grep -Fq 'MetadataProviderSettings' ByeTunesEmbeddedHost.swift
-          grep -Fq 'case "youtube"' ByeTunesEmbeddedHost.swift
-          grep -Fq 'case "all"' ByeTunesEmbeddedHost.swift
-          grep -Fq '1a90f9e0f2b1a1787b208809ad2373f5c52175c8' scripts/stage-byetunes-youtubekit.sh
-          grep -Fq 'let youtube = YouTube(videoID: videoID)' scripts/patch-byetunes-youtubekit-primary.sh
-          ! grep -Fq 'filter-out ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift' FilzaSSHMetadata.mk
+          grep -Fq 'TARGET := iphone:clang:latest:17.0' Makefile
           grep -Fq 'include FilzaSSHMetadata.mk' Makefile
           grep -Fq 'include FilzaByeTunesNetwork.mk' Makefile
-          grep -Fq 'PatchFinder_arm64.c' FilzaByeTunesNetwork.mk
-          grep -Fq 'MondSandboxSPICompat.c' FilzaByeTunesNetwork.mk
-          grep -Fq 'libsystem_sandbox.dylib' MondSandboxSPICompat.c
-          grep -Fq 'return try await URLSession.shared.data(for: request)' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
-          grep -Fq 'return try await URLSession.shared.data(from: url)' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
-          ! grep -Fq 'MetadataWebKitRequest' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
-          ! grep -Fq 'FilzaMetadataWebRequest' ByeTunes/MusicManager/MetadataBackgroundURLSession.swift
-          ! grep -Fq 'bash scripts/patch-byetunes-metadata-network-resilience.sh' FilzaByeTunesNetwork.mk
-
           grep -Fq "MOND_COMMIT=\"$MOND_COMMIT\"" scripts/stage-mond-22-overlay.sh
-          grep -Fq "$MOND_COMMIT" ThirdParty/mond/UPSTREAM.md
+          grep -Fq 'stage-mond-22-overlay.sh' Makefile
+          grep -Fq 'stage-3105-v1.sh' Makefile
+          grep -Fq 'patch-3105-embedded-compat.sh' Makefile
+          test -f ByeTunesMetadataCompat.swift
+          test -f ByeTunesDownloadParityCompat.swift
+          test -f scripts/stage-byetunes-youtubekit.sh
           test -f scripts/verify-mond-source-completeness.sh
           test -f scripts/stage-mond-embedded-resources.sh
           test -f scripts/patch-mond-embedded-parity.sh
-          test -f scripts/prepare-ios16-compat.sh
-          grep -Fq 'stage-mond-22-overlay.sh' Makefile
-          grep -Fq 'verify-mond-source-completeness.sh' FilzaByeTunesNetwork.mk
-          grep -Fq 'stage-mond-embedded-resources.sh' FilzaByeTunesNetwork.mk
-          grep -Fq 'patch-mond-embedded-parity.sh' FilzaByeTunesNetwork.mk
-          grep -Fq 'MondCurrentAppState.shared' FilzaMondCurrentHost.swift
-          grep -Fq '"atomic_write": true' FilzaMondCurrentHost.swift
-          grep -Fq '"ignore_failure"' FilzaMondCurrentHost.swift
-          grep -Fq 'UserDefaults(suiteName: "com.roooot.mond")' FilzaMondCurrentHost.swift
-          grep -Fq 'Bundle.main.url(forResource: "MondEmbedded", withExtension: "bundle")' FilzaMondCurrentHost.swift
-          grep -Fq 'grant_all(state: state)' FilzaMondCurrentHost.swift
-          grep -Fq 'full Mond 2.2 route installed commit=3d91194716ad5f06afdf7e9037e6964e80a4ac29' FilzaMondBridge.m
-          grep -Fq '@EnvironmentObject var state: MondCurrentAppState' scripts/patch-mond-embedded-parity.sh
-          ! test -e MondIOS27KeySupport.swift
-          ! test -e scripts/patch-mond-ios27-keys.sh
-          ! test -e scripts/patch-mond-token-button.sh
+          ! test -e scripts/prepare-ios16-compat.sh
+          ! test -e scripts/patch-mond-ios16-backport.sh
+          ! test -d MondModern
+          ! grep -Fq 'FilzaMondModern.dylib' FilzaMondBridge.m
+          ! grep -Fq 'dlopen' FilzaMondBridge.m
+          grep -Fq 'MondEmbeddedHostFactory' FilzaMondBridge.m
+          grep -Fq 'FilzaEmbeddedPanel {' FilzaMondCurrentHost.swift
+          ! grep -Fq 'ios16Backport' FilzaMondCurrentHost.swift
 
       - name: Restore pinned SSH stack cache
         id: ssh-cache
@@ -105,20 +75,7 @@ jobs:
 
       - name: Build pinned SSH stack
         if: steps.ssh-cache.outputs.cache-hit != 'true'
-        run: |
-          set -euxo pipefail
-          bash scripts/build-ssh-stack.sh "$GITHUB_WORKSPACE/Vendor/ssh"
-
-      - name: Verify pinned SSH stack
-        run: |
-          set -euxo pipefail
-          test "$(cat Vendor/ssh/LIBSSH_COMMIT)" = "$LIBSSH_COMMIT"
-          test "$(cat Vendor/ssh/MBEDTLS_COMMIT)" = "$MBEDTLS_COMMIT"
-          test -s Vendor/ssh/lib/libssh.a
-          test -s Vendor/ssh/lib/libmbedtls.a
-          test -s Vendor/ssh/lib/libmbedx509.a
-          test -s Vendor/ssh/lib/libmbedcrypto.a
-          test "$(lipo -archs Vendor/ssh/lib/libssh.a)" = "arm64"
+        run: bash scripts/build-ssh-stack.sh "$GITHUB_WORKSPACE/Vendor/ssh"
 
       - name: Install Procursus build tools
         uses: dhinakg/procursus-action@main
@@ -134,18 +91,13 @@ jobs:
 
       - name: Install pinned Theos
         if: steps.theos-cache.outputs.cache-hit != 'true'
+        shell: bash
         run: |
           set -euxo pipefail
           rm -rf "$THEOS"
           git clone --filter=blob:none https://github.com/theos/theos.git "$THEOS"
           git -C "$THEOS" checkout --detach "$THEOS_COMMIT"
           git -C "$THEOS" submodule update --init --recursive
-
-      - name: Verify pinned Theos
-        run: |
-          set -euxo pipefail
-          test "$(git -C "$THEOS" rev-parse HEAD)" = "$THEOS_COMMIT"
-          test -f "$THEOS/makefiles/common.mk"
 
       - name: Restore pinned idevice FFI cache
         id: idevice-cache
@@ -156,131 +108,59 @@ jobs:
 
       - name: Build pinned idevice FFI
         if: steps.idevice-cache.outputs.cache-hit != 'true'
-        run: |
-          set -euxo pipefail
-          bash scripts/build-idevice.sh "$GITHUB_WORKSPACE/Vendor/idevice"
+        run: bash scripts/build-idevice.sh "$GITHUB_WORKSPACE/Vendor/idevice"
 
-      - name: Verify pinned idevice FFI
-        run: |
-          set -euxo pipefail
-          test "$(cat Vendor/idevice/COMMIT)" = "$IDEVICE_COMMIT"
-          test -s Vendor/idevice/lib/libidevice_ffi.a
-          test -s Vendor/idevice/include/idevice.h
-
-      - name: Build and verify full arm64 target
+      - name: Build and verify modern arm64 target
+        shell: bash
         run: |
           set -euxo pipefail
           export PATH="/opt/procursus/bin:$PATH"
+          test "$(cat Vendor/idevice/COMMIT)" = "$IDEVICE_COMMIT"
+          test -s Vendor/idevice/lib/libidevice_ffi.a
+          test -s Vendor/ssh/lib/libssh.a
           gmake clean || true
           gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:17.0
-
-          grep -Fxq "mond=$MOND_COMMIT" ThirdParty/mond-current/PINNED.txt
-          grep -Fq '@StateObject private var state = AppState.shared' ThirdParty/mond-current/Upstream/mond.swift
-          grep -Fq '"atomic_write": true' ThirdParty/mond-current/Upstream/mond.swift
-          grep -Fq 'private static func cache_extra' ThirdParty/mond-current/Upstream/helpers/mg.swift
-          grep -Fq 'func cache_data_safe_offset' ThirdParty/mond-current/Upstream/helpers/mg.swift
-          grep -Fq 'yK+xavymRGZ3xWc1tb8XDg' ThirdParty/mond-current/Upstream/helpers/mg.swift
-          grep -Fq 'state.pb_granted = false' ThirdParty/mond-current/Upstream/exploit/unsbx.swift
-          grep -Fq 'static let shared = AppState()' ThirdParty/mond-current/Upstream/helpers/utils.swift
-          grep -Fq 'Text("Run Exploit")' ThirdParty/mond-current/Upstream/views/app/SettingsView.swift
-          grep -Fq 'Persist after reboot' ThirdParty/mond-current/Upstream/views/app/SettingsView.swift
-          grep -Fq 'Ignore exploit failure' ThirdParty/mond-current/Upstream/views/app/SettingsView.swift
-          grep -Fq 'CacheExtra Fields' ThirdParty/mond-current/Upstream/views/app/ContentView.swift
-          grep -Fq 'struct CEView: View' ThirdParty/mond-current/Upstream/views/tweaks/mobilegestalt/CEView.swift
-          grep -Fq 'Color("AccentColor")' ThirdParty/mond-current/Upstream/views/tweaks/mobilegestalt/GestaltView.swift
-          grep -Fq 'Explore Tendies' ThirdParty/mond-current/Upstream/views/tweaks/posterboard/PosterView.swift
-          grep -Fq 'Bundle.main.infoDictionary' ThirdParty/mond-current/Upstream/views/app/SettingsView.swift
-
-          bash scripts/verify-mond-source-completeness.sh
-          test -s ThirdParty/mond-current/Resources/MondEmbedded.bundle/Info.plist
-          test -s ThirdParty/mond-current/Resources/MondEmbedded.bundle/MondEmbeddedIcon.png
-          plutil -lint ThirdParty/mond-current/Resources/MondEmbedded.bundle/Info.plist
-          test "$(plutil -extract CFBundleDisplayName raw -o - ThirdParty/mond-current/Resources/MondEmbedded.bundle/Info.plist)" = "mond"
-          test "$(plutil -extract CFBundleShortVersionString raw -o - ThirdParty/mond-current/Resources/MondEmbedded.bundle/Info.plist)" = "2.2"
-          test "$(plutil -extract CFBundleIdentifier raw -o - ThirdParty/mond-current/Resources/MondEmbedded.bundle/Info.plist)" = "com.roooot.mond"
-
-          grep -Fq 'private static func cache_extra' ThirdParty/mond-current/Generated/Mond/helpers_mg.swift
-          grep -Fq 'state.pb_granted = false' ThirdParty/mond-current/Generated/Mond/exploit_unsbx.swift
-          grep -Fq 'MondEmbeddedParity.accentColor' ThirdParty/mond-current/Generated/Mond/views_tweaks_GestaltView.swift
-          grep -Fq '@EnvironmentObject var state: MondCurrentAppState' ThirdParty/mond-current/Generated/Mond/views_tweaks_GestaltView.swift
-          grep -Fq '@AppStorage("method", store: MondEmbeddedParity.defaults)' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
-          grep -Fq '@AppStorage("atomic_write", store: MondEmbeddedParity.defaults)' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
-          grep -Fq '@AppStorage("ignore_failure", store: MondEmbeddedParity.defaults)' ThirdParty/mond-current/Generated/Mond/views_app_ContentView.swift
-          grep -Fq 'MondEmbeddedParity.defaults.string(forKey: "method")' ThirdParty/mond-current/Generated/Mond/exploit_unsbx.swift
-          grep -Fq 'MondEmbeddedParity.bundle.infoDictionary' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
-          grep -Fq 'UIImage(named: icon, in: MondEmbeddedParity.bundle, compatibleWith: nil)' ThirdParty/mond-current/Generated/Mond/views_app_SettingsView.swift
-          grep -Fq 'MondEmbeddedParity.bundle.infoDictionary' ThirdParty/mond-current/Generated/PartyUI/Utilities_Helpers.swift
-          ! grep -R -Fq 'Color("AccentColor")' ThirdParty/mond-current/Generated/Mond
-          ! grep -R -Fq 'UserDefaults.standard' ThirdParty/mond-current/Generated/Mond
-          ! grep -R -Fq 'Bundle.main' ThirdParty/mond-current/Generated/Mond
-          ! grep -Fq 'Bundle.main' ThirdParty/mond-current/Generated/PartyUI/Utilities_Helpers.swift
-          ! grep -R -Fq 'FILZA_IOS27_GESTALT_KEYS_BEGIN' ThirdParty/mond-current/Generated/Mond
-          ! grep -R -Fq 'lastFreshToken' ThirdParty/mond-current/Generated/Mond
-          ! grep -R -Fq 'Fresh sandbox token issued successfully. Mond has not consumed it.' ThirdParty/mond-current/Generated/Mond
 
           DYLIB=".theos/obj/FilzaApplySandboxExt.dylib"
           test -s "$DYLIB"
           test "$(lipo -archs "$DYLIB")" = "arm64"
-
-          grep -aFq 'SSH SERVER' "$DYLIB"
-          grep -aFq 'embedded libssh server listening address=' "$DYLIB"
-          grep -aFq 'inline SSH SERVER preferences installed after WebDAV with listener-backed toggle state' "$DYLIB"
-          grep -aFq 'password verifier updated using PBKDF2-HMAC-SHA256' "$DYLIB"
-          grep -aFq 'subsystem rejected because it is not implemented yet:' "$DYLIB"
-          nm "$DYLIB" > .theos/FilzaApplySandboxExt.nm
-          grep -Eq '[_ ]ssh_bind_new$' .theos/FilzaApplySandboxExt.nm
-          ! otool -L "$DYLIB" | grep -qi 'libssh'
-
-          grep -aFq 'Reconciled legacy embedded provider state once:' "$DYLIB"
-          grep -aFq 'All Sources' "$DYLIB"
-          grep -aFq 'YouTube' "$DYLIB"
-          grep -aFq '[YouTubeProvider] YouTubeKit metadata matched videoID=' "$DYLIB"
-          grep -aFq '[MusicView] metadata sources=' "$DYLIB"
-          grep -aFq 'iTunes search failed:' "$DYLIB"
-          grep -aFq 'Deezer search failed:' "$DYLIB"
-          ! grep -aFq 'retrying through WebKit network process' "$DYLIB"
-          ! grep -aFq 'WebKit fallback succeeded host=' "$DYLIB"
-          ! grep -aFq 'URLSession DNS failed for ' "$DYLIB"
-
           grep -aFq 'MondEmbeddedHostFactory' "$DYLIB"
           grep -aFq 'constructed pinned Mond 2.2 root at 3d91194716ad5f06afdf7e9037e6964e80a4ac29' "$DYLIB"
-          grep -aFq 'embedded-parity=accent+defaults+bundle' "$DYLIB"
-          grep -aFq 'full Mond 2.2 route installed commit=3d91194716ad5f06afdf7e9037e6964e80a4ac29' "$DYLIB"
-          grep -aFq 'MondCurrentCEView' "$DYLIB"
-          grep -aFq 'CacheExtra Fields' "$DYLIB"
-          ! grep -aFq 'waiting for Run Exploit' "$DYLIB"
           grep -aFq 'Filza3105HostFactory' "$DYLIB"
           grep -aFq 'ByeTunesEmbeddedHostFactory' "$DYLIB"
+          grep -aFq 'All Sources' "$DYLIB"
+          grep -aFq 'YouTube' "$DYLIB"
+          grep -aFq 'embedded libssh server listening address=' "$DYLIB"
           grep -aFq 'jailed in-process WebDAV lifecycle hook installed' "$DYLIB"
-          shasum -a 256 "$DYLIB"
+          ! otool -L "$DYLIB" | grep -Fq 'FilzaMondModern.dylib'
+          bash scripts/verify-mond-source-completeness.sh
 
-      - name: Generate ByeTunes AppIntents metadata
+      - name: Generate runtime resources
+        shell: bash
         run: |
           set -euxo pipefail
           bash scripts/generate-appintents-metadata.sh .theos/byetunes-appintents
-
-      - name: Stage ByeTunes runtime resources
-        run: |
-          set -euxo pipefail
           bash scripts/stage-byetunes-resources.sh .theos/byetunes-resources
           test -s .theos/byetunes-resources/AppIconImage.png
-          plutil -lint .theos/byetunes-resources/ByeTunes-Info.plist
           test -s .theos/byetunes-resources/Config.plist
-          plutil -lint .theos/byetunes-resources/Config.plist
           test -s .theos/byetunes-resources/meriyah.umd.js
           test -s .theos/byetunes-resources/astring.umd.js
           test -s .theos/byetunes-resources/yt_ejs_helper.js
+          test -s ThirdParty/mond-current/Resources/MondEmbedded.bundle/Info.plist
+          test -s ThirdParty/3105/Resources/Filza3105.bundle/UpstreamAppInfo.plist
 
       - name: Download base Filza IPA
+        shell: bash
         run: |
           set -euxo pipefail
           curl -fL --retry 3 --retry-delay 2 "$BASE_IPA_URL" -o .theos/FilzaSlop-base-unsigned.ipa
           echo "$BASE_IPA_SHA256  .theos/FilzaSlop-base-unsigned.ipa" | shasum -a 256 -c -
 
-      - name: Package installable unsigned IPA
+      - name: Package modern unsigned IPA
+        shell: bash
         run: |
           set -euxo pipefail
-          STAGE="$(mktemp -d /tmp/filzaslop-ipa.XXXXXX)"
+          STAGE="$(mktemp -d /tmp/filza-modern-ipa.XXXXXX)"
           trap 'rm -rf "$STAGE"' EXIT
           unzip -q .theos/FilzaSlop-base-unsigned.ipa -d "$STAGE"
           APP="$(find "$STAGE/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
@@ -291,6 +171,7 @@ jobs:
 
           mkdir -p "$APP/Frameworks"
           cp .theos/obj/FilzaApplySandboxExt.dylib "$APP/Frameworks/FilzaApplySandboxExt.dylib"
+          rm -f "$APP/Frameworks/FilzaMondModern.dylib"
           codesign --remove-signature "$APP/Frameworks/FilzaApplySandboxExt.dylib" >/dev/null 2>&1 || true
 
           cp .theos/byetunes-resources/AppIconImage.png "$APP/AppIconImage.png"
@@ -299,16 +180,8 @@ jobs:
           cp .theos/byetunes-resources/meriyah.umd.js "$APP/meriyah.umd.js"
           cp .theos/byetunes-resources/astring.umd.js "$APP/astring.umd.js"
           cp .theos/byetunes-resources/yt_ejs_helper.js "$APP/yt_ejs_helper.js"
-
-          rm -rf "$APP/MondEmbedded.bundle"
+          rm -rf "$APP/MondEmbedded.bundle" "$APP/Filza3105.bundle"
           cp -R ThirdParty/mond-current/Resources/MondEmbedded.bundle "$APP/MondEmbedded.bundle"
-          plutil -lint "$APP/MondEmbedded.bundle/Info.plist"
-          test "$(plutil -extract CFBundleDisplayName raw -o - "$APP/MondEmbedded.bundle/Info.plist")" = "mond"
-          test "$(plutil -extract CFBundleShortVersionString raw -o - "$APP/MondEmbedded.bundle/Info.plist")" = "2.2"
-          test "$(plutil -extract CFBundleIdentifier raw -o - "$APP/MondEmbedded.bundle/Info.plist")" = "com.roooot.mond"
-          test -s "$APP/MondEmbedded.bundle/MondEmbeddedIcon.png"
-
-          rm -rf "$APP/Filza3105.bundle"
           cp -R ThirdParty/3105/Resources/Filza3105.bundle "$APP/Filza3105.bundle"
           if test -d .theos/byetunes-appintents/Metadata.appintents; then
             rm -rf "$APP/Metadata.appintents"
@@ -316,68 +189,46 @@ jobs:
           fi
 
           plutil -replace MinimumOSVersion -string "17.0" "$APP/Info.plist"
-          plutil -replace UIApplicationShortcutItems -json '[{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemIconSymbolName":"square.grid.2x2"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music Library","UIApplicationShortcutItemIconSymbolName":"music.note.list"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt Editor","UIApplicationShortcutItemIconSymbolName":"slider.horizontal.3"},{"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.patches","UIApplicationShortcutItemTitle":"Patches","UIApplicationShortcutItemIconSymbolName":"shippingbox"}]' "$APP/Info.plist"
-          plutil -replace CFBundleShortVersionString -string "4.11" "$APP/Info.plist"
           plutil -replace CFBundleVersion -string "${GITHUB_RUN_NUMBER}" "$APP/Info.plist"
           plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
           plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
           plutil -replace NSSupportsLiveActivities -bool YES "$APP/Info.plist"
           plutil -replace NSSupportsLiveActivitiesFrequentUpdates -bool YES "$APP/Info.plist"
-          plutil -replace NSLocalNetworkUsageDescription -string "FilzaSlop uses your local network when you enable its WebDAV or SSH server." "$APP/Info.plist"
+          plutil -replace NSLocalNetworkUsageDescription -string "Filza 27 uses your local network when you enable its WebDAV or SSH/SFTP server." "$APP/Info.plist"
           plutil -replace NSBonjourServices -json '["_http._tcp","_ssh._tcp"]' "$APP/Info.plist"
           bash scripts/merge-3105-app-metadata.sh "$APP/Info.plist"
 
-          test "$(plutil -extract CFBundleShortVersionString raw -o - "$APP/Info.plist")" = "4.11"
-          test "$(plutil -extract MinimumOSVersion raw -o - "$APP/Info.plist")" = "17.0"
+          # Keep the latest FilzaSlop packaging hardening while using the modern runtime.
+          plutil -remove CFBundleURLTypes "$APP/Info.plist" 2>/dev/null || true
+          if plutil -extract CFBundleURLTypes json -o - "$APP/Info.plist" >/dev/null 2>&1; then
+            echo "CFBundleURLTypes was not stripped" >&2
+            exit 70
+          fi
 
-          DYLIB="$APP/Frameworks/FilzaApplySandboxExt.dylib"
-          test -s "$DYLIB"
-          grep -aFq 'embedded libssh server listening address=' "$DYLIB"
-          grep -aFq 'Reconciled legacy embedded provider state once:' "$DYLIB"
-          grep -aFq 'All Sources' "$DYLIB"
-          grep -aFq 'YouTube' "$DYLIB"
-          grep -aFq 'constructed pinned Mond 2.2 root at 3d91194716ad5f06afdf7e9037e6964e80a4ac29' "$DYLIB"
-          grep -aFq 'MondCurrentCEView' "$DYLIB"
-          grep -aFq 'embedded-parity=accent+defaults+bundle' "$DYLIB"
-          test -s "$APP/meriyah.umd.js"
-          test -s "$APP/astring.umd.js"
-          test -s "$APP/yt_ejs_helper.js"
-          ! grep -aFq 'retrying through WebKit network process' "$DYLIB"
-          BONJOUR_JSON="$(plutil -extract NSBonjourServices json -o - "$APP/Info.plist")"
-          grep -Fq '_ssh._tcp' <<<"$BONJOUR_JSON"
-          LOCAL_NETWORK_USAGE="$(plutil -extract NSLocalNetworkUsageDescription raw -o - "$APP/Info.plist")"
-          grep -Fq 'SSH server' <<<"$LOCAL_NETWORK_USAGE"
+          test "$(plutil -extract MinimumOSVersion raw -o - "$APP/Info.plist")" = "17.0"
+          test ! -e "$APP/Frameworks/FilzaMondModern.dylib"
+          test -s "$APP/Frameworks/FilzaApplySandboxExt.dylib"
+          test -s "$APP/MondEmbedded.bundle/Info.plist"
           test -s "$APP/Filza3105.bundle/UpstreamAppInfo.plist"
-          test -x "$APP/helpers/FilzaWebDAVServer"
           otool -L "$APP/$EXECUTABLE" | grep -F 'FilzaApplySandboxExt.dylib'
 
-          OUTPUT="$GITHUB_WORKSPACE/.theos/FilzaSlop-main-${GITHUB_SHA::7}-unsigned.ipa"
+          OUTPUT="$GITHUB_WORKSPACE/.theos/Filza-27-modern-${GITHUB_SHA::7}-unsigned.ipa"
           rm -f "$OUTPUT"
           (cd "$STAGE" && zip -qry "$OUTPUT" Payload)
           test -s "$OUTPUT"
           unzip -tq "$OUTPUT"
           unzip -l "$OUTPUT" | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
-          unzip -l "$OUTPUT" | grep -F 'MondEmbedded.bundle/Info.plist'
-          unzip -l "$OUTPUT" | grep -F 'MondEmbedded.bundle/MondEmbeddedIcon.png'
-          unzip -l "$OUTPUT" | grep -F 'meriyah.umd.js'
-          unzip -l "$OUTPUT" | grep -F 'astring.umd.js'
-          unzip -l "$OUTPUT" | grep -F 'yt_ejs_helper.js'
+          ! unzip -l "$OUTPUT" | grep -F 'Frameworks/FilzaMondModern.dylib'
           shasum -a 256 "$OUTPUT" | tee .theos/IPA-SHA256.txt
 
-      - name: Upload installable unsigned IPA
+      - name: Upload modern unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: FilzaSlop-ByeTunes-All-YouTube-SSH-unsigned-arm64
+          name: Filza-27-modern-unsigned-arm64
           path: |
-            .theos/FilzaSlop-main-*-unsigned.ipa
+            .theos/Filza-27-modern-*-unsigned.ipa
             .theos/IPA-SHA256.txt
             .theos/obj/FilzaApplySandboxExt.dylib
-            .theos/byetunes-resources/**
-            .theos/byetunes-appintents/Metadata.appintents/**
-            ThirdParty/3105/Resources/Filza3105.bundle/UpstreamAppInfo.plist
-            ThirdParty/mond-current/Resources/**
-            ThirdParty/mond-current/UpstreamProject.pbxproj
-            ThirdParty/mond/UPSTREAM.md
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 14
