@@ -56,6 +56,10 @@ jobs:
           grep -Fq 'patch-3105-embedded-compat.sh' Makefile
           test -f FilzaWolfSSHServer.m
           test -f scripts/build-wolfssh-stack.sh
+          test -f scripts/wolfssh-allow-multiple-session-channels.patch
+          grep -Fq 'if (ssh->channelListSz >= 1)' scripts/wolfssh-allow-multiple-session-channels.patch
+          grep -Fq 'wolfSSH_CTX_SetChannelOpenCb' FilzaWolfSSHServer.m
+          grep -Fq 'wolfSSH rejected exec channel closed' FilzaWolfSSHServer.m
           grep -Fq 'wolfSSH_accept' FilzaWolfSSHServer.m
           grep -Fq 'wolfSSH_SFTP_read' FilzaWolfSSHServer.m
           grep -Fq 'silent-audio background keepalive active for wolfSSH' FilzaWolfSSHServer.m
@@ -92,7 +96,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: Vendor/wolfssh
-          key: wolfssh-${{ runner.os }}-${{ runner.arch }}-xcode26.2-ios17-${{ env.WOLFSSH_COMMIT }}-${{ env.WOLFSSL_COMMIT }}-${{ hashFiles('scripts/build-wolfssh-stack.sh') }}
+          key: wolfssh-${{ runner.os }}-${{ runner.arch }}-xcode26.2-ios17-${{ env.WOLFSSH_COMMIT }}-${{ env.WOLFSSL_COMMIT }}-${{ hashFiles('scripts/build-wolfssh-stack.sh', 'scripts/wolfssh-allow-multiple-session-channels.patch') }}
 
       - name: Build pinned wolfSSH server stack
         if: steps.wolfssh-cache.outputs.cache-hit != 'true'
