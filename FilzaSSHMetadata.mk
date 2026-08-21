@@ -10,7 +10,7 @@ SSH_MBEDX509 := $(SSH_VENDOR)/lib/libmbedx509.a
 SSH_MBEDCRYPTO := $(SSH_VENDOR)/lib/libmbedcrypto.a
 
 FilzaApplySandboxExt_FILES := $(filter-out WebDAVRuntimeFix.m,$(FilzaApplySandboxExt_FILES))
-FilzaApplySandboxExt_FILES += WebDAVRuntimeV2.m
+FilzaApplySandboxExt_FILES += WebDAVRuntimeV2.m NetworkRuntimeVerificationMarkers.m
 FilzaApplySandboxExt_FILES += FilzaSSHServerV2.m FilzaSSHPreferencesV2.m FilzaSSHPublicAccess.m
 # libssh's public sftp.h hides its server declarations behind WITH_SERVER;
 # these are consumer-side declaration guards, separate from the CMake options
@@ -23,6 +23,7 @@ before-FilzaApplySandboxExt-all::
 	@test -f "FilzaSSHServerV2.m" || (echo "Missing FilzaSSHServerV2.m" >&2; exit 1)
 	@test -f "FilzaSSHPreferencesV2.m" || (echo "Missing FilzaSSHPreferencesV2.m" >&2; exit 1)
 	@test -f "WebDAVRuntimeV2.m" || (echo "Missing WebDAVRuntimeV2.m" >&2; exit 1)
+	@test -f "NetworkRuntimeVerificationMarkers.m" || (echo "Missing network runtime migration markers" >&2; exit 1)
 	@test -f "FilzaSSHPublicAccess.m" || (echo "Missing FilzaSSHPublicAccess.m" >&2; exit 1)
 	@test -f "$(SSH_VENDOR)/include/libssh/sftp.h" || (echo "Missing libssh SFTP headers" >&2; exit 1)
 	@test -f "$(SSH_VENDOR)/include/libssh/sftpserver.h" || (echo "Missing libssh SFTP server headers" >&2; exit 1)
