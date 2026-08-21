@@ -158,7 +158,8 @@ jobs:
           grep -aFq 'wolfSSH authenticated SFTP subsystem accepted' "$DYLIB"
           grep -aFq 'protocol self-test passed' "$DYLIB"
           grep -aFq 'jailed in-process WebDAV lifecycle hook installed' "$DYLIB"
-          nm -gU "$DYLIB" | grep -q 'wolfSSH_accept\|_wolfSSH_accept'
+          nm -gU "$DYLIB" > .theos/wolfssh-symbols.txt
+          grep -Eq 'wolfSSH_accept|_wolfSSH_accept' .theos/wolfssh-symbols.txt
           ! otool -L "$DYLIB" | grep -Fq 'FilzaMondModern.dylib'
           bash scripts/verify-mond-source-completeness.sh
 
