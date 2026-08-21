@@ -95,13 +95,28 @@ __attribute__((constructor)) static void FilzaSSHProtocolHealthInit(void)
 {
     @autoreleasepool {
         dispatch_async(dispatch_get_main_queue(), ^{
+            // Fresh enable and settings-driven restarts mutate defaults after the
+            // verified listener has started; observe those transitions.
+            [NSNotificationCenter.defaultCenter addObserverForName:NSUserDefaultsDidChangeNotification
+                                                            object:NSUserDefaults.standardUserDefaults
+                                                             queue:NSOperationQueue.mainQueue
+                                                        usingBlock:^(__unused NSNotification *note) {
+                FilzaSSHProtocolHealthSchedule(@"preferences changed");
+            }];
             [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification
                                                             object:nil
                                                              queue:NSOperationQueue.mainQueue
                                                         usingBlock:^(__unused NSNotification *note) {
                 FilzaSSHProtocolHealthSchedule(@"application active");
             }];
+
             FilzaSSHProtocolHealthSchedule(@"runtime initialized");
+            // Saved enable state is restored by the preferences adapter shortly
+            // after startup, potentially after the first active notification.
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                FilzaSSHProtocolHealthSchedule(@"saved-state restore");
+            });
         });
     }
 }
