@@ -576,6 +576,7 @@ static void FilzaWolfSSHServeShell(WOLFSSH *ssh)
 {
     NSMutableDictionary<NSNumber *, NSMutableData *> *lines = NSMutableDictionary.dictionary;
     NSMutableDictionary<NSNumber *, NSString *> *directories = NSMutableDictionary.dictionary;
+    NSUInteger pendingLocalChannelCloseReplies = 0;
     byte buffer[4096];
 
     while (atomic_load(&FilzaSSHRunning)) {
@@ -589,7 +590,9 @@ static void FilzaWolfSSHServeShell(WOLFSSH *ssh)
                 word32 execChannelID = 0;
                 wolfSSH_ChannelGetId(channel, &execChannelID, WS_CHANNEL_ID_SELF);
                 FilzaDiagnosticsAppend(@"SSH", [NSString stringWithFormat:@"wolfSSH rejected exec channel closed channel=%u", execChannelID]);
-                wolfSSH_ChannelExit(channel);
+                if (wolfSSH_ChannelExit(channel) == WS_SUCCESS) {
+                    pendingLocalChannelCloseReplies++;
+                }
                 continue;
             }
             if (sessionType != WOLFSSH_SESSION_SHELL) continue;
@@ -613,12 +616,21 @@ static void FilzaWolfSSHServeShell(WOLFSSH *ssh)
         int rc = wolfSSH_worker(ssh, &channelID);
         int error = wolfSSH_get_error(ssh);
         if (rc == WS_EOF || error == WS_EOF || error == WS_SOCKET_ERROR_E) break;
-        if (error == WS_CHANNEL_CLOSED) {
+        /* wolfSSH_ChannelExit() removes the local channel immediately. The
+         * peer's RFC 4254 close acknowledgement then arrives for that removed
+         * ID and wolfSSH reports WS_INVALID_CHANID. It is transport progress,
+         * not a connection failure; keep driving the remaining channels. */
+        if (error == WS_INVALID_CHANID && pendingLocalChannelCloseReplies > 0) {
+            pendingLocalChannelCloseReplies--;
+            FilzaDiagnosticsAppend(@"SSH", @"wolfSSH consumed stale close acknowledgement after local channel exit");
+            continue;
+        }
+        if (rc == WS_CHANNEL_CLOSED || error == WS_CHANNEL_CLOSED) {
             [lines removeObjectForKey:@(channelID)];
             [directories removeObjectForKey:@(channelID)];
             continue;
         }
-        if (error != WS_CHAN_RXD) {
+        if (rc != WS_CHAN_RXD && error != WS_CHAN_RXD) {
             if (rc == WS_SUCCESS || FilzaWolfSSHRetryable(rc, error)) continue;
             FilzaDiagnosticsAppend(@"SSH", [NSString stringWithFormat:@"wolfSSH channel worker ended rc=%d error=%d", rc, error]);
             break;
@@ -644,7 +656,9 @@ static void FilzaWolfSSHServeShell(WOLFSSH *ssh)
             if (closeChannel) {
                 [lines removeObjectForKey:key];
                 [directories removeObjectForKey:key];
-                wolfSSH_ChannelExit(channel);
+                if (wolfSSH_ChannelExit(channel) == WS_SUCCESS) {
+                    pendingLocalChannelCloseReplies++;
+                }
                 break;
             }
         }
