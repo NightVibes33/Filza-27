@@ -1,21 +1,24 @@
 name: Temporary FilzaSlop upstream sync
 
 on:
-  push:
+  pull_request:
     branches:
-      - upstream/filzaslop-2026-08-20
+      - main
     paths:
       - .github/workflows/upstream-filzaslop-sync.yml
+      - scripts/build_release_ipa.sh
 
 permissions:
   contents: write
 
 jobs:
   sync:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'upstream/filzaslop-2026-08-20'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: upstream/filzaslop-2026-08-20
           fetch-depth: 0
           submodules: false
 
