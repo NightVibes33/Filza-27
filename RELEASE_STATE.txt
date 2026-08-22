@@ -1,0 +1,5 @@
+release=filza-27-latest
+verifier_run=332
+verified_sha=88c7aaa7c188b912961f82db946118cd9c800f3c
+assets=Filza-27.ipa,Filza-27-SHA256.txt
+main_touched=false
