@@ -1,0 +1,87 @@
+name: Repair Stable Filza Tag
+
+on:
+  workflow_dispatch:
+  pull_request_target:
+    branches: [main]
+    paths:
+      - ".github/force-stable-release.trigger"
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  repair-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve latest successful main verifier
+        id: verified
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN_JSON="$(gh run list \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow verify-upstream-byetunes-ssh.yml \
+            --branch main \
+            --status success \
+            --limit 1 \
+            --json databaseId,headSha,headBranch,number,status,conclusion)"
+          RUN_ID="$(jq -r '.[0].databaseId // empty' <<<"$RUN_JSON")"
+          RUN_NUMBER="$(jq -r '.[0].number // empty' <<<"$RUN_JSON")"
+          VERIFIED_SHA="$(jq -r '.[0].headSha // empty' <<<"$RUN_JSON")"
+          test -n "$RUN_ID"
+          test -n "$RUN_NUMBER"
+          test -n "$VERIFIED_SHA"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "run_number=$RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "sha=$VERIFIED_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Create or move stable tag
+        id: tag
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERIFIED_SHA: ${{ steps.verified.outputs.sha }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          TAG="filza-27-latest"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" \
+              -f sha="$VERIFIED_SHA" -F force=true >/dev/null
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/$TAG" -f sha="$VERIFIED_SHA" >/dev/null
+          fi
+          REF_JSON="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG")"
+          test "$(jq -r '.object.type' <<<"$REF_JSON")" = "commit"
+          test "$(jq -r '.object.sha' <<<"$REF_JSON")" = "$VERIFIED_SHA"
+
+      - name: Record tag repair status
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERIFIED_SHA: ${{ steps.verified.outputs.sha }}
+          RUN_NUMBER: ${{ steps.verified.outputs.run_number }}
+          TAG_OUTCOME: ${{ steps.tag.outcome }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
+          cd repo
+          git fetch origin release-assets
+          git switch --force-create release-assets origin/release-assets
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cat > TAG_STATUS.txt <<EOF
+          tag=filza-27-latest
+          outcome=$TAG_OUTCOME
+          verifier_run=$RUN_NUMBER
+          verified_sha=$VERIFIED_SHA
+          EOF
+          git add TAG_STATUS.txt
+          git commit -m "Record stable tag status for verifier #${RUN_NUMBER}" || true
+          git push origin HEAD:release-assets
