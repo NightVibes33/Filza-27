@@ -14,58 +14,6 @@ A jailed, sideloadable Filza fork combining Filza with app/container management,
 
 > **This is not a full jailbreak.** Filza-27 exposes only files and containers the app can actually access. It does not claim kernel read/write, unrestricted `/`, a root shell, an SPTM bypass, or a writable system volume.
 
-## Modern iOS 17+ architecture
-
-Filza-27 ships one integrated arm64 runtime for **iOS 17.0+**:
-
-- `Frameworks/FilzaApplySandboxExt.dylib` contains the Filza integration, full pinned Mond 2.2 host, 3105 1.1.1, ByeTunes, WebDAV, SSH/SFTP, Gestalt routing, and runtime hooks.
-- There is **no separate `FilzaMondModern.dylib`** and no iOS 16 compatibility transform.
-- The release packager removes any stale split Mond runtime from the base IPA and asserts `MinimumOSVersion = 17.0`.
-- FilzaSlop packaging hardening strips `CFBundleURLTypes` from the packaged app and fails packaging if URL handlers remain.
-
-## Upstream FilzaSlop sync
-
-Filza-27 is synchronized through **`0xjohnnydev/FilzaSlop@ec490ade64b7755544833248d915e4adfc6f80d6`**. This covers the seven upstream commits GitHub previously reported as missing from this branch history:
-
-- `583fc09` — iOS 26 third-party app discovery through the accessible LaunchServices store.
-- `b7abe0d` — jailed container delete action fixes.
-- `5458ee7` — LiveContainer compatibility.
-- `dc10a15` — archive-first removal and safer deletion.
-- `75228a7` — explicit experimental LiveContainer warning.
-- `faad157` — simplified documented path list.
-- `ec490ad` — release IPA URL-scheme stripping.
-
-Filza-27 keeps its downstream runtime integrations and modern iOS 17+ packaging while retaining those upstream fixes.
-
-## What's new
-
-### FilzaSlop upstream runtime updates
-
-- iOS 26 app discovery recovers third-party identifiers from the device-local LaunchServices store and validates them through direct class-2 ContainerManager lookups.
-- LiveContainer compatibility uses guest-specific roots and signed-code identity checks.
-- Archive-first removal and safer permanent-delete confirmation are used for MCM-backed items.
-- Generated-file deletion tracking keeps intentionally removed generated files absent.
-- Release IPA URL schemes are stripped with an explicit packaging assertion.
-
-### Full Mond 2.2 on the modern runtime
-
-- Mond pinned to `rooootdev/mond@3d91194716ad5f06afdf7e9037e6964e80a4ac29`.
-- Mond is compiled directly into the main Filza runtime rather than lazy-loaded from a second compatibility dylib.
-- **CacheExtra Fields**, **MobileGestalt**, **PosterBoard / Tendies**, **HouseArrest / Santander**, and exploit/settings routes are retained.
-- **Run Exploit**, **Generate Token**, **Persist after reboot**, and **Ignore exploit failure** retain the upstream Mond flow.
-- The generated embedded copy keeps the Mond defaults domain, resources, namespace, shared state, and host adapters required to run inside Filza.
-
-### 3105 1.1.1 + unified third-party presentation
-
-- 3105 is pinned to `YangJiiii/3105@f1b81047a01a1817c7fb17e6938929eef108f1aa` (**1.1.1**).
-- The Files/Patches workspace, app/container handling, IPA repackaging, and current backend source units remain integrated.
-- 3105 and ByeTunes retain their shared persisted pairing/device connection.
-- 3105 keeps SpringBoardServices icon upgrades with LaunchServices fallback where available.
-- 3105, Mond, and presented ByeTunes use the same `FilzaEmbeddedPanel` shell for Close/dismissal behavior.
-- Filza's own file-browser/navigation UI is not replaced by that shared shell.
-
-See [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for the release changelog.
-
 ## Included features
 
 | Feature | Status | Notes |
