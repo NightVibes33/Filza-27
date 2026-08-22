@@ -1,6 +1,7 @@
 name: Publish Stable Filza Release
 
 # Stable tag is always sourced from an exact successful main verifier run.
+# A merged main push is also an explicit release trigger.
 on:
   workflow_run:
     workflows: ["Verify ByeTunes All Sources + YouTube + SSH IPA"]
