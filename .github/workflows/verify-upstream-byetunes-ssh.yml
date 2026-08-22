@@ -54,6 +54,9 @@ jobs:
           grep -Fq 'stage-mond-22-overlay.sh' Makefile
           grep -Fq 'stage-3105-v1.sh' Makefile
           grep -Fq 'patch-3105-embedded-compat.sh' Makefile
+          test -f scripts/patch-mond-embedded-parity.sh
+          grep -Fq 'SiriAI on older devices IOS 27+ Enjoy!' scripts/patch-mond-embedded-parity.sh
+          grep -Fq 'keeps iPadOS Mode available on iPhone' scripts/patch-mond-embedded-parity.sh
           test -f FilzaQuickActions.m
           grep -Fq 'FQCanonicalShortcutType' FilzaQuickActions.m
           grep -Fq '@"apps-manager"' FilzaQuickActions.m
@@ -155,11 +158,19 @@ jobs:
           gmake clean || true
           gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:17.0
 
+          MOND_GESTALT="ThirdParty/mond-current/Generated/Mond/views_tweaks_GestaltView.swift"
+          MOND_MG="ThirdParty/mond-current/Generated/Mond/helpers_mg.swift"
+          grep -Fq 'MondCurrentTweakToggle(title: "SiriAI on older devices")' "$MOND_GESTALT"
+          grep -Fq 'key: "a3n5T9sFtlyQ74NEp9ESxg"' "$MOND_MG"
+          grep -Fq 'value: 2' "$MOND_MG"
+          ! grep -Fq '.disabled(cache_extra?["+3Uf0Pm5F8Xy7Onyvko0vA"] as? String != "iPhone")' "$MOND_GESTALT"
+
           DYLIB=".theos/obj/FilzaApplySandboxExt.dylib"
           test -s "$DYLIB"
           test "$(lipo -archs "$DYLIB")" = "arm64"
           grep -aFq 'MondEmbeddedHostFactory' "$DYLIB"
           grep -aFq 'constructed pinned Mond 2.2 root at 3d91194716ad5f06afdf7e9037e6964e80a4ac29' "$DYLIB"
+          grep -aFq 'SiriAI on older devices IOS 27+ Enjoy!' "$DYLIB"
           grep -aFq 'Filza3105HostFactory' "$DYLIB"
           grep -aFq 'received %@ canonical=%@' "$DYLIB"
           grep -aFq 'ByeTunesEmbeddedHostFactory' "$DYLIB"
