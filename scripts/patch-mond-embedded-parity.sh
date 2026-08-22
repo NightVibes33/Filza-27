@@ -80,7 +80,47 @@ if ce_anchor not in gestalt:
     raise SystemExit("Mond 2.2 parity: CEView declaration missing")
 if ce_binding not in gestalt:
     gestalt = gestalt.replace(ce_anchor, ce_binding, 1)
+
+# Filza's embedded Mond Gestalt editor exposes the iOS 27 SiriMode override as
+# a normal informational toggle and keeps iPadOS Mode available on iPhone.
+siri_row_anchor = '                    MondCurrentTweakToggle(title: "Apple Intelligence")\n'
+siri_row = siri_row_anchor + '                    MondCurrentTweakToggle(title: "SiriAI on older devices")\n'
+if siri_row_anchor not in gestalt:
+    raise SystemExit("Mond embedded parity: Apple Intelligence row missing")
+if 'MondCurrentTweakToggle(title: "SiriAI on older devices")' not in gestalt:
+    gestalt = gestalt.replace(siri_row_anchor, siri_row, 1)
+
+ipad_cache_line = '                    let cache_extra = mg_dict_now["CacheExtra"] as? NSMutableDictionary\n\n'
+ipad_disabled = '''                    MondCurrentTweakToggle(title: "Enable iPadOS Mode")
+                        .disabled(cache_extra?["+3Uf0Pm5F8Xy7Onyvko0vA"] as? String != "iPhone")
+'''
+ipad_enabled = '                    MondCurrentTweakToggle(title: "Enable iPadOS Mode")\n'
+if ipad_disabled not in gestalt:
+    raise SystemExit("Mond embedded parity: hard-disabled iPadOS Mode row missing")
+gestalt = gestalt.replace(ipad_cache_line, '', 1)
+gestalt = gestalt.replace(ipad_disabled, ipad_enabled, 1)
 gestalt_path.write_text(gestalt, encoding="utf-8")
+
+helpers_path = root / "helpers_mg.swift"
+helpers = helpers_path.read_text(encoding="utf-8")
+ipad_tweak_anchor = '''    mg_tweak(
+        title: "Enable iPadOS Mode",
+'''
+siri_tweak = '''    mg_tweak(
+        title: "SiriAI on older devices",
+        minv: 27.0,
+        key: "a3n5T9sFtlyQ74NEp9ESxg",
+        value: 2,
+        info_t: .info,
+        info_msg: "SiriAI on older devices IOS 27+ Enjoy!"
+    ),
+
+'''
+if ipad_tweak_anchor not in helpers:
+    raise SystemExit("Mond embedded parity: iPadOS Mode tweak definition missing")
+if 'title: "SiriAI on older devices"' not in helpers:
+    helpers = helpers.replace(ipad_tweak_anchor, siri_tweak + ipad_tweak_anchor, 1)
+helpers_path.write_text(helpers, encoding="utf-8")
 
 # PartyUI's AppInfo helper has the same Bundle.main assumption. Keep its pinned
 # source behavior while supplying Mond's embedded resource bundle explicitly.
@@ -114,6 +154,11 @@ grep -Fq 'UIImage(named: icon, in: MondEmbeddedParity.bundle, compatibleWith: ni
 grep -Fq 'MondEmbeddedParity.bundle.infoDictionary' "$PARTY_HELPERS"
 grep -Fq 'UIImage(named: lastIcon, in: MondEmbeddedParity.bundle, compatibleWith: nil)' "$PARTY_HELPERS"
 grep -Fq '@EnvironmentObject var state: MondCurrentAppState' "$MOND_GEN/views_tweaks_GestaltView.swift"
+grep -Fq 'MondCurrentTweakToggle(title: "SiriAI on older devices")' "$MOND_GEN/views_tweaks_GestaltView.swift"
+grep -Fq 'info_msg: "SiriAI on older devices IOS 27+ Enjoy!"' "$MOND_GEN/helpers_mg.swift"
+grep -Fq 'key: "a3n5T9sFtlyQ74NEp9ESxg"' "$MOND_GEN/helpers_mg.swift"
+grep -Fq 'value: 2' "$MOND_GEN/helpers_mg.swift"
+! grep -Fq '.disabled(cache_extra?["+3Uf0Pm5F8Xy7Onyvko0vA"] as? String != "iPhone")' "$MOND_GEN/views_tweaks_GestaltView.swift"
 
 ! grep -R -Fq 'Color("AccentColor")' "$MOND_GEN"
 ! grep -R -Fq 'UserDefaults.standard' "$MOND_GEN"
