@@ -22,6 +22,8 @@ jobs:
       IDEVICE_COMMIT: 37ee77cf713f483551f3cf33ea8b2087a40058ca
       LIBSSH_COMMIT: 07430deb9b97b751ec5ea5a7fc307f40bf042e0a
       MBEDTLS_COMMIT: 068ff080b369adfac81509f9b57b2afabaf82dc5
+      WOLFSSH_COMMIT: e7c8dc2c2c54e5f0f2986be592e2243725a4dd33
+      WOLFSSL_COMMIT: 9ab8a4b19debdade06b10d30cf70167de8f9b915
       THEOS_COMMIT: 5280bd038207e14f8bd76f5417aa2fe641c03228
       MOND_COMMIT: 3d91194716ad5f06afdf7e9037e6964e80a4ac29
       BASE_IPA_SHA256: b11ce30a2db6f6bc77773ed30bdb855d7c847830891b14d21230f2d893d5f223
@@ -52,6 +54,18 @@ jobs:
           grep -Fq 'stage-mond-22-overlay.sh' Makefile
           grep -Fq 'stage-3105-v1.sh' Makefile
           grep -Fq 'patch-3105-embedded-compat.sh' Makefile
+          test -f FilzaWolfSSHServer.m
+          test -f scripts/build-wolfssh-stack.sh
+          test -f scripts/wolfssh-allow-multiple-session-channels.patch
+          grep -Fq 'if (ssh->channelListSz >= 1)' scripts/wolfssh-allow-multiple-session-channels.patch
+          grep -Fq 'wolfSSH_CTX_SetChannelOpenCb' FilzaWolfSSHServer.m
+          grep -Fq 'wolfSSH rejected exec channel closed' FilzaWolfSSHServer.m
+          grep -Fq 'consumed stale close acknowledgement after local channel exit' FilzaWolfSSHServer.m
+          grep -Fq 'wolfSSH_accept' FilzaWolfSSHServer.m
+          grep -Fq 'wolfSSH_SFTP_read' FilzaWolfSSHServer.m
+          grep -Fq 'silent-audio background keepalive active for wolfSSH' FilzaWolfSSHServer.m
+          grep -Fq 'FilzaWolfSSHServer.m' FilzaSSHMetadata.mk
+          ! grep -Fq 'FilzaSSHServerV2.m FilzaSSHPreferencesV2.m' FilzaSSHMetadata.mk
           test -f ByeTunesMetadataCompat.swift
           test -f ByeTunesDownloadParityCompat.swift
           test -f scripts/stage-byetunes-youtubekit.sh
@@ -67,16 +81,27 @@ jobs:
           grep -Fq 'FilzaEmbeddedPanel {' FilzaMondCurrentHost.swift
           ! grep -Fq 'ios16Backport' FilzaMondCurrentHost.swift
 
-      - name: Restore pinned SSH stack cache
+      - name: Restore pinned libssh verifier cache
         id: ssh-cache
         uses: actions/cache@v4
         with:
           path: Vendor/ssh
           key: ssh-stack-${{ runner.os }}-${{ runner.arch }}-xcode26.2-ios26.2-${{ env.LIBSSH_COMMIT }}-${{ env.MBEDTLS_COMMIT }}-${{ hashFiles('scripts/build-ssh-stack.sh') }}
 
-      - name: Build pinned SSH stack
+      - name: Build pinned libssh verifier
         if: steps.ssh-cache.outputs.cache-hit != 'true'
         run: bash scripts/build-ssh-stack.sh "$GITHUB_WORKSPACE/Vendor/ssh"
+
+      - name: Restore pinned wolfSSH server cache
+        id: wolfssh-cache
+        uses: actions/cache@v4
+        with:
+          path: Vendor/wolfssh
+          key: wolfssh-${{ runner.os }}-${{ runner.arch }}-xcode26.2-ios17-${{ env.WOLFSSH_COMMIT }}-${{ env.WOLFSSL_COMMIT }}-${{ hashFiles('scripts/build-wolfssh-stack.sh', 'scripts/wolfssh-allow-multiple-session-channels.patch') }}
+
+      - name: Build pinned wolfSSH server stack
+        if: steps.wolfssh-cache.outputs.cache-hit != 'true'
+        run: bash scripts/build-wolfssh-stack.sh "$GITHUB_WORKSPACE/Vendor/wolfssh"
 
       - name: Install Procursus build tools
         uses: dhinakg/procursus-action@main
@@ -117,8 +142,12 @@ jobs:
           set -euxo pipefail
           export PATH="/opt/procursus/bin:$PATH"
           test "$(cat Vendor/idevice/COMMIT)" = "$IDEVICE_COMMIT"
+          test "$(cat Vendor/wolfssh/WOLFSSH_COMMIT)" = "$WOLFSSH_COMMIT"
+          test "$(cat Vendor/wolfssh/WOLFSSL_COMMIT)" = "$WOLFSSL_COMMIT"
           test -s Vendor/idevice/lib/libidevice_ffi.a
           test -s Vendor/ssh/lib/libssh.a
+          test -s Vendor/wolfssh/lib/libwolfssh.a
+          test -s Vendor/wolfssh/lib/libwolfssl.a
           gmake clean || true
           gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:17.0
 
@@ -131,8 +160,12 @@ jobs:
           grep -aFq 'ByeTunesEmbeddedHostFactory' "$DYLIB"
           grep -aFq 'All Sources' "$DYLIB"
           grep -aFq 'YouTube' "$DYLIB"
-          grep -aFq 'embedded libssh server listening address=' "$DYLIB"
+          grep -aFq 'wolfSSH SSH/SFTP server listening address=' "$DYLIB"
+          grep -aFq 'wolfSSH authenticated SFTP subsystem accepted' "$DYLIB"
+          grep -aFq 'protocol self-test passed' "$DYLIB"
           grep -aFq 'jailed in-process WebDAV lifecycle hook installed' "$DYLIB"
+          nm -gU "$DYLIB" > .theos/wolfssh-symbols.txt
+          grep -Eq 'wolfSSH_accept|_wolfSSH_accept' .theos/wolfssh-symbols.txt
           ! otool -L "$DYLIB" | grep -Fq 'FilzaMondModern.dylib'
           bash scripts/verify-mond-source-completeness.sh
 
@@ -195,11 +228,12 @@ jobs:
           plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
           plutil -replace NSSupportsLiveActivities -bool YES "$APP/Info.plist"
           plutil -replace NSSupportsLiveActivitiesFrequentUpdates -bool YES "$APP/Info.plist"
+          plutil -remove UIBackgroundModes "$APP/Info.plist" 2>/dev/null || true
+          plutil -insert UIBackgroundModes -json '["audio"]' "$APP/Info.plist"
           plutil -replace NSLocalNetworkUsageDescription -string "Filza 27 uses your local network when you enable its WebDAV or SSH/SFTP server." "$APP/Info.plist"
           plutil -replace NSBonjourServices -json '["_http._tcp","_ssh._tcp"]' "$APP/Info.plist"
           bash scripts/merge-3105-app-metadata.sh "$APP/Info.plist"
 
-          # Keep the latest FilzaSlop packaging hardening while using the modern runtime.
           plutil -remove CFBundleURLTypes "$APP/Info.plist" 2>/dev/null || true
           if plutil -extract CFBundleURLTypes json -o - "$APP/Info.plist" >/dev/null 2>&1; then
             echo "CFBundleURLTypes was not stripped" >&2
@@ -207,6 +241,7 @@ jobs:
           fi
 
           test "$(plutil -extract MinimumOSVersion raw -o - "$APP/Info.plist")" = "17.0"
+          plutil -extract UIBackgroundModes json -o - "$APP/Info.plist" | grep -Fq '"audio"'
           test ! -e "$APP/Frameworks/FilzaMondModern.dylib"
           test -s "$APP/Frameworks/FilzaApplySandboxExt.dylib"
           test -s "$APP/MondEmbedded.bundle/Info.plist"

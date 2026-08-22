@@ -85,7 +85,7 @@ See [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for the release changelog.
 | PosterBoard / Tendies | ✅ | Applying changes still depends on writable target access |
 | HouseArrest / Santander | ✅ | Access remains OS/build-specific |
 | WebDAV server | ✅ | App-hosted service |
-| SSH/SFTP server | ✅ | App-hosted service |
+| SSH/SFTP server | ✅ wolfSSH | Password-authenticated shell + SFTP, multiple RFC 4254 session channels, local self-connection, and audio-mode background keepalive |
 | Home Screen quick actions | ✅ | Apps Manager, Music Library, Gestalt, and Patches routes |
 | Shared third-party panel | ✅ | 3105, Mond, presented ByeTunes; Filza browser UI unchanged |
 | Full jailbreak / writable system volume | ❌ Not claimed | Outside this project's proven capabilities |
@@ -174,6 +174,21 @@ The MobileGestalt cache used by the editor is:
 /private/var/containers/Shared/SystemGroup/systemgroup.com.apple.mobilegestaltcache/Library/Caches/com.apple.MobileGestalt.plist
 ```
 
+## SSH/SFTP
+
+The server uses the pinned wolfSSH/wolfSSL stack, listens on the configured TCP port, and supports password-authenticated interactive shell and SFTP sessions. Multiple SSH `session` channels are enabled because clients such as Clauntty open a control PTY before opening their actual terminal or setup channel.
+
+For a device at `192.168.4.20` using port `2222`:
+
+```sh
+ssh filza@192.168.4.20 -p 2222
+sftp -P 2222 filza@192.168.4.20
+```
+
+The app activates an audio-mode keepalive while SSH/SFTP is enabled so an established listener can continue when Filza moves to the background. Force-quitting the app, process termination, or the OS revoking execution still stops an in-process server.
+
+The displayed private address is reachable only on the local network (and can also be used by a terminal app on the same device). Remote Internet access requires a successful router mapping, a manually configured forward, or a separate VPN/tunnel. A NAT-PMP/UPnP failure is a public-mapping failure, not an SSH listener failure.
+
 ## Shared third-party UI contract
 
 `ThirdParty/3105/Sources/FilzaEmbeddedPanel.swift` is the canonical host shell for presented third-party tools. It provides the persistent Close action, material header/divider, page-sheet presentation, large detent, grabber, and consistent dismissal behavior.
@@ -218,7 +233,7 @@ Filza-27-SHA256.txt
 - `/System/Library` can be readable while remaining on iOS's signed read-only system volume.
 - Access to an App Group or data container does not imply access to the entire filesystem.
 - No full jailbreak, root shell, SPTM bypass, or system-volume remount is claimed by the packaging work.
-- WebDAV and SSH/SFTP are app-hosted services and can be suspended in the background.
+- WebDAV is app-hosted and may be suspended in the background. SSH/SFTP requests audio-mode background execution while enabled, but cannot survive a force-quit or process termination.
 
 ## Upstream projects and credits
 

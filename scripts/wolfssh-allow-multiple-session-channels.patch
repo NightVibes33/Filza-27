@@ -1,0 +1,15 @@
+diff --git a/src/internal.c b/src/internal.c
+index 2fb3e2a..6a9e86c 100644
+--- a/src/internal.c
++++ b/src/internal.c
+@@ -10937,10 +10937,6 @@ static int DoChannelOpen(WOLFSSH* ssh,
+         typeId = NameToId(type, typeSz);
+         switch (typeId) {
+             case ID_CHANTYPE_SESSION:
+-                if (ssh->channelListSz >= 1) {
+-                    ret = WS_INVALID_CHANID;
+-                    fail_reason = OPEN_ADMINISTRATIVELY_PROHIBITED;
+-                }
+                 break;
+         #ifdef WOLFSSH_FWD
+             case ID_CHANTYPE_TCPIP_DIRECT:
