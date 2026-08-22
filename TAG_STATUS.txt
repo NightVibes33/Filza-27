@@ -1,0 +1,8 @@
+tag=filza-27-latest
+outcome=failure
+rc=1
+verifier_run=315
+verified_sha=429c5373a042e57bda517a0d851b10f9d8739c0d
+error_begin
+{"message":"Resource not accessible by integration","documentation_url":"https://docs.github.com/rest/git/refs#create-a-reference","status":"403"}gh: Resource not accessible by integration (HTTP 403)
+error_end
