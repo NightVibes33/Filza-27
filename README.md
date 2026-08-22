@@ -2,16 +2,20 @@
 
 A jailed, sideloadable Filza fork combining Filza with app/container management, ByeTunes, Mond 2.2, WebDAV, SSH/SFTP, and the 3105 patch workspace.
 
-[![Filza Release](https://img.shields.io/badge/release-filza--27--latest-brightgreen)](https://github.com/NightVibes33/Filza-27/releases/tag/filza-27-latest)
+[![Filza Verified Build](https://img.shields.io/badge/verified-build%20315-brightgreen)](https://github.com/NightVibes33/Filza-27/tree/release-assets)
 
 ## Download
 
-### [Download the latest verified `Filza-27.ipa`](https://github.com/NightVibes33/Filza-27/releases/download/filza-27-latest/Filza-27.ipa)
+### [Download the latest verified `Filza-27.ipa`](https://raw.githubusercontent.com/NightVibes33/Filza-27/release-assets/Filza-27.ipa)
 
 - Minimum deployment target: **iOS 17.0**.
-- Stable release tag: [`filza-27-latest`](https://github.com/NightVibes33/Filza-27/releases/tag/filza-27-latest)
-- Checksum: [`Filza-27-SHA256.txt`](https://github.com/NightVibes33/Filza-27/releases/download/filza-27-latest/Filza-27-SHA256.txt)
-- `filza-27-latest` moves only after an exact-SHA green GitHub Actions verifier run on `main`; it does not depend on the repository-wide `/releases/latest` pointer.
+- Latest verified build: **GitHub Actions verifier #315**.
+- Verified commit: [`429c5373a042e57bda517a0d851b10f9d8739c0d`](https://github.com/NightVibes33/Filza-27/commit/429c5373a042e57bda517a0d851b10f9d8739c0d)
+- Stable verified assets: [`release-assets`](https://github.com/NightVibes33/Filza-27/tree/release-assets)
+- Checksum: [`Filza-27-SHA256.txt`](https://raw.githubusercontent.com/NightVibes33/Filza-27/release-assets/Filza-27-SHA256.txt)
+- Build metadata: [`BUILD.txt`](https://github.com/NightVibes33/Filza-27/blob/release-assets/BUILD.txt)
+- SHA-256: `b37848d7901966889870a47ff58b98b123f1f4e45ea7524a49a0f50e554b5b3c`
+- The `release-assets` branch is updated only from an exact-SHA green verifier artifact on `main`; it does not depend on GitHub's repository-wide `/releases/latest` pointer.
 
 > **This is not a full jailbreak.** Filza-27 exposes only files and containers the app can actually access. It does not claim kernel read/write, unrestricted `/`, a root shell, an SPTM bypass, or a writable system volume.
 
@@ -77,7 +81,7 @@ These are capability-dependent targets, not a claim that every path is writable 
 
 ## Install
 
-1. Download `Filza-27.ipa` from the stable Filza release tag.
+1. Download `Filza-27.ipa` from the stable verified `release-assets` branch using the link above.
 2. Sideload it with your preferred signing method.
 3. Keep the base app identity when your signer allows it:
 
@@ -181,12 +185,15 @@ The 3105/shared-presentation source contract is:
 .github/workflows/verify-3105-shared-ui.yml
 ```
 
-After the exact-SHA modern verifier succeeds, the versioned release workflow publishes `filza-27-<run-number>`, and the stable publisher moves `filza-27-latest` to the same verified commit with:
+After an exact-SHA modern verifier succeeds, `.github/workflows/publish-stable-ipa-branch.yml` mirrors the verified artifact to the stable `release-assets` branch as:
 
 ```text
 Filza-27.ipa
 Filza-27-SHA256.txt
+BUILD.txt
 ```
+
+GitHub Release publishers also attempt versioned `filza-27-<run-number>` and `filza-27-latest` releases when the workflow token is permitted to write Releases. The stable `release-assets` branch remains the canonical download path and does not depend on `/releases/latest`.
 
 The old iOS 16 and universal split-runtime workflows are disabled and do not build or publish artifacts.
 
