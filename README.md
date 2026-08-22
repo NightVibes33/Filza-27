@@ -21,7 +21,7 @@ A jailed, sideloadable Filza fork combining Filza with app/container management,
 | Filza file browser | ✅ | Visibility still follows actual sandbox/access state |
 | Apps Manager | ✅ 3105 1.1.1 | App/container details depend on available APIs/permissions |
 | iOS 26 app discovery | ✅ | LaunchServices store candidates + direct MCM validation |
-| Shared device pairing | ✅ | Used by ByeTunes/3105 paired features |
+| Shared device pairing | ⚠️ Partial | ByeTunes and 3105 share one pairing state; selecting a pairing file works in ByeTunes but the embedded 3105 selector currently does not |
 | Enhanced app icons | ✅ where supported | SpringBoardServices with LaunchServices fallback |
 | `.3105` Patch Workspace v2 | ✅ | Portable projects, backup/restore, receipts/journals |
 | 3105 IPA repackaging | ✅ | Repackages the installed app bundle without decrypting FairPlay |
@@ -34,7 +34,7 @@ A jailed, sideloadable Filza fork combining Filza with app/container management,
 | HouseArrest / Santander | ✅ | Access remains OS/build-specific |
 | WebDAV server | ⚠️ Runtime unverified | App-hosted listener builds successfully, but device behavior is currently unverified and likely broken |
 | SSH/SFTP server | ⚠️ Runtime unverified | wolfSSH/SFTP builds successfully, but real device connections and background behavior are currently unverified and likely broken |
-| Home Screen quick actions | ✅ | Apps Manager, Music Library, Gestalt, and Patches routes |
+| Home Screen quick actions | ⚠️ Partial | The Apps Manager shortcut currently falls through to Filza’s legacy manager instead of embedded 3105; in-app Apps Manager still opens 3105 |
 | Shared third-party panel | ✅ | 3105, Mond, presented ByeTunes; Filza browser UI unchanged |
 | Full jailbreak / writable system volume | ❌ Not claimed | Outside this project's proven capabilities |
 
@@ -87,6 +87,12 @@ Changing that identity can break MobileHouseArrest-dependent behavior.
 ## Main tools
 
 ### Apps Manager / 3105
+
+3105 discovers apps through its ContainerStore/MCM/LaunchServices pipeline. The pairing file is required for paired-device services such as SpringBoardServices icon upgrades and other live-device features, but it is not the sole source of the basic app catalog.
+
+3105 and ByeTunes use the same shared pairing state and connection. The pairing-file picker currently works in ByeTunes but does not work from the embedded 3105 interface. Select the pairing file in ByeTunes instead; 3105 should then reuse that shared pairing file, so a failure to select it again inside 3105 is not itself a pairing failure.
+
+The Home Screen long-press **Apps Manager** quick action currently opens Filza’s legacy Apps Manager instead of embedded 3105. The in-app Apps Manager button continues to open 3105 correctly.
 
 Apps Manager embeds **3105 1.1.1** from:
 
