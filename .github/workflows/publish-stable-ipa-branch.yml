@@ -1,0 +1,155 @@
+name: Publish Stable IPA Branch
+
+on:
+  workflow_run:
+    workflows: ["Verify ByeTunes All Sources + YouTube + SSH IPA"]
+    types: [completed]
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/publish-stable-ipa-branch.yml"
+  pull_request_target:
+    branches: [main]
+    paths:
+      - ".github/force-stable-release.trigger"
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: publish-stable-ipa-branch
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      github.event_name == 'pull_request_target' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve exact green verifier run
+        id: verified
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          EVENT_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          EVENT_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          EVENT_RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          EVENT_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "workflow_run" ]]; then
+            test "$EVENT_RUN_CONCLUSION" = "success"
+            test "$EVENT_RUN_BRANCH" = "main"
+            RUN_ID="$EVENT_RUN_ID"
+            RUN_NUMBER="$EVENT_RUN_NUMBER"
+            VERIFIED_SHA="$EVENT_RUN_SHA"
+          else
+            RUN_JSON="$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow verify-upstream-byetunes-ssh.yml \
+              --branch main \
+              --status success \
+              --limit 1 \
+              --json databaseId,headSha,headBranch,number,status,conclusion)"
+            RUN_ID="$(jq -r '.[0].databaseId // empty' <<<"$RUN_JSON")"
+            RUN_NUMBER="$(jq -r '.[0].number // empty' <<<"$RUN_JSON")"
+            VERIFIED_SHA="$(jq -r '.[0].headSha // empty' <<<"$RUN_JSON")"
+            test -n "$RUN_ID"
+            test -n "$RUN_NUMBER"
+            test -n "$VERIFIED_SHA"
+          fi
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "run_number=$RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "sha=$VERIFIED_SHA" >> "$GITHUB_OUTPUT"
+          echo "Stable IPA source: verifier #$RUN_NUMBER ($RUN_ID), $VERIFIED_SHA"
+
+      - name: Checkout exact verified commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.verified.outputs.sha }}
+          fetch-depth: 0
+
+      - name: Download and verify exact IPA
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ steps.verified.outputs.run_id }}
+          RUN_NUMBER: ${{ steps.verified.outputs.run_number }}
+          VERIFIED_SHA: ${{ steps.verified.outputs.sha }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          STABLE="$RUNNER_TEMP/filza-stable"
+          VERIFIED="$RUNNER_TEMP/filza-verified"
+          rm -rf "$STABLE" "$VERIFIED"
+          mkdir -p "$STABLE" "$VERIFIED"
+          gh run download "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name Filza-27-modern-unsigned-arm64 \
+            --dir "$VERIFIED"
+          SOURCE_IPA="$(find "$VERIFIED" -type f -name '*.ipa' -print -quit)"
+          test -n "$SOURCE_IPA"
+          test -s "$SOURCE_IPA"
+          cp "$SOURCE_IPA" "$STABLE/Filza-27.ipa"
+          unzip -tq "$STABLE/Filza-27.ipa"
+          unzip -l "$STABLE/Filza-27.ipa" | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
+          unzip -l "$STABLE/Filza-27.ipa" | grep -F 'MondEmbedded.bundle/Info.plist'
+          unzip -l "$STABLE/Filza-27.ipa" | grep -F 'Filza3105.bundle/UpstreamAppInfo.plist'
+          APP_PLIST="$(mktemp)"
+          unzip -p "$STABLE/Filza-27.ipa" 'Payload/*.app/Info.plist' > "$APP_PLIST"
+          python3 - "$APP_PLIST" "$RUN_NUMBER" <<'PY'
+          import plistlib, sys
+          with open(sys.argv[1], "rb") as f:
+              info = plistlib.load(f)
+          if info.get("MinimumOSVersion") != "17.0":
+              raise SystemExit(f"unexpected MinimumOSVersion: {info.get('MinimumOSVersion')!r}")
+          if str(info.get("CFBundleVersion")) != sys.argv[2]:
+              raise SystemExit(f"unexpected CFBundleVersion: {info.get('CFBundleVersion')!r}")
+          PY
+          rm -f "$APP_PLIST"
+          (cd "$STABLE" && sha256sum Filza-27.ipa > Filza-27-SHA256.txt)
+          cat > "$STABLE/BUILD.txt" <<EOF
+          verifier_run=$RUN_NUMBER
+          verifier_run_id=$RUN_ID
+          verified_sha=$VERIFIED_SHA
+          asset=Filza-27.ipa
+          minimum_ios=17.0
+          EOF
+
+      - name: Publish stable asset branch and tag
+        env:
+          VERIFIED_SHA: ${{ steps.verified.outputs.sha }}
+          RUN_NUMBER: ${{ steps.verified.outputs.run_number }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          STABLE="$RUNNER_TEMP/filza-stable"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin release-assets || true
+          if git show-ref --verify --quiet refs/remotes/origin/release-assets; then
+            git switch --force-create release-assets origin/release-assets
+          else
+            git switch --orphan release-assets
+          fi
+          git rm -rf . >/dev/null 2>&1 || true
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp "$STABLE/Filza-27.ipa" ./Filza-27.ipa
+          cp "$STABLE/Filza-27-SHA256.txt" ./Filza-27-SHA256.txt
+          cp "$STABLE/BUILD.txt" ./BUILD.txt
+          git add Filza-27.ipa Filza-27-SHA256.txt BUILD.txt
+          git commit -m "Publish verified Filza IPA #${RUN_NUMBER}" || true
+          git push --force origin HEAD:release-assets
+
+          git tag -f filza-27-latest "$VERIFIED_SHA"
+          git push --force origin refs/tags/filza-27-latest
+          test "$(git rev-parse filza-27-latest^{commit})" = "$VERIFIED_SHA"
+          echo "Stable IPA branch and filza-27-latest tag now target verifier #$RUN_NUMBER at $VERIFIED_SHA"
