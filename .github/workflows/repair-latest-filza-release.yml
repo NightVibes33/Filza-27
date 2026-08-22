@@ -5,6 +5,12 @@ on:
     workflows: ["Verify ByeTunes All Sources + YouTube + SSH IPA"]
     types: [completed]
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/repair-latest-filza-release.yml"
+  schedule:
+    - cron: "17 */6 * * *"
 
 permissions:
   actions: read
@@ -18,6 +24,8 @@ jobs:
   repair-latest-release:
     if: >-
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      github.event_name == 'schedule' ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
