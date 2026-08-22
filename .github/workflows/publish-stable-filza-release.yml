@@ -1,0 +1,185 @@
+name: Publish Stable Filza Release
+
+on:
+  workflow_run:
+    workflows: ["Verify ByeTunes All Sources + YouTube + SSH IPA"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: publish-stable-filza-27
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve exact green verifier run
+        id: verified
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          EVENT_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          EVENT_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          EVENT_RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          EVENT_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "workflow_run" ]]; then
+            test "$EVENT_RUN_CONCLUSION" = "success"
+            test "$EVENT_RUN_BRANCH" = "main"
+            RUN_ID="$EVENT_RUN_ID"
+            RUN_NUMBER="$EVENT_RUN_NUMBER"
+            VERIFIED_SHA="$EVENT_RUN_SHA"
+          else
+            RUN_JSON="$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow verify-upstream-byetunes-ssh.yml \
+              --branch main \
+              --status success \
+              --limit 1 \
+              --json databaseId,headSha,headBranch,number,status,conclusion)"
+            RUN_ID="$(jq -r '.[0].databaseId // empty' <<<"$RUN_JSON")"
+            RUN_NUMBER="$(jq -r '.[0].number // empty' <<<"$RUN_JSON")"
+            VERIFIED_SHA="$(jq -r '.[0].headSha // empty' <<<"$RUN_JSON")"
+            RUN_BRANCH="$(jq -r '.[0].headBranch // empty' <<<"$RUN_JSON")"
+            RUN_STATUS="$(jq -r '.[0].status // empty' <<<"$RUN_JSON")"
+            RUN_CONCLUSION="$(jq -r '.[0].conclusion // empty' <<<"$RUN_JSON")"
+            test -n "$RUN_ID"
+            test "$RUN_BRANCH" = "main"
+            test "$RUN_STATUS" = "completed"
+            test "$RUN_CONCLUSION" = "success"
+          fi
+
+          test -n "$RUN_ID"
+          test -n "$RUN_NUMBER"
+          test -n "$VERIFIED_SHA"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "run_number=$RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "sha=$VERIFIED_SHA" >> "$GITHUB_OUTPUT"
+          echo "Stable release source: verifier #$RUN_NUMBER ($RUN_ID), $VERIFIED_SHA"
+
+      - name: Checkout exact verified commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.verified.outputs.sha }}
+
+      - name: Download exact verifier artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ steps.verified.outputs.run_id }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf verified-modern release
+          gh run download "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name Filza-27-modern-unsigned-arm64 \
+            --dir verified-modern
+
+      - name: Verify and stage stable IPA
+        env:
+          RUN_NUMBER: ${{ steps.verified.outputs.run_number }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          SOURCE_IPA="$(find verified-modern -type f -name '*.ipa' -print -quit)"
+          test -n "$SOURCE_IPA"
+          test -s "$SOURCE_IPA"
+          mkdir -p release
+          cp "$SOURCE_IPA" release/Filza-27.ipa
+          unzip -tq release/Filza-27.ipa
+          unzip -l release/Filza-27.ipa | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
+          unzip -l release/Filza-27.ipa | grep -F 'MondEmbedded.bundle/Info.plist'
+          unzip -l release/Filza-27.ipa | grep -F 'Filza3105.bundle/UpstreamAppInfo.plist'
+          ! unzip -l release/Filza-27.ipa | grep -F 'Frameworks/FilzaMondModern.dylib'
+
+          APP_PLIST="$(mktemp)"
+          unzip -p release/Filza-27.ipa 'Payload/*.app/Info.plist' > "$APP_PLIST"
+          python3 - "$APP_PLIST" "$RUN_NUMBER" <<'PY'
+          import plistlib, sys
+          with open(sys.argv[1], "rb") as f:
+              info = plistlib.load(f)
+          if info.get("MinimumOSVersion") != "17.0":
+              raise SystemExit(f"unexpected MinimumOSVersion: {info.get('MinimumOSVersion')!r}")
+          if str(info.get("CFBundleVersion")) != sys.argv[2]:
+              raise SystemExit(f"unexpected CFBundleVersion: {info.get('CFBundleVersion')!r}")
+          if "CFBundleURLTypes" in info:
+              raise SystemExit("CFBundleURLTypes unexpectedly present")
+          PY
+          rm -f "$APP_PLIST"
+          sha256sum release/Filza-27.ipa | tee release/Filza-27-SHA256.txt
+
+      - name: Build stable release notes
+        env:
+          RUN_ID: ${{ steps.verified.outputs.run_id }}
+          RUN_NUMBER: ${{ steps.verified.outputs.run_number }}
+          VERIFIED_SHA: ${{ steps.verified.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp RELEASE_NOTES.md release/RELEASE_NOTES.md
+          {
+            printf '\n---\n\n### Stable release metadata\n\n'
+            printf -- '- Stable tag: `filza-27-latest`\n'
+            printf -- '- Modern verifier run: `%s` (#%s)\n' "$RUN_ID" "$RUN_NUMBER"
+            printf -- '- Commit: `%s`\n' "$VERIFIED_SHA"
+            printf -- '- Asset: `Filza-27.ipa`\n'
+            printf -- '- Checksum: `Filza-27-SHA256.txt`\n'
+          } >> release/RELEASE_NOTES.md
+
+      - name: Publish stable Filza tag and assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_NUMBER: ${{ steps.verified.outputs.run_number }}
+          VERIFIED_SHA: ${{ steps.verified.outputs.sha }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          TAG="filza-27-latest"
+          TITLE="Filza 27 — Latest Green Build (#${RUN_NUMBER})"
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh api -X PATCH \
+              "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" \
+              -f sha="$VERIFIED_SHA" \
+              -F force=true >/dev/null
+            gh release upload "$TAG" \
+              release/Filza-27.ipa release/Filza-27-SHA256.txt \
+              --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$TITLE" \
+              --notes-file release/RELEASE_NOTES.md \
+              --latest
+          else
+            gh release create "$TAG" \
+              release/Filza-27.ipa release/Filza-27-SHA256.txt \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$VERIFIED_SHA" \
+              --title "$TITLE" \
+              --notes-file release/RELEASE_NOTES.md \
+              --latest
+          fi
+
+          REF_JSON="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG")"
+          test "$(jq -r '.object.type' <<<"$REF_JSON")" = "commit"
+          test "$(jq -r '.object.sha' <<<"$REF_JSON")" = "$VERIFIED_SHA"
+
+          RELEASE_JSON="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
+          for asset in Filza-27.ipa Filza-27-SHA256.txt; do
+            test "$(jq -r --arg name "$asset" '.assets[] | select(.name == $name) | .name' <<<"$RELEASE_JSON")" = "$asset"
+          done
+
+          echo "Stable Filza release $TAG now points to verifier #$RUN_NUMBER at $VERIFIED_SHA"
