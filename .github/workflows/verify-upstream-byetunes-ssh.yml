@@ -54,6 +54,10 @@ jobs:
           grep -Fq 'stage-mond-22-overlay.sh' Makefile
           grep -Fq 'stage-3105-v1.sh' Makefile
           grep -Fq 'patch-3105-embedded-compat.sh' Makefile
+          test -f FilzaQuickActions.m
+          grep -Fq 'FQCanonicalShortcutType' FilzaQuickActions.m
+          grep -Fq '@"apps-manager"' FilzaQuickActions.m
+          grep -Fq 'Filza3105PresentAppsFromController' FilzaQuickActions.m
           test -f FilzaWolfSSHServer.m
           test -f scripts/build-wolfssh-stack.sh
           test -f scripts/wolfssh-allow-multiple-session-channels.patch
@@ -157,6 +161,7 @@ jobs:
           grep -aFq 'MondEmbeddedHostFactory' "$DYLIB"
           grep -aFq 'constructed pinned Mond 2.2 root at 3d91194716ad5f06afdf7e9037e6964e80a4ac29' "$DYLIB"
           grep -aFq 'Filza3105HostFactory' "$DYLIB"
+          grep -aFq 'received %@ canonical=%@' "$DYLIB"
           grep -aFq 'ByeTunesEmbeddedHostFactory' "$DYLIB"
           grep -aFq 'All Sources' "$DYLIB"
           grep -aFq 'YouTube' "$DYLIB"
@@ -241,6 +246,7 @@ jobs:
           fi
 
           test "$(plutil -extract MinimumOSVersion raw -o - "$APP/Info.plist")" = "17.0"
+          plutil -extract UIApplicationShortcutItems json -o - "$APP/Info.plist" | grep -Fq '"apps-manager"'
           plutil -extract UIBackgroundModes json -o - "$APP/Info.plist" | grep -Fq '"audio"'
           test ! -e "$APP/Frameworks/FilzaMondModern.dylib"
           test -s "$APP/Frameworks/FilzaApplySandboxExt.dylib"
