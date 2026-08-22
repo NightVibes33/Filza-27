@@ -98,6 +98,8 @@ jobs:
             --dir verified-modern
 
       - name: Verify and stage release IPA
+        env:
+          RUN_NUMBER: ${{ steps.verified.outputs.run_number }}
         shell: bash
         run: |
           set -euxo pipefail
@@ -115,12 +117,14 @@ jobs:
 
           APP_PLIST="$(mktemp)"
           unzip -p release/Filza-27.ipa 'Payload/*.app/Info.plist' > "$APP_PLIST"
-          python3 - "$APP_PLIST" <<'PY'
+          python3 - "$APP_PLIST" "$RUN_NUMBER" <<'PY'
           import plistlib, sys
           with open(sys.argv[1], "rb") as f:
               info = plistlib.load(f)
           if info.get("MinimumOSVersion") != "17.0":
               raise SystemExit(f"unexpected MinimumOSVersion: {info.get('MinimumOSVersion')!r}")
+          if str(info.get("CFBundleVersion")) != sys.argv[2]:
+              raise SystemExit(f"unexpected CFBundleVersion: {info.get('CFBundleVersion')!r}")
           if "CFBundleURLTypes" in info:
               raise SystemExit("CFBundleURLTypes unexpectedly present")
           PY
@@ -128,7 +132,7 @@ jobs:
 
           sha256sum release/Filza-27.ipa | tee release/Filza-27-SHA256.txt
 
-      - name: Publish exact green IPA and force Latest
+      - name: Publish versioned release and stable alias
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_NUMBER: ${{ steps.verified.outputs.run_number }}
@@ -136,7 +140,8 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          TAG="filza-27-${RUN_NUMBER}"
+          VERSIONED_TAG="filza-27-${RUN_NUMBER}"
+          STABLE_TAG="filza-27-latest"
           NOTES="release/RELEASE_NOTES.md"
           cp RELEASE_NOTES.md "$NOTES"
           {
@@ -145,12 +150,13 @@ jobs:
             printf -- '- Commit: `%s`\n' "$VERIFIED_SHA"
             printf -- '- Exact verifier artifact: `Filza-27-modern-unsigned-arm64`\n'
             printf -- '- Minimum iOS: `17.0`\n'
+            printf -- '- Stable alias: `filza-27-latest`\n'
             printf -- '- Mond 2.2 + 3105 + ByeTunes + WebDAV + SSH/SFTP are included by the verifier contract.\n'
           } >> "$NOTES"
 
-          verify_tag_target() {
-            local ref_json object_type object_sha tag_json
-            ref_json="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG")"
+          resolve_tag_sha() {
+            local tag="$1" ref_json object_type object_sha tag_json
+            ref_json="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag")"
             object_type="$(jq -r '.object.type' <<<"$ref_json")"
             object_sha="$(jq -r '.object.sha' <<<"$ref_json")"
             for _ in 1 2 3 4; do
@@ -160,32 +166,37 @@ jobs:
               object_sha="$(jq -r '.object.sha' <<<"$tag_json")"
             done
             test "$object_type" = "commit"
-            test "$object_sha" = "$VERIFIED_SHA"
+            printf '%s' "$object_sha"
           }
 
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            verify_tag_target
-            gh release upload "$TAG" release/Filza-27.ipa release/Filza-27-SHA256.txt \
-              --clobber --repo "$GITHUB_REPOSITORY"
-            gh release edit "$TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "Filza 27 — Modern iOS 17+ + Mond 2.2" \
-              --notes-file "$NOTES" \
-              --latest
-          else
-            gh release create "$TAG" release/Filza-27.ipa release/Filza-27-SHA256.txt \
-              --repo "$GITHUB_REPOSITORY" \
-              --target "$VERIFIED_SHA" \
-              --title "Filza 27 — Modern iOS 17+ + Mond 2.2" \
-              --notes-file "$NOTES" \
-              --latest
-            verify_tag_target
-          fi
+          publish_release() {
+            local tag="$1" title="$2"
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              if [[ "$(resolve_tag_sha "$tag")" != "$VERIFIED_SHA" ]]; then
+                gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" \
+                  -f sha="$VERIFIED_SHA" -F force=true >/dev/null
+              fi
+              gh release upload "$tag" release/Filza-27.ipa release/Filza-27-SHA256.txt \
+                --clobber --repo "$GITHUB_REPOSITORY"
+              gh release edit "$tag" --repo "$GITHUB_REPOSITORY" \
+                --title "$title" --notes-file "$NOTES" --latest
+            else
+              gh release create "$tag" release/Filza-27.ipa release/Filza-27-SHA256.txt \
+                --repo "$GITHUB_REPOSITORY" --target "$VERIFIED_SHA" \
+                --title "$title" --notes-file "$NOTES" --latest
+            fi
+            test "$(resolve_tag_sha "$tag")" = "$VERIFIED_SHA"
+            local json
+            json="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag")"
+            for asset in Filza-27.ipa Filza-27-SHA256.txt; do
+              test "$(jq -r --arg name "$asset" '.assets[] | select(.name == $name) | .name' <<<"$json")" = "$asset"
+            done
+          }
+
+          publish_release "$VERSIONED_TAG" "Filza 27 — Modern iOS 17+ + Mond 2.2 (#${RUN_NUMBER})"
+          publish_release "$STABLE_TAG" "Filza 27 — Latest Green Build (#${RUN_NUMBER})"
 
           LATEST_JSON="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest")"
-          test "$(jq -r '.tag_name' <<<"$LATEST_JSON")" = "$TAG"
-          for asset in Filza-27.ipa Filza-27-SHA256.txt; do
-            test "$(jq -r --arg name "$asset" '.assets[] | select(.name == $name) | .name' <<<"$LATEST_JSON")" = "$asset"
-          done
-          verify_tag_target
-          echo "Latest is now $TAG at exact verified commit $VERIFIED_SHA"
+          test "$(jq -r '.tag_name' <<<"$LATEST_JSON")" = "$STABLE_TAG"
+          test "$(resolve_tag_sha "$STABLE_TAG")" = "$VERIFIED_SHA"
+          echo "Published $VERSIONED_TAG and $STABLE_TAG at exact verified commit $VERIFIED_SHA"
