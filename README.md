@@ -29,6 +29,8 @@ A jailed, sideloadable Filza fork combining Filza with app/container management,
 | YouTube metadata provider | ✅ | Required solver resources packaged |
 | Mond 2.2 UI/runtime | ✅ | Integrated directly into the iOS 17+ core |
 | MobileGestalt editor | ✅ | Mond route |
+| SiriAI on older devices | ✅ Included | iOS 27+ toggle writes `SiriMode` key `a3n5T9sFtlyQ74NEp9ESxg` to integer `2` |
+| iPadOS Mode | ✅ Re-enabled | Mond's existing high-risk warning remains; the row is no longer hard-disabled by the iPhone model gate |
 | CacheExtra Fields | ✅ | Current Mond 2.2 route |
 | PosterBoard / Tendies | ✅ | Applying changes still depends on writable target access |
 | HouseArrest / Santander | ✅ | Access remains OS/build-specific |
@@ -115,6 +117,8 @@ The integration retains the known working pre-v2.4 YouTubeKit metadata path as t
 Available Mond routes include:
 
 - MobileGestalt
+- SiriAI on older devices (iOS 27+), with an info button explaining the `SiriMode = 2` override
+- iPadOS Mode, re-enabled in Mond's Gestalt editor with its existing risk warning
 - CacheExtra Fields
 - PosterBoard / Tendies
 - HouseArrest / Santander
