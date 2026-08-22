@@ -23,7 +23,7 @@ permissions:
 
 concurrency:
   group: publish-stable-filza-27
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   publish:
