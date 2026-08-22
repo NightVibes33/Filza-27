@@ -2,7 +2,7 @@
 
 A jailed, sideloadable Filza fork combining Filza with app/container management, ByeTunes, Mond 2.2, WebDAV, SSH/SFTP, and the 3105 patch workspace.
 
-[![Release](https://img.shields.io/github/v/release/NightVibes33/Filza-27?display_name=tag&label=latest)](https://github.com/NightVibes33/Filza-27/releases/latest)
+[![Release](https://img.shields.io/github/v/release/NightVibes33/Filza-27?display_name=tag&label=latest&cacheSeconds=60)](https://github.com/NightVibes33/Filza-27/releases/latest)
 
 ## Download
 
