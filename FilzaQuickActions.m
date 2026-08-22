@@ -18,12 +18,22 @@ static IMP gFQPreviousSetShortcutItems = NULL;
 static BOOL gFQShortcutHookInstalled = NO;
 static BOOL gFQShortcutSetterHookInstalled = NO;
 
+static NSString *FQCanonicalShortcutType(NSString *type)
+{
+    if ([type isEqualToString:@"apps-manager"]) return FQAppsType;
+    if ([type isEqualToString:@"music-library"]) return FQMusicType;
+    if ([type isEqualToString:@"gestalt-manager"]) return FQGestaltType;
+    if ([type isEqualToString:@"patches"]) return FQPatchesType;
+    return type ?: @"";
+}
+
 static BOOL FQIsStaticShortcutType(NSString *type)
 {
-    return [type isEqualToString:FQAppsType] ||
-           [type isEqualToString:FQMusicType] ||
-           [type isEqualToString:FQGestaltType] ||
-           [type isEqualToString:FQPatchesType];
+    NSString *canonical = FQCanonicalShortcutType(type);
+    return [canonical isEqualToString:FQAppsType] ||
+           [canonical isEqualToString:FQMusicType] ||
+           [canonical isEqualToString:FQGestaltType] ||
+           [canonical isEqualToString:FQPatchesType];
 }
 
 static UIViewController *FQActiveController(void)
@@ -140,10 +150,11 @@ static void FQShortcutHandler(id self, SEL _cmd, UIApplication *application,
                               UIApplicationShortcutItem *item,
                               void (^completion)(BOOL))
 {
-    NSString *type = item.type ?: @"";
+    NSString *rawType = item.type ?: @"";
+    NSString *type = FQCanonicalShortcutType(rawType);
     if (FQIsStaticShortcutType(type)) {
         FilzaDiagnosticsAppend(@"QuickAction",
-            [NSString stringWithFormat:@"received %@", type]);
+            [NSString stringWithFormat:@"received %@ canonical=%@", rawType, type]);
         dispatch_async(dispatch_get_main_queue(), ^{ FQOpenWithRetry(type, 16); });
         if (completion) completion(YES);
         return;
