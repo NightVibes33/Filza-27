@@ -12,7 +12,7 @@ on:
     paths:
       - "README.md"
       - ".github/workflows/publish-stable-filza-release.yml"
-  pull_request:
+  pull_request_target:
     branches: [main]
     paths:
       - ".github/force-stable-release.trigger"
@@ -30,7 +30,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'push' ||
-      github.event_name == 'pull_request' ||
+      github.event_name == 'pull_request_target' ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
