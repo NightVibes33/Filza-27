@@ -1,0 +1,5 @@
+verifier_run=315
+verifier_run_id=32583156663
+verified_sha=429c5373a042e57bda517a0d851b10f9d8739c0d
+asset=Filza-27.ipa
+minimum_ios=17.0
