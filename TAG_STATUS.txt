@@ -1,4 +1,7 @@
 tag=filza-27-latest
-outcome=failure
+outcome=
+rc=
 verifier_run=315
 verified_sha=429c5373a042e57bda517a0d851b10f9d8739c0d
+error_begin
+error_end
