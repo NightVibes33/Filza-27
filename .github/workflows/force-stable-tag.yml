@@ -41,24 +41,38 @@ jobs:
 
       - name: Create or move stable tag
         id: tag
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERIFIED_SHA: ${{ steps.verified.outputs.sha }}
         shell: bash
         run: |
-          set -euxo pipefail
+          set -u
           TAG="filza-27-latest"
+          ERROR_FILE="$RUNNER_TEMP/tag-error.txt"
+          : > "$ERROR_FILE"
           if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
-            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" \
-              -f sha="$VERIFIED_SHA" -F force=true >/dev/null
+            OUTPUT="$(gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" \
+              -f sha="$VERIFIED_SHA" -F force=true 2>&1)"
+            RC=$?
           else
-            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
-              -f ref="refs/tags/$TAG" -f sha="$VERIFIED_SHA" >/dev/null
+            OUTPUT="$(gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/$TAG" -f sha="$VERIFIED_SHA" 2>&1)"
+            RC=$?
           fi
-          REF_JSON="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG")"
-          test "$(jq -r '.object.type' <<<"$REF_JSON")" = "commit"
-          test "$(jq -r '.object.sha' <<<"$REF_JSON")" = "$VERIFIED_SHA"
+          printf '%s\n' "$OUTPUT" > "$ERROR_FILE"
+          echo "rc=$RC" >> "$GITHUB_OUTPUT"
+          echo "error_file=$ERROR_FILE" >> "$GITHUB_OUTPUT"
+          if [[ "$RC" -eq 0 ]]; then
+            REF_JSON="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG")"
+            if [[ "$(jq -r '.object.type' <<<"$REF_JSON")" == "commit" && "$(jq -r '.object.sha' <<<"$REF_JSON")" == "$VERIFIED_SHA" ]]; then
+              echo "outcome=success" >> "$GITHUB_OUTPUT"
+            else
+              echo "outcome=verification-failed" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "outcome=failure" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
 
       - name: Record tag repair status
         if: always()
@@ -66,7 +80,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERIFIED_SHA: ${{ steps.verified.outputs.sha }}
           RUN_NUMBER: ${{ steps.verified.outputs.run_number }}
-          TAG_OUTCOME: ${{ steps.tag.outcome }}
+          TAG_OUTCOME: ${{ steps.tag.outputs.outcome }}
+          TAG_RC: ${{ steps.tag.outputs.rc }}
+          ERROR_FILE: ${{ steps.tag.outputs.error_file }}
         shell: bash
         run: |
           set -euxo pipefail
@@ -76,12 +92,16 @@ jobs:
           git switch --force-create release-assets origin/release-assets
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          cat > TAG_STATUS.txt <<EOF
-          tag=filza-27-latest
-          outcome=$TAG_OUTCOME
-          verifier_run=$RUN_NUMBER
-          verified_sha=$VERIFIED_SHA
-          EOF
+          {
+            echo "tag=filza-27-latest"
+            echo "outcome=$TAG_OUTCOME"
+            echo "rc=$TAG_RC"
+            echo "verifier_run=$RUN_NUMBER"
+            echo "verified_sha=$VERIFIED_SHA"
+            echo "error_begin"
+            cat "$ERROR_FILE" || true
+            echo "error_end"
+          } > TAG_STATUS.txt
           git add TAG_STATUS.txt
-          git commit -m "Record stable tag status for verifier #${RUN_NUMBER}" || true
+          git commit -m "Record stable tag API result for verifier #${RUN_NUMBER}" || true
           git push origin HEAD:release-assets
