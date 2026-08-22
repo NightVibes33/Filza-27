@@ -5,6 +5,11 @@ on:
     workflows: ["Verify ByeTunes All Sources + YouTube + SSH IPA"]
     types: [completed]
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "README.md"
+      - ".github/workflows/publish-stable-filza-release.yml"
 
 permissions:
   actions: read
@@ -18,6 +23,7 @@ jobs:
   publish:
     if: >-
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
