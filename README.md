@@ -2,15 +2,16 @@
 
 A jailed, sideloadable Filza fork combining Filza with app/container management, ByeTunes, Mond 2.2, WebDAV, SSH/SFTP, and the 3105 patch workspace.
 
-[![Release](https://img.shields.io/github/v/release/NightVibes33/Filza-27?display_name=tag&label=latest&cacheSeconds=60)](https://github.com/NightVibes33/Filza-27/releases/latest)
+[![Filza Release](https://img.shields.io/badge/release-filza--27--latest-brightgreen)](https://github.com/NightVibes33/Filza-27/releases/tag/filza-27-latest)
 
 ## Download
 
-### [Download the latest `Filza-27.ipa`](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza-27.ipa)
+### [Download the latest verified `Filza-27.ipa`](https://github.com/NightVibes33/Filza-27/releases/download/filza-27-latest/Filza-27.ipa)
 
 - Minimum deployment target: **iOS 17.0**.
-- Checksum: [`Filza-27-SHA256.txt`](https://github.com/NightVibes33/Filza-27/releases/latest/download/Filza-27-SHA256.txt)
-- Public releases are produced from an exact-SHA green GitHub Actions build on `main`.
+- Stable release tag: [`filza-27-latest`](https://github.com/NightVibes33/Filza-27/releases/tag/filza-27-latest)
+- Checksum: [`Filza-27-SHA256.txt`](https://github.com/NightVibes33/Filza-27/releases/download/filza-27-latest/Filza-27-SHA256.txt)
+- `filza-27-latest` moves only after an exact-SHA green GitHub Actions verifier run on `main`; it does not depend on the repository-wide `/releases/latest` pointer.
 
 > **This is not a full jailbreak.** Filza-27 exposes only files and containers the app can actually access. It does not claim kernel read/write, unrestricted `/`, a root shell, an SPTM bypass, or a writable system volume.
 
@@ -76,7 +77,7 @@ These are capability-dependent targets, not a claim that every path is writable 
 
 ## Install
 
-1. Download `Filza-27.ipa` from the latest release.
+1. Download `Filza-27.ipa` from the stable Filza release tag.
 2. Sideload it with your preferred signing method.
 3. Keep the base app identity when your signer allows it:
 
@@ -180,12 +181,14 @@ The 3105/shared-presentation source contract is:
 .github/workflows/verify-3105-shared-ui.yml
 ```
 
-The old iOS 16 and universal split-runtime workflows are disabled and do not build or publish artifacts. After the exact-SHA modern verifier succeeds, the release workflow publishes:
+After the exact-SHA modern verifier succeeds, the versioned release workflow publishes `filza-27-<run-number>`, and the stable publisher moves `filza-27-latest` to the same verified commit with:
 
 ```text
 Filza-27.ipa
 Filza-27-SHA256.txt
 ```
+
+The old iOS 16 and universal split-runtime workflows are disabled and do not build or publish artifacts.
 
 ## Current limitations
 
