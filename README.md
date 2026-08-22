@@ -34,7 +34,7 @@ A jailed, sideloadable Filza fork combining Filza with app/container management,
 | HouseArrest / Santander | ✅ | Access remains OS/build-specific |
 | WebDAV server | ⚠️ Runtime unverified | App-hosted listener builds successfully, but device behavior is currently unverified and likely broken |
 | SSH/SFTP server | ⚠️ Runtime unverified | wolfSSH/SFTP builds successfully, but real device connections and background behavior are currently unverified and likely broken |
-| Home Screen quick actions | ✅ Fix build-verification pending | The packaged `apps-manager` shortcut now normalizes to the embedded 3105 route; in-app Apps Manager uses the same 3105 presenter |
+| Home Screen quick actions | ✅ Build verified | The packaged `apps-manager` shortcut normalizes to the embedded 3105 route; in-app Apps Manager uses the same 3105 presenter |
 | Shared third-party panel | ✅ | 3105, Mond, presented ByeTunes; Filza browser UI unchanged |
 | Full jailbreak / writable system volume | ❌ Not claimed | Outside this project's proven capabilities |
 
@@ -92,7 +92,7 @@ Changing that identity can break MobileHouseArrest-dependent behavior.
 
 3105 and ByeTunes use the same shared pairing state and connection. The pairing-file picker currently works in ByeTunes but does not work from the embedded 3105 interface. Select the pairing file in ByeTunes instead; 3105 should then reuse that shared pairing file, so a failure to select it again inside 3105 is not itself a pairing failure.
 
-The Home Screen long-press **Apps Manager** quick action now normalizes the packaged `apps-manager` identifier to the embedded 3105 route. This replacement is source-fixed and remains marked pending until its exact-head IPA build passes CI.
+The Home Screen long-press **Apps Manager** quick action normalizes the packaged `apps-manager` identifier to the embedded 3105 route. GitHub Actions build 307 verified the corrected identifier and compiled route in the generated arm64 IPA.
 
 Apps Manager embeds **3105 1.1.1** from:
 
