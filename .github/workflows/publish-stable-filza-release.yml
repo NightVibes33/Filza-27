@@ -12,6 +12,10 @@ on:
     paths:
       - "README.md"
       - ".github/workflows/publish-stable-filza-release.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/force-stable-release.trigger"
 
 permissions:
   actions: read
@@ -26,6 +30,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'push' ||
+      github.event_name == 'pull_request' ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
