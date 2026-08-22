@@ -46,25 +46,26 @@ jobs:
           VERIFIED_SHA: ${{ steps.verified.outputs.sha }}
         shell: bash
         run: |
-          set -u
+          set +e
           TAG="filza-27-latest"
           ERROR_FILE="$RUNNER_TEMP/tag-error.txt"
           : > "$ERROR_FILE"
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
-            OUTPUT="$(gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" \
-              -f sha="$VERIFIED_SHA" -F force=true 2>&1)"
+          gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1
+          EXISTS=$?
+          if [[ "$EXISTS" -eq 0 ]]; then
+            OUTPUT="$(gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" -f sha="$VERIFIED_SHA" -F force=true 2>&1)"
             RC=$?
           else
-            OUTPUT="$(gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
-              -f ref="refs/tags/$TAG" -f sha="$VERIFIED_SHA" 2>&1)"
+            OUTPUT="$(gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$VERIFIED_SHA" 2>&1)"
             RC=$?
           fi
           printf '%s\n' "$OUTPUT" > "$ERROR_FILE"
           echo "rc=$RC" >> "$GITHUB_OUTPUT"
           echo "error_file=$ERROR_FILE" >> "$GITHUB_OUTPUT"
           if [[ "$RC" -eq 0 ]]; then
-            REF_JSON="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG")"
-            if [[ "$(jq -r '.object.type' <<<"$REF_JSON")" == "commit" && "$(jq -r '.object.sha' <<<"$REF_JSON")" == "$VERIFIED_SHA" ]]; then
+            REF_JSON="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" 2>>"$ERROR_FILE")"
+            VERIFY_RC=$?
+            if [[ "$VERIFY_RC" -eq 0 && "$(jq -r '.object.type' <<<"$REF_JSON")" == "commit" && "$(jq -r '.object.sha' <<<"$REF_JSON")" == "$VERIFIED_SHA" ]]; then
               echo "outcome=success" >> "$GITHUB_OUTPUT"
             else
               echo "outcome=verification-failed" >> "$GITHUB_OUTPUT"
