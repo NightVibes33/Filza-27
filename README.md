@@ -84,8 +84,8 @@ See [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for the release changelog.
 | CacheExtra Fields | ✅ | Current Mond 2.2 route |
 | PosterBoard / Tendies | ✅ | Applying changes still depends on writable target access |
 | HouseArrest / Santander | ✅ | Access remains OS/build-specific |
-| WebDAV server | ✅ | App-hosted service |
-| SSH/SFTP server | ✅ wolfSSH | Password-authenticated shell + SFTP, multiple RFC 4254 session channels, local self-connection, and audio-mode background keepalive |
+| WebDAV server | ⚠️ Runtime unverified | App-hosted listener builds successfully, but device behavior is currently unverified and likely broken |
+| SSH/SFTP server | ⚠️ Runtime unverified | wolfSSH/SFTP builds successfully, but real device connections and background behavior are currently unverified and likely broken |
 | Home Screen quick actions | ✅ | Apps Manager, Music Library, Gestalt, and Patches routes |
 | Shared third-party panel | ✅ | 3105, Mond, presented ByeTunes; Filza browser UI unchanged |
 | Full jailbreak / writable system volume | ❌ Not claimed | Outside this project's proven capabilities |
@@ -176,7 +176,10 @@ The MobileGestalt cache used by the editor is:
 
 ## SSH/SFTP
 
-The server uses the pinned wolfSSH/wolfSSL stack, listens on the configured TCP port, and supports password-authenticated interactive shell and SFTP sessions. Multiple SSH `session` channels are enabled because clients such as Clauntty open a control PTY before opening their actual terminal or setup channel.
+> [!WARNING]
+> SSH/SFTP device-runtime behavior is currently unverified and likely broken. A green build confirms compilation and packaging only; it does not prove that an interactive SSH or SFTP client can complete a working session.
+
+The server uses the pinned wolfSSH/wolfSSL stack, listens on the configured TCP port, and is intended to support password-authenticated interactive shell and SFTP sessions. Multiple SSH `session` channels are enabled because clients such as Clauntty open a control PTY before opening their actual terminal or setup channel.
 
 For a device at `192.168.4.20` using port `2222`:
 
@@ -228,6 +231,7 @@ Filza-27-SHA256.txt
 
 ## Current limitations
 
+- WebDAV and SSH/SFTP device-runtime behavior is currently unverified and likely broken despite green compilation and packaging checks.
 - A green Actions build proves compilation, linking, deployment target, packaging, and artifact structure; it cannot prove every private API behaves identically on every device/build.
 - PosterBoard/Tendies application requires writable access to the required PosterBoard data location.
 - `/System/Library` can be readable while remaining on iOS's signed read-only system volume.
