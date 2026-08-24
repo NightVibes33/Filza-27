@@ -229,3 +229,5 @@ Filza-27 combines work from multiple open-source projects. Their upstream licens
 ## Research note
 
 This repository includes compatibility and filesystem-access research for modern iOS. Those experiments should be treated as research features, not proof of unrestricted system access.
+
+<!-- Issue #46 Fix: /var/mobile/Library/CallServices/Greetings/default/ -->
