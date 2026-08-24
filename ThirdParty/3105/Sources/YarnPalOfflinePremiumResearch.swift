@@ -14,17 +14,14 @@ final class FilzaYarnPalResearchBridge: NSObject {
         guard shouldStart else { return }
 
         DispatchQueue.global(qos: .userInitiated).async {
-            defer {
-                stateQueue.sync { isScanning = false }
-            }
+            defer { stateQueue.sync { isScanning = false } }
 
             do {
-                let result = try YarnPalOfflinePremiumResearch.scan()
-                switch result {
-                case .reportCreated(let reportURL, let inspectedFiles, let candidates):
+                switch try YarnPalOfflinePremiumResearch.scan() {
+                case .reportCreated(let reportURL, let inspectedFiles, let candidates, let changes):
                     log(
-                        "yarnpal-research: entitlement audit saved=\(reportURL.path) " +
-                        "files=\(inspectedFiles) candidates=\(candidates)"
+                        "yarnpal-research: saved=\(reportURL.path) files=\(inspectedFiles) " +
+                        "candidates=\(candidates) changed=\(changes)"
                     )
                 case .appUnavailable:
                     log("yarnpal-research: YarnPal app container is unavailable")
@@ -37,7 +34,7 @@ final class FilzaYarnPalResearchBridge: NSObject {
 }
 
 enum YarnPalResearchScanResult {
-    case reportCreated(reportURL: URL, inspectedFiles: Int, candidates: Int)
+    case reportCreated(reportURL: URL, inspectedFiles: Int, candidates: Int, changes: Int)
     case appUnavailable
 }
 
@@ -63,6 +60,12 @@ enum YarnPalOfflinePremiumResearch {
         "storekit", "apphud", "adapty", "qonversion", "superwall"
     ]
 
+    private static let sensitiveTerms = [
+        "token", "secret", "password", "passwd", "authorization", "auth",
+        "session", "cookie", "jwt", "bearer", "email", "phone", "account",
+        "userid", "user_id", "deviceid", "device_id", "receipt", "transaction"
+    ]
+
     private static let excludedPathTerms = [
         "/_storekit/", "/storekit/", "/appstorereceipt", "/receipt"
     ]
@@ -73,6 +76,8 @@ enum YarnPalOfflinePremiumResearch {
         let kind: String
         let valuePreview: String
         let score: Int
+
+        var identity: String { "\(relativePath)|\(keyPath)|\(kind)" }
 
         var jsonObject: [String: Any] {
             [
@@ -115,14 +120,9 @@ enum YarnPalOfflinePremiumResearch {
             }
 
             let beforeCount = findings.count
-            inspectStructuredData(
-                data,
-                relativePath: relative,
-                findings: &findings
-            )
+            inspectStructuredData(data, relativePath: relative, findings: &findings)
 
-            if findings.count == beforeCount,
-               containsInterestingASCII(in: data) {
+            if findings.count == beforeCount, containsInterestingASCII(in: data) {
                 let stat = try? fileURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
                 var entry: [String: Any] = [
                     "relativePath": relative,
@@ -142,32 +142,123 @@ enum YarnPalOfflinePremiumResearch {
             return $0.keyPath < $1.keyPath
         }
 
+        let reportsDirectory = try reportsDirectory(fileManager: fileManager)
+        let previous = loadPreviousFindings(from: reportsDirectory, fileManager: fileManager)
+        let delta = diff(previous: previous, current: findings)
+
         let report: [String: Any] = [
-            "schema": 1,
+            "schema": 2,
             "target": [
                 "app": "YarnPal",
                 "bundleIdentifier": bundleIdentifier,
                 "containerPath": containerRoot.path
             ],
             "createdAt": ISO8601DateFormatter().string(from: Date()),
-            "mode": "read-only entitlement audit",
-            "note": "This scan does not alter YarnPal files, StoreKit state, receipts, transactions, or account data.",
+            "mode": "read-only entitlement audit + previous-snapshot diff",
+            "note": "No YarnPal files, StoreKit state, receipts, transactions, or account data are modified.",
+            "workflow": [
+                "1": "Capture a normal/free-state snapshot.",
+                "2": "With developer-authorized sandbox/test premium active, capture a second snapshot.",
+                "3": "Disable networking, relaunch YarnPal, and capture again to identify state trusted offline."
+            ],
             "inspectedFiles": inspectedFiles,
             "findingCount": findings.count,
             "findings": findings.prefix(maximumFindings).map(\.jsonObject),
-            "interestingBinaryOrDatabaseFiles": interestingFiles
+            "interestingBinaryOrDatabaseFiles": interestingFiles,
+            "deltaFromPrevious": delta.object
         ]
 
         let encoded = try JSONSerialization.data(
             withJSONObject: report,
             options: [.prettyPrinted, .sortedKeys]
         )
-        let reportURL = try saveReport(encoded, fileManager: fileManager)
+        let reportURL = try saveReport(encoded, directory: reportsDirectory, fileManager: fileManager)
         return .reportCreated(
             reportURL: reportURL,
             inspectedFiles: inspectedFiles,
-            candidates: findings.count + interestingFiles.count
+            candidates: findings.count + interestingFiles.count,
+            changes: delta.changeCount
         )
+    }
+
+    private struct FindingDelta {
+        let object: [String: Any]
+        let changeCount: Int
+    }
+
+    nonisolated private static func diff(previous: [Finding], current: [Finding]) -> FindingDelta {
+        let oldMap = Dictionary(previous.map { ($0.identity, $0) }, uniquingKeysWith: { first, _ in first })
+        let newMap = Dictionary(current.map { ($0.identity, $0) }, uniquingKeysWith: { first, _ in first })
+
+        var added: [[String: Any]] = []
+        var removed: [[String: Any]] = []
+        var changed: [[String: Any]] = []
+
+        for finding in current {
+            guard let old = oldMap[finding.identity] else {
+                added.append(finding.jsonObject)
+                continue
+            }
+            if old.valuePreview != finding.valuePreview {
+                changed.append([
+                    "relativePath": finding.relativePath,
+                    "keyPath": finding.keyPath,
+                    "kind": finding.kind,
+                    "score": max(old.score, finding.score),
+                    "before": old.valuePreview,
+                    "after": finding.valuePreview
+                ])
+            }
+        }
+
+        for finding in previous where newMap[finding.identity] == nil {
+            removed.append(finding.jsonObject)
+        }
+
+        changed.sort {
+            (($0["score"] as? Int) ?? 0) > (($1["score"] as? Int) ?? 0)
+        }
+
+        let changeCount = added.count + removed.count + changed.count
+        return FindingDelta(
+            object: [
+                "available": !previous.isEmpty,
+                "changeCount": changeCount,
+                "added": added,
+                "removed": removed,
+                "changed": changed
+            ],
+            changeCount: changeCount
+        )
+    }
+
+    nonisolated private static func loadPreviousFindings(
+        from directory: URL,
+        fileManager: FileManager
+    ) -> [Finding] {
+        let latestURL = directory.appendingPathComponent("latest.json", isDirectory: false)
+        guard let data = try? Data(contentsOf: latestURL),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let rawFindings = root["findings"] as? [[String: Any]] else {
+            return []
+        }
+
+        return rawFindings.compactMap { raw in
+            guard let relativePath = raw["relativePath"] as? String,
+                  let keyPath = raw["keyPath"] as? String,
+                  let kind = raw["kind"] as? String,
+                  let valuePreview = raw["valuePreview"] as? String,
+                  let score = raw["score"] as? Int else {
+                return nil
+            }
+            return Finding(
+                relativePath: relativePath,
+                keyPath: keyPath,
+                kind: kind,
+                valuePreview: valuePreview,
+                score: score
+            )
+        }
     }
 
     nonisolated private static func candidateFiles(
@@ -184,10 +275,11 @@ enum YarnPalOfflinePremiumResearch {
             result.append(canonical)
         }
 
-        let primaryPreferences = containerRoot
-            .appendingPathComponent("Library/Preferences", isDirectory: true)
-            .appendingPathComponent("\(bundleIdentifier).plist", isDirectory: false)
-        append(primaryPreferences)
+        append(
+            containerRoot
+                .appendingPathComponent("Library/Preferences", isDirectory: true)
+                .appendingPathComponent("\(bundleIdentifier).plist", isDirectory: false)
+        )
 
         let roots = [
             containerRoot.appendingPathComponent("Library/Preferences", isDirectory: true),
@@ -234,9 +326,7 @@ enum YarnPalOfflinePremiumResearch {
                     || name.contains("cache")
                     || name.contains("userdefault")
 
-                if structured || interestingName {
-                    append(url)
-                }
+                if structured || interestingName { append(url) }
             }
         }
 
@@ -273,22 +363,12 @@ enum YarnPalOfflinePremiumResearch {
             options: [],
             format: nil
         ) {
-            inspectValue(
-                plist,
-                keyPath: "$",
-                relativePath: relativePath,
-                findings: &findings
-            )
+            inspectValue(plist, keyPath: "$", relativePath: relativePath, findings: &findings)
             return
         }
 
         if let json = try? JSONSerialization.jsonObject(with: data, options: []) {
-            inspectValue(
-                json,
-                keyPath: "$",
-                relativePath: relativePath,
-                findings: &findings
-            )
+            inspectValue(json, keyPath: "$", relativePath: relativePath, findings: &findings)
         }
     }
 
@@ -311,17 +391,12 @@ enum YarnPalOfflinePremiumResearch {
                             relativePath: relativePath,
                             keyPath: childPath,
                             kind: primitiveKind(child),
-                            valuePreview: preview(child),
+                            valuePreview: safePreview(child, key: key),
                             score: score
                         )
                     )
                 }
-                inspectValue(
-                    child,
-                    keyPath: childPath,
-                    relativePath: relativePath,
-                    findings: &findings
-                )
+                inspectValue(child, keyPath: childPath, relativePath: relativePath, findings: &findings)
             }
             return
         }
@@ -367,7 +442,6 @@ enum YarnPalOfflinePremiumResearch {
         if keyHasProvider { score += 4 }
         if valueHasEntitlement { score += 2 }
         if valueHasProvider { score += 2 }
-
         if normalizedKey.contains("is_premium") || normalizedKey.contains("ispremium") { score += 5 }
         if normalizedKey.contains("entitlement") { score += 5 }
         if normalizedKey.contains("subscription_status") || normalizedKey.contains("subscriptionstatus") { score += 4 }
@@ -387,6 +461,12 @@ enum YarnPalOfflinePremiumResearch {
         if value is Date { return "date" }
         if value is NSNull { return "null" }
         return "other"
+    }
+
+    nonisolated private static func safePreview(_ value: Any, key: String) -> String {
+        let normalizedKey = normalize(key)
+        if sensitiveTerms.contains(where: normalizedKey.contains) { return "<redacted>" }
+        return preview(value)
     }
 
     nonisolated private static func preview(_ value: Any) -> String {
@@ -409,22 +489,34 @@ enum YarnPalOfflinePremiumResearch {
             || providerTerms.contains(where: text.contains)
     }
 
-    nonisolated private static func saveReport(
-        _ data: Data,
+    nonisolated private static func reportsDirectory(
         fileManager: FileManager
     ) throws -> URL {
         let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
         let directory = documents.appendingPathComponent("YarnPalResearch", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
 
+    nonisolated private static func saveReport(
+        _ data: Data,
+        directory: URL,
+        fileManager: FileManager
+    ) throws -> URL {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd-HHmmss"
-        let filename = "YarnPal-entitlement-audit-\(formatter.string(from: Date())).json"
-        let url = directory.appendingPathComponent(filename, isDirectory: false)
-        try data.write(to: url, options: .atomic)
-        return url
+        let timestamped = directory.appendingPathComponent(
+            "YarnPal-entitlement-audit-\(formatter.string(from: Date())).json",
+            isDirectory: false
+        )
+        try data.write(to: timestamped, options: .atomic)
+        try data.write(
+            to: directory.appendingPathComponent("latest.json", isDirectory: false),
+            options: .atomic
+        )
+        return timestamped
     }
 
     nonisolated private static func relativePath(
