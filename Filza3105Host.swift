@@ -87,10 +87,11 @@ public final class Filza3105HostFactory: NSObject {
     }
 
     @objc public static func makePatchesController() -> UIViewController {
-        makeController(
+        FilzaYarnPalResearchBridge.preparePatchIfPossible()
+        return makeController(
             initialTab: 2,
             title: "Patches",
-            diagnostic: "constructing complete 3105 1.1.1 Patches"
+            diagnostic: "constructing complete 3105 1.1.1 Patches + YarnPal research generator"
         )
     }
 
