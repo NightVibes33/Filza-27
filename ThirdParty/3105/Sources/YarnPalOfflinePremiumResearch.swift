@@ -281,7 +281,7 @@ enum YarnPalOfflinePremiumResearch {
             return Mutation(data: encoded, changedFields: mutation.count)
         }
 
-        if let json = try? JSONSerialization.jsonObject(from: data, options: [.mutableContainers]) {
+        if let json = try? JSONSerialization.jsonObject(with: data, options: [.mutableContainers]) {
             let mutation = mutateValue(json, keyHint: nil)
             guard mutation.count > 0,
                   JSONSerialization.isValidJSONObject(mutation.value),
@@ -393,7 +393,7 @@ enum YarnPalOfflinePremiumResearch {
               data.count <= maximumCandidateBytes,
               let first = string.first,
               first == "{" || first == "[",
-              let object = try? JSONSerialization.jsonObject(from: data, options: [.mutableContainers]) else {
+              let object = try? JSONSerialization.jsonObject(with: data, options: [.mutableContainers]) else {
             return nil
         }
 
