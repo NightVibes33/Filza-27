@@ -2,87 +2,92 @@ import Foundation
 
 @objc(FilzaYarnPalResearchBridge)
 final class FilzaYarnPalResearchBridge: NSObject {
-    private static var isPreparing = false
+    private static let stateQueue = DispatchQueue(label: "com.nightvibes33.filza.yarnpal-research-state")
+    private static var isScanning = false
 
     @objc static func preparePatchIfPossible() {
-        guard !isPreparing else { return }
-        isPreparing = true
+        let shouldStart = stateQueue.sync { () -> Bool in
+            guard !isScanning else { return false }
+            isScanning = true
+            return true
+        }
+        guard shouldStart else { return }
 
-        Task.detached(priority: .userInitiated) {
+        DispatchQueue.global(qos: .userInitiated).async {
             defer {
-                Task { @MainActor in
-                    isPreparing = false
-                }
+                stateQueue.sync { isScanning = false }
             }
 
             do {
-                let result = try YarnPalOfflinePremiumResearch.preparePatch()
+                let result = try YarnPalOfflinePremiumResearch.scan()
                 switch result {
-                case .created(let packageURL, let changedFiles, let changedFields):
+                case .reportCreated(let reportURL, let inspectedFiles, let candidates):
                     log(
-                        "yarnpal-research: created \(packageURL.lastPathComponent) " +
-                        "files=\(changedFiles) fields=\(changedFields)"
+                        "yarnpal-research: entitlement audit saved=\(reportURL.path) " +
+                        "files=\(inspectedFiles) candidates=\(candidates)"
                     )
-                case .alreadyExists:
-                    log("yarnpal-research: patch project already exists; leaving it unchanged")
                 case .appUnavailable:
                     log("yarnpal-research: YarnPal app container is unavailable")
-                case .noLocalGateFound(let inspectedFiles):
-                    log(
-                        "yarnpal-research: inspected \(inspectedFiles) candidate files; " +
-                        "no mutable local premium gate was found"
-                    )
                 }
             } catch {
-                log("yarnpal-research: generator failed: \(error.localizedDescription)")
+                log("yarnpal-research: entitlement audit failed: \(error.localizedDescription)")
             }
         }
     }
 }
 
-enum YarnPalResearchPreparationResult {
-    case created(packageURL: URL, changedFiles: Int, changedFields: Int)
-    case alreadyExists
+enum YarnPalResearchScanResult {
+    case reportCreated(reportURL: URL, inspectedFiles: Int, candidates: Int)
     case appUnavailable
-    case noLocalGateFound(inspectedFiles: Int)
 }
 
 enum YarnPalOfflinePremiumResearch {
     static let bundleIdentifier = "com.knitpal.knitcrochet"
-    static let projectName = "YarnPal Offline Premium Research"
 
-    private static let maximumCandidateBytes = 4 * 1_024 * 1_024
-    private static let maximumFilesToInspect = 768
-    private static let maximumRules = 24
+    private static let maximumCandidateBytes = 8 * 1_024 * 1_024
+    private static let maximumFilesToInspect = 1_024
+    private static let maximumFindings = 512
+    private static let maximumPreviewLength = 512
 
-    private static let positiveTerms = [
-        "premium", "pro", "vip", "paid", "purchased", "purchase",
+    private static let entitlementTerms = [
+        "premium", "pro", "vip", "paid", "purchase", "purchased",
         "subscriber", "subscribed", "subscription", "membership", "member",
-        "entitlement", "entitled", "unlocked", "unlock", "accesslevel",
-        "access_level", "plan", "tier"
+        "entitlement", "entitled", "unlock", "unlocked", "paywall",
+        "accesslevel", "access_level", "plan", "tier", "trial", "expires",
+        "expiration", "active_subscription", "activesubscription"
     ]
 
-    private static let negativeTerms = [
-        "expired", "isfree", "is_free", "freeuser", "free_user",
-        "locked", "paywall", "needspurchase", "needs_purchase",
-        "needssubscription", "needs_subscription"
+    private static let providerTerms = [
+        "revenuecat", "purchases", "customerinfo", "customer_info",
+        "entitlements", "active_subscriptions", "product_identifier",
+        "storekit", "apphud", "adapty", "qonversion", "superwall"
     ]
 
-    private static let excludedTerms = [
-        "receipt", "transaction", "originaltransaction", "original_transaction",
-        "productid", "product_id", "price", "currency", "token", "signature",
-        "jwt", "authorization", "password", "accountid", "account_id"
+    private static let excludedPathTerms = [
+        "/_storekit/", "/storekit/", "/appstorereceipt", "/receipt"
     ]
 
-    nonisolated static func preparePatch(
-        fileManager: FileManager = .default
-    ) throws -> YarnPalResearchPreparationResult {
-        if PatchProjectLibrary.load(fileManager: fileManager).contains(where: {
-            $0.project?.name == projectName
-        }) {
-            return .alreadyExists
+    private struct Finding {
+        let relativePath: String
+        let keyPath: String
+        let kind: String
+        let valuePreview: String
+        let score: Int
+
+        var jsonObject: [String: Any] {
+            [
+                "relativePath": relativePath,
+                "keyPath": keyPath,
+                "kind": kind,
+                "valuePreview": valuePreview,
+                "score": score
+            ]
         }
+    }
 
+    nonisolated static func scan(
+        fileManager: FileManager = .default
+    ) throws -> YarnPalResearchScanResult {
         guard let rawContainerPath = ContainerStore.resolveAppContainerPath(bundleID: bundleIdentifier) else {
             return .appUnavailable
         }
@@ -90,64 +95,79 @@ enum YarnPalOfflinePremiumResearch {
         let containerRoot = PatchPathValidator.canonicalFileURL(
             URL(fileURLWithPath: rawContainerPath, isDirectory: true)
         )
-        let candidates = candidateFiles(containerRoot: containerRoot, fileManager: fileManager)
+        let grantHandle = ContainerStore.grantContainerAccess(containerRoot.path)
+        defer {
+            if grantHandle >= 0 { bad_query_release(grantHandle) }
+        }
 
-        var rules: [PatchRule] = []
-        var changedFields = 0
+        let files = candidateFiles(containerRoot: containerRoot, fileManager: fileManager)
+        var findings: [Finding] = []
         var inspectedFiles = 0
+        var interestingFiles: [[String: Any]] = []
 
-        for fileURL in candidates.prefix(maximumFilesToInspect) {
-            guard rules.count < maximumRules else { break }
+        for fileURL in files.prefix(maximumFilesToInspect) {
+            if findings.count >= maximumFindings { break }
             inspectedFiles += 1
 
-            guard let mutation = mutateFile(
-                fileURL,
-                containerRoot: containerRoot,
-                fileManager: fileManager
-            ) else {
+            guard let relative = try? relativePath(for: fileURL, containerRoot: containerRoot),
+                  let data = try? Data(contentsOf: fileURL, options: .mappedIfSafe) else {
                 continue
             }
 
-            let relativePath = try relativePath(for: fileURL, containerRoot: containerRoot)
-            rules.append(
-                PatchRule(
-                    bundleID: bundleIdentifier,
-                    relativePath: relativePath,
-                    replacementFilename: "YarnPal-\(fileURL.lastPathComponent)",
-                    replacementData: mutation.data
-                )
+            let beforeCount = findings.count
+            inspectStructuredData(
+                data,
+                relativePath: relative,
+                findings: &findings
             )
-            changedFields += mutation.changedFields
+
+            if findings.count == beforeCount,
+               containsInterestingASCII(in: data) {
+                let stat = try? fileURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+                var entry: [String: Any] = [
+                    "relativePath": relative,
+                    "kind": "binary-or-database-keyword-hit",
+                    "size": stat?.fileSize ?? data.count
+                ]
+                if let date = stat?.contentModificationDate {
+                    entry["modifiedAt"] = ISO8601DateFormatter().string(from: date)
+                }
+                interestingFiles.append(entry)
+            }
         }
 
-        guard !rules.isEmpty else {
-            return .noLocalGateFound(inspectedFiles: inspectedFiles)
+        findings.sort {
+            if $0.score != $1.score { return $0.score > $1.score }
+            if $0.relativePath != $1.relativePath { return $0.relativePath < $1.relativePath }
+            return $0.keyPath < $1.keyPath
         }
 
-        let now = Date()
-        let project = PatchProject(
-            name: projectName,
-            createdAt: now,
-            updatedAt: now,
-            rules: rules
-        )
-        let encoded = try PatchPackageCodec.encodeNew(project: project, password: nil)
-        let packageURL = try PatchProjectLibrary.save(
-            data: encoded.data,
-            projectName: project.name,
-            fileManager: fileManager
-        )
+        let report: [String: Any] = [
+            "schema": 1,
+            "target": [
+                "app": "YarnPal",
+                "bundleIdentifier": bundleIdentifier,
+                "containerPath": containerRoot.path
+            ],
+            "createdAt": ISO8601DateFormatter().string(from: Date()),
+            "mode": "read-only entitlement audit",
+            "note": "This scan does not alter YarnPal files, StoreKit state, receipts, transactions, or account data.",
+            "inspectedFiles": inspectedFiles,
+            "findingCount": findings.count,
+            "findings": findings.prefix(maximumFindings).map(\.jsonObject),
+            "interestingBinaryOrDatabaseFiles": interestingFiles
+        ]
 
-        return .created(
-            packageURL: packageURL,
-            changedFiles: rules.count,
-            changedFields: changedFields
+        let encoded = try JSONSerialization.data(
+            withJSONObject: report,
+            options: [.prettyPrinted, .sortedKeys]
         )
-    }
-
-    private struct Mutation {
-        let data: Data
-        let changedFields: Int
+        let reportURL = try saveReport(encoded, fileManager: fileManager)
+        return .reportCreated(
+            reportURL: reportURL,
+            inspectedFiles: inspectedFiles,
+            candidates: findings.count + interestingFiles.count
+        )
     }
 
     nonisolated private static func candidateFiles(
@@ -164,15 +184,17 @@ enum YarnPalOfflinePremiumResearch {
             result.append(canonical)
         }
 
-        let preferencesURL = containerRoot
+        let primaryPreferences = containerRoot
             .appendingPathComponent("Library/Preferences", isDirectory: true)
             .appendingPathComponent("\(bundleIdentifier).plist", isDirectory: false)
-        append(preferencesURL)
+        append(primaryPreferences)
 
         let roots = [
             containerRoot.appendingPathComponent("Library/Preferences", isDirectory: true),
             containerRoot.appendingPathComponent("Library/Application Support", isDirectory: true),
-            containerRoot.appendingPathComponent("Documents", isDirectory: true)
+            containerRoot.appendingPathComponent("Library/Caches", isDirectory: true),
+            containerRoot.appendingPathComponent("Documents", isDirectory: true),
+            containerRoot.appendingPathComponent("tmp", isDirectory: true)
         ]
 
         for root in roots {
@@ -204,15 +226,15 @@ enum YarnPalOfflinePremiumResearch {
                 guard values?.isRegularFile == true else { continue }
 
                 let ext = url.pathExtension.lowercased()
-                let name = url.lastPathComponent.lowercased()
-                let interestingName = positiveTerms.contains(where: name.contains)
-                    || name.contains("revenuecat")
-                    || name.contains("customerinfo")
-                    || name.contains("userdefault")
+                let name = normalize(url.lastPathComponent)
+                let structured = ["plist", "json", "db", "sqlite", "sqlite3", "dat"].contains(ext)
+                let interestingName = entitlementTerms.contains(where: name.contains)
+                    || providerTerms.contains(where: name.contains)
                     || name.contains("config")
                     || name.contains("cache")
+                    || name.contains("userdefault")
 
-                if ext == "plist" || ext == "json" || interestingName {
+                if structured || interestingName {
                     append(url)
                 }
             }
@@ -238,203 +260,171 @@ enum YarnPalOfflinePremiumResearch {
         }
 
         let path = url.path.lowercased()
-        if path.contains("/_storekit/") || path.hasSuffix("/appstorereceipt") {
-            return false
-        }
-        return true
+        return !excludedPathTerms.contains(where: path.contains)
     }
 
-    nonisolated private static func mutateFile(
-        _ fileURL: URL,
-        containerRoot: URL,
-        fileManager: FileManager
-    ) -> Mutation? {
-        guard isEligibleFile(fileURL, fileManager: fileManager),
-              let data = try? Data(contentsOf: fileURL, options: .mappedIfSafe) else {
-            return nil
-        }
-
+    nonisolated private static func inspectStructuredData(
+        _ data: Data,
+        relativePath: String,
+        findings: inout [Finding]
+    ) {
         if let plist = try? PropertyListSerialization.propertyList(
             from: data,
-            options: [.mutableContainersAndLeaves],
+            options: [],
             format: nil
         ) {
-            if let dictionary = plist as? [String: Any], dictionary["$archiver"] != nil {
-                return nil
-            }
-
-            var mutation = mutateValue(plist, keyHint: nil)
-            if isPrimaryPreferencesFile(fileURL), var root = mutation.value as? [String: Any] {
-                let injected = injectProbeDefaults(into: &root)
-                mutation = (root, mutation.count + injected)
-            }
-
-            guard mutation.count > 0,
-                  PropertyListSerialization.propertyList(mutation.value, isValidFor: .binary),
-                  let encoded = try? PropertyListSerialization.data(
-                    fromPropertyList: mutation.value,
-                    format: .binary,
-                    options: 0
-                  ) else {
-                return nil
-            }
-            return Mutation(data: encoded, changedFields: mutation.count)
+            inspectValue(
+                plist,
+                keyPath: "$",
+                relativePath: relativePath,
+                findings: &findings
+            )
+            return
         }
 
-        if let json = try? JSONSerialization.jsonObject(with: data, options: [.mutableContainers]) {
-            let mutation = mutateValue(json, keyHint: nil)
-            guard mutation.count > 0,
-                  JSONSerialization.isValidJSONObject(mutation.value),
-                  let encoded = try? JSONSerialization.data(
-                    withJSONObject: mutation.value,
-                    options: [.sortedKeys]
-                  ) else {
-                return nil
-            }
-            return Mutation(data: encoded, changedFields: mutation.count)
+        if let json = try? JSONSerialization.jsonObject(with: data, options: []) {
+            inspectValue(
+                json,
+                keyPath: "$",
+                relativePath: relativePath,
+                findings: &findings
+            )
         }
-
-        return nil
     }
 
-    nonisolated private static func mutateValue(
+    nonisolated private static func inspectValue(
         _ value: Any,
-        keyHint: String?
-    ) -> (value: Any, count: Int) {
+        keyPath: String,
+        relativePath: String,
+        findings: inout [Finding]
+    ) {
+        guard findings.count < maximumFindings else { return }
+
         if let dictionary = value as? [String: Any] {
-            var output: [String: Any] = [:]
-            var count = 0
-            for (key, child) in dictionary {
-                let mutation = mutateValue(child, keyHint: key)
-                output[key] = mutation.value
-                count += mutation.count
+            for key in dictionary.keys.sorted() {
+                guard findings.count < maximumFindings, let child = dictionary[key] else { break }
+                let childPath = keyPath == "$" ? "$.\(key)" : "\(keyPath).\(key)"
+                let score = signalScore(key: key, value: child)
+                if score > 0, isPrimitive(child) {
+                    findings.append(
+                        Finding(
+                            relativePath: relativePath,
+                            keyPath: childPath,
+                            kind: primitiveKind(child),
+                            valuePreview: preview(child),
+                            score: score
+                        )
+                    )
+                }
+                inspectValue(
+                    child,
+                    keyPath: childPath,
+                    relativePath: relativePath,
+                    findings: &findings
+                )
             }
-            return (output, count)
+            return
         }
 
         if let array = value as? [Any] {
-            var output: [Any] = []
-            var count = 0
-            output.reserveCapacity(array.count)
-            for child in array {
-                let mutation = mutateValue(child, keyHint: keyHint)
-                output.append(mutation.value)
-                count += mutation.count
+            for (index, child) in array.enumerated() {
+                guard findings.count < maximumFindings else { break }
+                inspectValue(
+                    child,
+                    keyPath: "\(keyPath)[\(index)]",
+                    relativePath: relativePath,
+                    findings: &findings
+                )
             }
-            return (output, count)
+            return
         }
 
-        guard let keyHint else {
-            return (value, 0)
+        if let string = value as? String,
+           let nestedData = string.data(using: .utf8),
+           nestedData.count <= maximumCandidateBytes,
+           let first = string.first,
+           (first == "{" || first == "["),
+           let nested = try? JSONSerialization.jsonObject(with: nestedData, options: []) {
+            inspectValue(
+                nested,
+                keyPath: keyPath + "<json>",
+                relativePath: relativePath,
+                findings: &findings
+            )
         }
-        let normalizedKey = normalize(keyHint)
-        guard !excludedTerms.contains(where: normalizedKey.contains) else {
-            return (value, 0)
-        }
+    }
 
-        let isNegativeGate = negativeTerms.contains(where: normalizedKey.contains)
-        let isPositiveGate = positiveTerms.contains(where: normalizedKey.contains)
-        guard isNegativeGate || isPositiveGate else {
-            return (value, 0)
-        }
+    nonisolated private static func signalScore(key: String, value: Any) -> Int {
+        let normalizedKey = normalize(key)
+        let keyHasEntitlement = entitlementTerms.contains(where: normalizedKey.contains)
+        let keyHasProvider = providerTerms.contains(where: normalizedKey.contains)
+        let normalizedValue = normalize(preview(value))
+        let valueHasEntitlement = entitlementTerms.contains(where: normalizedValue.contains)
+        let valueHasProvider = providerTerms.contains(where: normalizedValue.contains)
 
-        if let bool = value as? Bool {
-            let desired = isNegativeGate ? false : true
-            return bool == desired ? (value, 0) : (desired, 1)
-        }
+        var score = 0
+        if keyHasEntitlement { score += 5 }
+        if keyHasProvider { score += 4 }
+        if valueHasEntitlement { score += 2 }
+        if valueHasProvider { score += 2 }
 
-        if let number = value as? NSNumber {
-            if CFGetTypeID(number) == CFBooleanGetTypeID() {
-                let desired = !isNegativeGate
-                return number.boolValue == desired ? (value, 0) : (desired, 1)
-            }
-            let desired = isNegativeGate ? 0 : 1
-            return number.intValue == desired ? (value, 0) : (NSNumber(value: desired), 1)
-        }
+        if normalizedKey.contains("is_premium") || normalizedKey.contains("ispremium") { score += 5 }
+        if normalizedKey.contains("entitlement") { score += 5 }
+        if normalizedKey.contains("subscription_status") || normalizedKey.contains("subscriptionstatus") { score += 4 }
+        if normalizedKey.contains("active_subscription") || normalizedKey.contains("activesubscription") { score += 4 }
+        if normalizedKey.contains("customerinfo") || normalizedKey.contains("customer_info") { score += 3 }
+        return score
+    }
 
+    nonisolated private static func isPrimitive(_ value: Any) -> Bool {
+        value is String || value is NSNumber || value is Bool || value is Date || value is NSNull
+    }
+
+    nonisolated private static func primitiveKind(_ value: Any) -> String {
+        if value is Bool { return "bool" }
+        if value is NSNumber { return "number" }
+        if value is String { return "string" }
+        if value is Date { return "date" }
+        if value is NSNull { return "null" }
+        return "other"
+    }
+
+    nonisolated private static func preview(_ value: Any) -> String {
+        let output: String
         if let string = value as? String {
-            if let nested = mutateJSONString(string) {
-                return (nested.value, nested.count)
-            }
-
-            let normalizedValue = normalize(string)
-            if isNegativeGate {
-                let negativeValues = ["true", "1", "yes", "locked", "expired", "required"]
-                if negativeValues.contains(normalizedValue) {
-                    return ("false", 1)
-                }
-                return (value, 0)
-            }
-
-            let inactiveValues = [
-                "false", "0", "no", "free", "basic", "inactive", "expired",
-                "none", "null", "locked", "unsubscribed", "not_subscribed"
-            ]
-            guard inactiveValues.contains(normalizedValue) else {
-                return (value, 0)
-            }
-
-            if normalizedKey.contains("tier") || normalizedKey.contains("plan") {
-                return ("premium", 1)
-            }
-            if normalizedKey.contains("status") || normalizedKey.contains("subscription") {
-                return ("active", 1)
-            }
-            return ("true", 1)
+            output = string
+        } else if let date = value as? Date {
+            output = ISO8601DateFormatter().string(from: date)
+        } else {
+            output = String(describing: value)
         }
-
-        return (value, 0)
+        if output.count <= maximumPreviewLength { return output }
+        return String(output.prefix(maximumPreviewLength)) + "…"
     }
 
-    nonisolated private static func mutateJSONString(
-        _ string: String
-    ) -> (value: String, count: Int)? {
-        guard let data = string.data(using: .utf8),
-              data.count <= maximumCandidateBytes,
-              let first = string.first,
-              first == "{" || first == "[",
-              let object = try? JSONSerialization.jsonObject(with: data, options: [.mutableContainers]) else {
-            return nil
-        }
-
-        let mutation = mutateValue(object, keyHint: nil)
-        guard mutation.count > 0,
-              JSONSerialization.isValidJSONObject(mutation.value),
-              let encoded = try? JSONSerialization.data(
-                withJSONObject: mutation.value,
-                options: [.sortedKeys]
-              ),
-              let output = String(data: encoded, encoding: .utf8) else {
-            return nil
-        }
-        return (output, mutation.count)
+    nonisolated private static func containsInterestingASCII(in data: Data) -> Bool {
+        guard !data.isEmpty else { return false }
+        let text = String(decoding: data.prefix(maximumCandidateBytes), as: UTF8.self).lowercased()
+        return entitlementTerms.contains(where: text.contains)
+            || providerTerms.contains(where: text.contains)
     }
 
-    nonisolated private static func injectProbeDefaults(
-        into dictionary: inout [String: Any]
-    ) -> Int {
-        let probes: [String: Any] = [
-            "isPremium": true,
-            "hasPremium": true,
-            "premium": true,
-            "isPro": true,
-            "isSubscribed": true,
-            "subscriptionActive": true,
-            "isPaidUser": true,
-            "hasActiveSubscription": true
-        ]
+    nonisolated private static func saveReport(
+        _ data: Data,
+        fileManager: FileManager
+    ) throws -> URL {
+        let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let directory = documents.appendingPathComponent("YarnPalResearch", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        var count = 0
-        for (key, value) in probes where dictionary[key] == nil {
-            dictionary[key] = value
-            count += 1
-        }
-        return count
-    }
-
-    nonisolated private static func isPrimaryPreferencesFile(_ url: URL) -> Bool {
-        url.lastPathComponent == "\(bundleIdentifier).plist"
-            && url.deletingLastPathComponent().lastPathComponent == "Preferences"
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let filename = "YarnPal-entitlement-audit-\(formatter.string(from: Date())).json"
+        let url = directory.appendingPathComponent(filename, isDirectory: false)
+        try data.write(to: url, options: .atomic)
+        return url
     }
 
     nonisolated private static func relativePath(
