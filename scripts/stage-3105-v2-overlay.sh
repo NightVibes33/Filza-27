@@ -6,6 +6,7 @@ UPSTREAM_OWNER="YangJiiii"
 UPSTREAM_REPO="3105"
 UPSTREAM_COMMIT="4a15d823b711bc0639de1f3fd2c764b5982d9245"
 UPSTREAM_VERSION="2.0"
+UPSTREAM_BUILD="8"
 ARCHIVE_URL="https://codeload.github.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/tar.gz/${UPSTREAM_COMMIT}"
 
 for path in "$ROOT" "$ROOT/Sources" "$ROOT/Resources/Filza3105.bundle"; do
@@ -161,7 +162,26 @@ for lang in en vi zh-Hans; do
   cp "$UPSTREAM/$lang.lproj/Localizable.strings" "$ROOT/Resources/Filza3105.bundle/$lang.lproj/Localizable.strings"
 done
 
+# Upstream's project.pbxproj was bumped to marketing version 2.0/build 8, but
+# its checked-in Info.plist still says 1.1.1/build 7. Preserve the plist shape
+# and stamp the metadata that corresponds to the pinned 2.0 source revision.
 cp "$UPSTREAM/Info.plist" "$ROOT/Resources/Filza3105.bundle/UpstreamAppInfo.plist"
+python3 - \
+  "$ROOT/Resources/Filza3105.bundle/UpstreamAppInfo.plist" \
+  "$UPSTREAM_VERSION" \
+  "$UPSTREAM_BUILD" <<'PY'
+import plistlib
+import sys
+
+path, version, build = sys.argv[1:]
+with open(path, "rb") as handle:
+    info = plistlib.load(handle)
+info["CFBundleShortVersionString"] = version
+info["AppReleaseDisplayVersion"] = version
+info["CFBundleVersion"] = build
+with open(path, "wb") as handle:
+    plistlib.dump(info, handle, sort_keys=False)
+PY
 
 assert_contains() {
   local needle="$1"
@@ -192,15 +212,19 @@ assert_contains 'case .files:' "$ROOT/Sources/AppTabNavigationState.swift" 'File
 assert_contains 'return true' "$ROOT/Sources/AppTabNavigationState.swift" 'Filza always-visible Apps Manager route'
 
 plutil -lint "$ROOT/Resources/Filza3105.bundle/UpstreamAppInfo.plist" >/dev/null || {
-  echo "3105 2.0 upstream Info.plist failed plutil validation" >&2
+  echo "3105 2.0 embedded Info.plist failed plutil validation" >&2
   exit 1
 }
 test "$(plutil -extract CFBundleShortVersionString raw -o - "$ROOT/Resources/Filza3105.bundle/UpstreamAppInfo.plist")" = "$UPSTREAM_VERSION" || {
-  echo "3105 upstream CFBundleShortVersionString is not $UPSTREAM_VERSION" >&2
+  echo "3105 embedded CFBundleShortVersionString is not $UPSTREAM_VERSION" >&2
   exit 1
 }
 test "$(plutil -extract AppReleaseDisplayVersion raw -o - "$ROOT/Resources/Filza3105.bundle/UpstreamAppInfo.plist")" = "$UPSTREAM_VERSION" || {
-  echo "3105 upstream AppReleaseDisplayVersion is not $UPSTREAM_VERSION" >&2
+  echo "3105 embedded AppReleaseDisplayVersion is not $UPSTREAM_VERSION" >&2
+  exit 1
+}
+test "$(plutil -extract CFBundleVersion raw -o - "$ROOT/Resources/Filza3105.bundle/UpstreamAppInfo.plist")" = "$UPSTREAM_BUILD" || {
+  echo "3105 embedded CFBundleVersion is not $UPSTREAM_BUILD" >&2
   exit 1
 }
 
