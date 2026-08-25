@@ -64,8 +64,8 @@ bash scripts/stage-3105-v2-overlay.sh
 
 # Upstream 2.0 uses a UIImage extension property as NSCache cost. In Filza's
 # embedded Swift target UIKit is main-actor isolated, so that one cache-cost
-# read does not compile from the repository image loader actor. Keep upstream
-# caching behavior and simply use NSCache's normal setObject overload.
+# read does not compile from the repository image loader actor. Keep the same
+# decoded image cache and use NSCache's normal setObject overload.
 PRESENTATION="ThirdParty/3105/Sources/RepositoryPresentationSupport.swift"
 test -f "$PRESENTATION" || { echo "Missing staged 3105 repository presentation source" >&2; exit 1; }
 python3 - "$PRESENTATION" <<'PY'
@@ -74,13 +74,13 @@ import sys
 
 path = Path(sys.argv[1])
 text = path.read_text(encoding="utf-8")
-old = '''            cache.setObject(
+old = '''            decodedCache.setObject(
                 image,
                 forKey: cacheKey as NSString,
                 cost: image.memoryCost
             )
 '''
-new = '''            cache.setObject(
+new = '''            decodedCache.setObject(
                 image,
                 forKey: cacheKey as NSString
             )
