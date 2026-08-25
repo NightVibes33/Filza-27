@@ -1,0 +1,15 @@
+#pragma once
+#include <stdbool.h>
+
+extern bool gIsPACSupported;
+
+static uint64_t __attribute((naked)) __xpaci_f(uint64_t a) {
+    asm(".long 0xDAC143E0");
+    asm("ret");
+}
+
+static uint64_t xpaci(uint64_t a) {
+    if (!gIsPACSupported) return a;
+    if ((a & 0xFFFFFF0000000000) == 0xFFFFFF0000000000) return a;
+    return __xpaci_f(a);
+}

@@ -1,0 +1,44 @@
+# macOS
+.DS_Store
+
+# Xcode user state
+xcuserdata/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+
+# Build products
+build/
+DerivedData/
+*.ipa
+*.xcarchive
+*.dSYM
+*.dSYM.zip
+*.app
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Signing material and local configuration
+*.cer
+*.p12
+*.pem
+*.key
+*.mobileprovision
+.env
+.env.*
+!.env.example
+
+# Local QA artifacts and internal working notes
+/*.png
+/tasks/
+/Tests/
+/.github/
+/CONTRIBUTING.md
+/SECURITY.md
+
+# Temporary files
+*.tmp
+*.swp
+*~

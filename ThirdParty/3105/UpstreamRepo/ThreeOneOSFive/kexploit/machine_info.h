@@ -1,0 +1,55 @@
+#ifndef MACHINE_INFO_H
+#define MACHINE_INFO_H
+
+#include <mach/machine.h>
+
+#ifndef CPUFAMILY_ARM_TYPHOON
+#define CPUFAMILY_ARM_TYPHOON               0x2c91a47e
+#endif
+#ifndef CPUFAMILY_ARM_TWISTER
+#define CPUFAMILY_ARM_TWISTER               0x92fb37c8
+#endif
+#ifndef CPUFAMILY_ARM_HURRICANE
+#define CPUFAMILY_ARM_HURRICANE             0x67ceee93
+#endif
+#ifndef CPUFAMILY_ARM_MONSOON_MISTRAL
+#define CPUFAMILY_ARM_MONSOON_MISTRAL       0xe81e7ef6
+#endif
+#ifndef CPUFAMILY_ARM_VORTEX_TEMPEST
+#define CPUFAMILY_ARM_VORTEX_TEMPEST        0x07d34b9f
+#endif
+#ifndef CPUFAMILY_ARM_LIGHTNING_THUNDER
+#define CPUFAMILY_ARM_LIGHTNING_THUNDER     0x462504d2
+#endif
+#ifndef CPUFAMILY_ARM_FIRESTORM_ICESTORM
+#define CPUFAMILY_ARM_FIRESTORM_ICESTORM    0x1b588bb3
+#endif
+#ifndef CPUFAMILY_ARM_BLIZZARD_AVALANCHE
+#define CPUFAMILY_ARM_BLIZZARD_AVALANCHE    0xda33d83d
+#endif
+#ifndef CPUFAMILY_ARM_EVEREST_SAWTOOTH
+#define CPUFAMILY_ARM_EVEREST_SAWTOOTH      0x8765edea
+#endif
+#ifndef CPUFAMILY_ARM_COLL
+#define CPUFAMILY_ARM_COLL                  0x2876f5b5
+#endif
+#ifndef CPUFAMILY_ARM_TUPAI
+#define CPUFAMILY_ARM_TUPAI                 0x204526d0
+#endif
+#ifndef CPUFAMILY_ARM_TAHITI
+#define CPUFAMILY_ARM_TAHITI                0x75d4acb9
+#endif
+#ifndef CPUFAMILY_ARM_IBIZA
+#define CPUFAMILY_ARM_IBIZA                 0xfa33415e
+#endif
+#ifndef CPUFAMILY_ARM_DONAN
+#define CPUFAMILY_ARM_DONAN                 0x6f5129ac
+#endif
+#ifndef CPUFAMILY_ARM_TILOS
+#define CPUFAMILY_ARM_TILOS                 0x01d7a72b
+#endif
+#ifndef CPUFAMILY_ARM_THERA
+#define CPUFAMILY_ARM_THERA                 0xab345f09
+#endif
+
+#endif
