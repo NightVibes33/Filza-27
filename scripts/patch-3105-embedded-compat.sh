@@ -90,21 +90,11 @@ if old not in text:
 path.write_text(text.replace(old, new, 1), encoding="utf-8")
 PY
 
-# Keep upstream 2.0 tab IDs/routes intact while restoring the two feature
-# toggles that users can control from Settings. The dedicated Filza Apps Manager
-# route still forces Files visible only for that controller.
+# Keep Apple's native compact tab bar and only adjust feature visibility/order.
+# The dedicated Filza Apps Manager route still forces Files visible only for
+# that controller; normal 3105 Developer Mode controls it everywhere else.
 test -f scripts/patch-3105-feature-tabs.sh || {
   echo "Missing 3105 feature-tab compatibility script" >&2
   exit 1
 }
 bash scripts/patch-3105-feature-tabs.sh
-
-# Compact iPhone TabView uses UITabBarController, which hard-caps visible tabs
-# at five and silently moves extras under More. 3105 2.0 can expose six or
-# seven sections after the feature toggles are enabled, so use a page container
-# plus our own compact tab strip while leaving regular-width navigation intact.
-test -f scripts/patch-3105-compact-tabbar.sh || {
-  echo "Missing 3105 compact tabbar compatibility script" >&2
-  exit 1
-}
-bash scripts/patch-3105-compact-tabbar.sh
