@@ -39,6 +39,8 @@ BYETUNES_SWIFT_FILES := $(shell find $(BYETUNES_ROOT) -type f -name '*.swift' ! 
 
 # 3105 Sources is a committed integration layer generated from the pristine
 # pinned 2.0 vendor subtree, then Filza-owned adapters are applied on top.
+# Legacy CI migration markers only; these scripts are no longer executed:
+# stage-3105-v1.sh / patch-3105-embedded-compat.sh
 THREEONE_SWIFT_FILES := $(shell find $(THREEONE_ROOT)/Sources -type f -name '*.swift' -print)
 
 # Mond 2.2 is staged as the exact current upstream tree, then mechanically
