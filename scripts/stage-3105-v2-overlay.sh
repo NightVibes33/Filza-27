@@ -13,10 +13,6 @@ for path in "$ROOT" "$ROOT/Sources" "$ROOT/Resources/Filza3105.bundle"; do
   test -d "$path" || { echo "Missing 3105 integration path: $path" >&2; exit 1; }
 done
 
-# The 1.1.1 pass runs first and establishes the Filza-owned adapters. This
-# overlay intentionally replaces only source units changed by upstream 2.0.
-# App.swift, OnboardingView.swift, standalone attribution/window hooks and the
-# kernel/lifecycle adapters remain owned by Filza.
 test -f "$ROOT/Sources/AppState.swift" || { echo "Missing Filza 3105 AppState adapter" >&2; exit 1; }
 test -f "$ROOT/Sources/KernelExploit.swift" || { echo "Missing Filza 3105 KernelExploit adapter" >&2; exit 1; }
 test -f "$ROOT/Sources/FilzaEmbeddedPanel.swift" || { echo "Missing Filza embedded panel" >&2; exit 1; }
@@ -85,8 +81,6 @@ settings = settings_path.read_text(encoding="utf-8")
 browser = browser_path.read_text(encoding="utf-8")
 navigation = navigation_path.read_text(encoding="utf-8")
 
-# Namespace the upstream roots so they coexist with Filza and preserve direct
-# routes from Filza quick actions into semantic 3105 2.0 sections.
 replacements = [
     ("struct ContentView: View {", "struct ThreeOneOSFiveContentView: View {"),
     ("    init() {", "    init(initialTab requestedInitialTab: Int = AppSection.home.rawValue) {"),
@@ -138,10 +132,36 @@ new_loader = '''            Task { @MainActor in
 if old_loader not in browser:
     raise SystemExit("3105 2.0 BrowserAppIcon loader anchor changed")
 browser = browser.replace(old_loader, new_loader, 1)
+
+# 2.0 adds AppUtilityToolbar to the Apps Manager toolbar. Filza's existing
+# View/Sort compatibility patch intentionally targets the older Files+Refresh
+# toolbar shape. Split the utility controls into a second toolbar modifier so
+# both upstream 2.0 Settings/Logs controls and Filza's View/Sort menu survive.
+utility_anchor = '''                AppUtilityToolbar(
+                    language: language,
+                    onOpenSettings: onOpenSettings,
+                    onOpenLogs: onOpenLogs
+                )
+            }
+            .onAppear {
+'''
+utility_replacement = '''            }
+            .toolbar {
+                AppUtilityToolbar(
+                    language: language,
+                    onOpenSettings: onOpenSettings,
+                    onOpenLogs: onOpenLogs
+                )
+            }
+            .onAppear {
+'''
+if utility_anchor not in browser:
+    raise SystemExit("3105 2.0 Apps Manager utility-toolbar anchor changed")
+browser = browser.replace(utility_anchor, utility_replacement, 1)
 browser_path.write_text(browser, encoding="utf-8")
 
-# Standalone 3105 hides Files behind Developer Mode. In Filza, Files is the
-# Apps Manager route, so it must remain reachable regardless of that preference.
+# Files is Filza's Apps Manager route and must never disappear behind standalone
+# 3105's Developer Mode preference.
 visibility = '''        case .files:
             return developerModeEnabled
 '''
@@ -162,9 +182,9 @@ for lang in en vi zh-Hans; do
   cp "$UPSTREAM/$lang.lproj/Localizable.strings" "$ROOT/Resources/Filza3105.bundle/$lang.lproj/Localizable.strings"
 done
 
-# Upstream's project.pbxproj was bumped to marketing version 2.0/build 8, but
-# its checked-in Info.plist still says 1.1.1/build 7. Preserve the plist shape
-# and stamp the metadata that corresponds to the pinned 2.0 source revision.
+# Upstream bumped project.pbxproj to marketing version 2.0/build 8 but left its
+# checked-in Info.plist at 1.1.1/build 7. Stamp the metadata corresponding to
+# the exact pinned 2.0 source revision in our embedded resource copy.
 cp "$UPSTREAM/Info.plist" "$ROOT/Resources/Filza3105.bundle/UpstreamAppInfo.plist"
 python3 - \
   "$ROOT/Resources/Filza3105.bundle/UpstreamAppInfo.plist" \
@@ -208,6 +228,7 @@ assert_contains 'PatchRestoreInspection' "$ROOT/Sources/DevicePatchService.swift
 assert_contains 'FileBrowserSortOrder' "$ROOT/Sources/FileBrowserMetadata.swift" 'file browser sorting metadata'
 assert_contains 'Filza3105PairingSettingsSection()' "$ROOT/Sources/ThreeOneOSFiveSettingsView.swift" 'shared pairing settings'
 assert_contains 'FilzaSharedPairingSupport.resolvedIcon' "$ROOT/Sources/AppDataBrowserView.swift" 'shared SpringBoard icon resolver'
+assert_contains 'AppUtilityToolbar(' "$ROOT/Sources/AppDataBrowserView.swift" '2.0 Settings/Logs utility toolbar'
 assert_contains 'case .files:' "$ROOT/Sources/AppTabNavigationState.swift" 'Files/Apps Manager section'
 assert_contains 'return true' "$ROOT/Sources/AppTabNavigationState.swift" 'Filza always-visible Apps Manager route'
 
