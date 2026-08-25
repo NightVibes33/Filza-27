@@ -1,4 +1,4 @@
-name: Verify 3105 1.1.1 + Shared Embedded UI
+name: Verify 3105 2.0 + Shared Embedded UI
 
 on:
   push:
@@ -59,7 +59,7 @@ jobs:
           chmod +x "$RUNNER_TEMP/filza-tools/plutil"
           echo "$RUNNER_TEMP/filza-tools" >> "$GITHUB_PATH"
 
-      - name: Verify pinned 3105 1.1.1 integration
+      - name: Verify pinned 3105 compatibility baseline and 2.0 overlay
         shell: bash
         run: |
           set -euxo pipefail
@@ -67,12 +67,22 @@ jobs:
           grep -Fq 'UPSTREAM_OWNER="YangJiiii"' scripts/stage-3105-v1.sh
           grep -Fq 'UPSTREAM_COMMIT="f1b81047a01a1817c7fb17e6938929eef108f1aa"' scripts/stage-3105-v1.sh
           grep -Fq 'UPSTREAM_VERSION="1.1.1"' scripts/stage-3105-v1.sh
+          test -f scripts/stage-3105-v2-overlay.sh
+          grep -Fq 'UPSTREAM_COMMIT="4a15d823b711bc0639de1f3fd2c764b5982d9245"' scripts/stage-3105-v2-overlay.sh
+          grep -Fq 'UPSTREAM_VERSION="2.0"' scripts/stage-3105-v2-overlay.sh
           test -f ThirdParty/3105/Sources/AppState.swift
           test -f ThirdParty/3105/Sources/KernelExploit.swift
           test -f ThirdParty/3105/Sources/Utils.swift
+          test -f ThirdParty/3105/Sources/FileBrowserMetadata.swift
+          test -f ThirdParty/3105/Sources/PackageRepositoryModels.swift
+          test -f ThirdParty/3105/Sources/PackageRepositoryStore.swift
+          test -f ThirdParty/3105/Sources/RepositoryPresentationSupport.swift
+          test -f ThirdParty/3105/Sources/RepositoryHomeView.swift
+          test -f ThirdParty/3105/Sources/RepositoryMarketplaceView.swift
+          test -f ThirdParty/3105/Sources/RepositorySourcesView.swift
           grep -Fq 'stage-3105-v1.sh' Makefile
 
-      - name: Verify embedded-host isolation
+      - name: Verify embedded-host isolation and stage 2.0
         shell: bash
         run: |
           set -euxo pipefail
@@ -84,6 +94,29 @@ jobs:
           ! grep -Fq 'DisplayIdentityAttestationToken' ThirdParty/3105/Sources/Utils.swift
           grep -Fq 'enum ExploitStatus' ThirdParty/3105/Sources/Utils.swift
           grep -Fq 'enum AppPaths' ThirdParty/3105/Sources/Utils.swift
+          grep -Fq 'latestSchemaVersion = 3' ThirdParty/3105/Sources/PatchPackageCodec.swift
+          grep -Fq 'PackageRepositoryStore' ThirdParty/3105/Sources/PackageRepositoryStore.swift
+          grep -Fq 'RepositoryHomeView' ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
+          grep -Fq 'RepositorySourcesView' ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
+          grep -Fq 'RepositorySearchView' ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
+          grep -Fq 'repositoryStorePresentation(repositoryStore, patchStore: patchStore)' ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
+          grep -Fq 'Filza3105PairingSettingsSection()' ThirdParty/3105/Sources/ThreeOneOSFiveSettingsView.swift
+          grep -Fq 'FilzaSharedPairingSupport.resolvedIcon' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          test "$(plutil -extract CFBundleShortVersionString raw -o - ThirdParty/3105/Resources/Filza3105.bundle/UpstreamAppInfo.plist)" = "2.0"
+
+      - name: Verify semantic Filza routes for 3105 2.0
+        shell: bash
+        run: |
+          set -euxo pipefail
+          grep -Fq '@StateObject private var patchStore = PatchProjectStore()' Filza3105Host.swift
+          grep -Fq '@StateObject private var repositoryStore = PackageRepositoryStore()' Filza3105Host.swift
+          grep -Fq '.environmentObject(patchStore)' Filza3105Host.swift
+          grep -Fq '.environmentObject(repositoryStore)' Filza3105Host.swift
+          grep -Fq 'initialTab: AppSection.home.rawValue' Filza3105Host.swift
+          grep -Fq 'initialTab: AppSection.files.rawValue' Filza3105Host.swift
+          grep -Fq 'initialTab: AppSection.installed.rawValue' Filza3105Host.swift
+          ! grep -Fq 'initialTab: 1,' Filza3105Host.swift
+          ! grep -Fq 'initialTab: 2,' Filza3105Host.swift
 
       - name: Verify shared presentation and modern Mond core
         shell: bash
