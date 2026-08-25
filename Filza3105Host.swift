@@ -8,6 +8,8 @@ private struct Filza3105EmbeddedRoot: View {
     @StateObject private var appState = AppState()
     @StateObject private var patchDraftCoordinator = PatchDraftCoordinator()
     @StateObject private var fileOperationCoordinator = FileOperationCoordinator()
+    @StateObject private var patchStore = PatchProjectStore()
+    @StateObject private var repositoryStore = PackageRepositoryStore()
     @AppStorage(AppLanguage.storageKey) private var languageCode = AppLanguage.english.rawValue
     @State private var routedInitialImport = false
 
@@ -21,6 +23,8 @@ private struct Filza3105EmbeddedRoot: View {
                 .environmentObject(appState)
                 .environmentObject(patchDraftCoordinator)
                 .environmentObject(fileOperationCoordinator)
+                .environmentObject(patchStore)
+                .environmentObject(repositoryStore)
                 .environment(\.appLanguage, language)
                 .environment(\.locale, language.locale)
         }
@@ -31,20 +35,16 @@ private struct Filza3105EmbeddedRoot: View {
                 patchDraftCoordinator.presentImport(initialImportURL)
                 FilzaDiagnosticsAppend(
                     "3105",
-                    "routed external 3105 import into embedded Patches workspace"
+                    "routed external 3105 import into embedded Installed workspace"
                 )
             }
             FilzaDiagnosticsAppend(
                 "3105",
-                "canonical embedded panel visible initialTab=\(initialTab)"
+                "canonical embedded 2.0 panel visible initialTab=\(initialTab)"
             )
             FilzaDiagnosticsAppend(
                 "3105",
-                "full upstream 3105 1.1.1 workspace appeared initialTab=\(initialTab)"
-            )
-            FilzaDiagnosticsAppend(
-                "3105",
-                "1.1.1 navigation active: responsive layout, independent Files tabs, Patch Workspace v2, updated support backend"
+                "upstream 3105 2.0 marketplace, schema-v3 patches and restore workflow active"
             )
         }
     }
@@ -72,34 +72,34 @@ public final class Filza3105HostFactory: NSObject {
 
     @objc public static func makeHomeController() -> UIViewController {
         makeController(
-            initialTab: 0,
+            initialTab: AppSection.home.rawValue,
             title: "3105",
-            diagnostic: "constructing full upstream 3105 1.1.1 workspace"
+            diagnostic: "constructing full upstream 3105 2.0 workspace"
         )
     }
 
     @objc public static func makeAppsManagerController() -> UIViewController {
         makeController(
-            initialTab: 1,
+            initialTab: AppSection.files.rawValue,
             title: "Apps Manager",
-            diagnostic: "constructing complete 3105 1.1.1 Apps Manager"
+            diagnostic: "constructing 3105 2.0 Files/Apps Manager"
         )
     }
 
     @objc public static func makePatchesController() -> UIViewController {
         makeController(
-            initialTab: 2,
+            initialTab: AppSection.installed.rawValue,
             title: "Patches",
-            diagnostic: "constructing complete 3105 1.1.1 Patches"
+            diagnostic: "constructing 3105 2.0 Installed/Patches"
         )
     }
 
     @objc(makePatchesImportControllerWithURL:)
     public static func makePatchesImportController(withURL url: URL) -> UIViewController {
         makeController(
-            initialTab: 2,
+            initialTab: AppSection.installed.rawValue,
             title: "Patches",
-            diagnostic: "constructing 3105 1.1.1 Patches for external import",
+            diagnostic: "constructing 3105 2.0 Installed/Patches for external import",
             initialImportURL: url
         )
     }
