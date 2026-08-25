@@ -1,4 +1,4 @@
-name: Verify 3105 1.1.1 + Shared Embedded UI
+name: Verify 3105 2.0 + Shared Embedded UI
 
 on:
   push:
@@ -13,79 +13,46 @@ concurrency:
 
 jobs:
   source-contract:
-    runs-on: ubuntu-latest
+    runs-on: macos-26-intel
     steps:
       - name: Checkout complete source tree
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Provide plutil compatibility for source staging
+      - name: Verify pristine upstream and Filza integration contracts
         shell: bash
         run: |
           set -euxo pipefail
-          mkdir -p "$RUNNER_TEMP/filza-tools"
-          cat > "$RUNNER_TEMP/filza-tools/plutil" <<'PY'
-          #!/usr/bin/env python3
-          import plistlib
-          import sys
+          bash scripts/verify-3105-pristine-integration.sh
+          test "$(cat ThirdParty/3105/UPSTREAM_PIN)" = "4a15d823b711bc0639de1f3fd2c764b5982d9245"
+          test -f ThirdParty/3105/UpstreamRepo/ThreeOneOSFive/ContentView.swift
+          test -f ThirdParty/3105/UpstreamRepo/ThreeOneOSFive/helpers/PackageRepositoryStore.swift
+          test -f ThirdParty/3105/Sources/PackageRepositoryStore.swift
+          grep -Fq 'RepositoryHomeView' ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
+          grep -Fq 'return developerModeEnabled' ThirdParty/3105/Sources/AppTabNavigationState.swift
+          grep -Fq 'FeatureVisibility(developerModeEnabled: developerModeActive || forceFilesVisible)' ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
+          ! grep -Fq '.tabViewStyle(.page' ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
+          ! grep -Fq 'minimumScaleFactor(0.62)' ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
 
-          args = sys.argv[1:]
-          try:
-              if len(args) == 2 and args[0] == "-lint":
-                  with open(args[1], "rb") as f:
-                      plistlib.load(f)
-                  print(f"{args[1]}: OK")
-                  raise SystemExit(0)
-
-              if len(args) == 6 and args[0] == "-extract" and args[2] == "raw" and args[3] == "-o" and args[4] == "-":
-                  key, path = args[1], args[5]
-                  with open(path, "rb") as f:
-                      value = plistlib.load(f)[key]
-                  if isinstance(value, bool):
-                      print("true" if value else "false")
-                  elif isinstance(value, (str, int, float)):
-                      print(value)
-                  else:
-                      raise TypeError(f"raw extraction unsupported for {type(value).__name__}")
-                  raise SystemExit(0)
-          except Exception as exc:
-              print(f"plutil compatibility error: {exc}", file=sys.stderr)
-              raise SystemExit(1)
-
-          print("unsupported plutil compatibility invocation: " + " ".join(args), file=sys.stderr)
-          raise SystemExit(2)
-          PY
-          chmod +x "$RUNNER_TEMP/filza-tools/plutil"
-          echo "$RUNNER_TEMP/filza-tools" >> "$GITHUB_PATH"
-
-      - name: Verify pinned 3105 1.1.1 integration
+      - name: Verify semantic Filza routes and custom integrations
         shell: bash
         run: |
           set -euxo pipefail
-          test -f scripts/stage-3105-v1.sh
-          grep -Fq 'UPSTREAM_OWNER="YangJiiii"' scripts/stage-3105-v1.sh
-          grep -Fq 'UPSTREAM_COMMIT="f1b81047a01a1817c7fb17e6938929eef108f1aa"' scripts/stage-3105-v1.sh
-          grep -Fq 'UPSTREAM_VERSION="1.1.1"' scripts/stage-3105-v1.sh
-          test -f ThirdParty/3105/Sources/AppState.swift
-          test -f ThirdParty/3105/Sources/KernelExploit.swift
-          test -f ThirdParty/3105/Sources/Utils.swift
-          grep -Fq 'stage-3105-v1.sh' Makefile
+          grep -Fq '@StateObject private var patchStore = PatchProjectStore()' Filza3105Host.swift
+          grep -Fq '@StateObject private var repositoryStore = PackageRepositoryStore()' Filza3105Host.swift
+          grep -Fq '.environmentObject(patchStore)' Filza3105Host.swift
+          grep -Fq '.environmentObject(repositoryStore)' Filza3105Host.swift
+          grep -Fq 'initialTab: AppSection.home.rawValue' Filza3105Host.swift
+          grep -Fq 'initialTab: AppSection.files.rawValue' Filza3105Host.swift
+          grep -Fq 'initialTab: AppSection.installed.rawValue' Filza3105Host.swift
+          grep -Fq 'Filza3105PairingSettingsSection()' ThirdParty/3105/Sources/ThreeOneOSFiveSettingsView.swift
+          grep -Fq 'FilzaSharedPairingSupport.enhancedIcon' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'FILZA_3105_APP_VIEW_SORT_V2' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'Repackage as IPA' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'allowedContentTypes: [.item]' ThirdParty/3105/Sources/FilzaSharedPairingSupport.swift
 
-      - name: Verify embedded-host isolation
-        shell: bash
-        run: |
-          set -euxo pipefail
-          test -f scripts/patch-3105-embedded-compat.sh
-          grep -Fq 'patch-3105-embedded-compat.sh' Makefile
-          bash scripts/stage-3105-v1.sh
-          bash scripts/patch-3105-embedded-compat.sh
-          ! grep -Fq 'enum AppUpdateChecker' ThirdParty/3105/Sources/Utils.swift
-          ! grep -Fq 'DisplayIdentityAttestationToken' ThirdParty/3105/Sources/Utils.swift
-          grep -Fq 'enum ExploitStatus' ThirdParty/3105/Sources/Utils.swift
-          grep -Fq 'enum AppPaths' ThirdParty/3105/Sources/Utils.swift
-
-      - name: Verify shared presentation and modern Mond core
+      - name: Verify shared presentation and embedding boundaries
         shell: bash
         run: |
           set -euxo pipefail
@@ -97,23 +64,7 @@ jobs:
           grep -Fq 'sheet.detents = [.large()]' "$PANEL"
           grep -Fq 'sheet.prefersGrabberVisible = true' "$PANEL"
           grep -Fq 'FilzaEmbeddedPanel {' Filza3105Host.swift
-          grep -Fq 'FilzaEmbeddedPanel {' ByeTunesEmbeddedHost.swift
-          grep -Fq 'FilzaEmbeddedPanel {' FilzaMondCurrentHost.swift
-          ! test -d MondModern
-          ! test -e scripts/prepare-ios16-compat.sh
-          ! test -e scripts/patch-mond-ios16-backport.sh
-          ! grep -Fq 'FilzaMondModern.dylib' FilzaMondBridge.m
-          ! grep -Fq 'dlopen' FilzaMondBridge.m
-          grep -Fq 'MondEmbeddedHostFactory' FilzaMondBridge.m
-          ! grep -Fq 'ios16Backport' FilzaMondCurrentHost.swift
-
-      - name: Verify embedding boundaries
-        shell: bash
-        run: |
-          set -euxo pipefail
           ! grep -Fq 'ThreeOneOSFive/App.swift' Makefile
-          ! grep -Fq 'OnboardingView.swift' Makefile
-          ! grep -Fq 'DisplayIdentityAttribution.swift' Makefile
           ! grep -Fq 'AntiDetection.m' Makefile
-          grep -Fq 'return makeMusicLibraryHost()' ByeTunesEmbeddedHost.swift
-          grep -Fq 'return makePresentedMusicLibraryHost()' ByeTunesEmbeddedHost.swift
+          test -f ThirdParty/3105/Resources/Filza3105.bundle/UpstreamAppInfo.plist
+          test "$(plutil -extract CFBundleShortVersionString raw -o - ThirdParty/3105/Resources/Filza3105.bundle/UpstreamAppInfo.plist)" = "2.0"
