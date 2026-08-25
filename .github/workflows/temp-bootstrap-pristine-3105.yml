@@ -1,0 +1,45 @@
+name: Temp bootstrap pristine 3105
+
+on:
+  push:
+    branches: [ temp-3105-pristine-rebase ]
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    if: github.event.head_commit.message == 'Bootstrap pristine 3105 vendor'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout temp branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Vendor exact upstream snapshot without Filza changes
+        shell: bash
+        run: |
+          set -euxo pipefail
+          UPSTREAM_COMMIT='4a15d823b711bc0639de1f3fd2c764b5982d9245'
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP"' EXIT
+
+          git clone https://github.com/YangJiiii/3105.git "$TMP/3105"
+          git -C "$TMP/3105" checkout --detach "$UPSTREAM_COMMIT"
+          test "$(git -C "$TMP/3105" rev-parse HEAD)" = "$UPSTREAM_COMMIT"
+
+          rm -rf ThirdParty/3105
+          mkdir -p ThirdParty/3105/UpstreamRepo
+          rsync -a --delete --exclude='.git/' "$TMP/3105/" ThirdParty/3105/UpstreamRepo/
+          printf '%s\n' "$UPSTREAM_COMMIT" > ThirdParty/3105/UPSTREAM_PIN
+
+          # Prove the vendored subtree is byte-for-byte the checked out upstream,
+          # ignoring only Git metadata and our one external pin file.
+          diff -qr --exclude='.git' "$TMP/3105" ThirdParty/3105/UpstreamRepo
+
+          git add -A ThirdParty/3105
+          git config user.name 'Filza-27 CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'Vendor pristine YangJiiii 3105 2.0'
+          git push origin HEAD:temp-3105-pristine-rebase
