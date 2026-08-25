@@ -89,3 +89,12 @@ if old not in text:
     raise SystemExit("3105 2.0 embedded compat: repository image-cache anchor changed")
 path.write_text(text.replace(old, new, 1), encoding="utf-8")
 PY
+
+# Keep upstream 2.0 tab IDs/routes intact while restoring the two feature
+# toggles that users can control from Settings. The dedicated Filza Apps Manager
+# route still forces Files visible only for that controller.
+test -f scripts/patch-3105-feature-tabs.sh || {
+  echo "Missing 3105 feature-tab compatibility script" >&2
+  exit 1
+}
+bash scripts/patch-3105-feature-tabs.sh
