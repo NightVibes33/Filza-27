@@ -11,8 +11,7 @@
 # pinned tree before compilation.
 include FilzaYouTubeKitBootstrap.mk
 
-# 3105 1.1.1 stages its updated sandbox_escape.m at the repository root, while
-# that upstream translation unit keeps the original quoted kexploit header names
+# 3105's sandbox_escape.m keeps the original quoted kexploit header names
 # (kexploit_opa334.h, krw.h, kutils.h, offsets.h, xpaci.h). Expose the existing
 # pinned kexploit directory rather than rewriting upstream include directives.
 FilzaApplySandboxExt_CFLAGS += -I$(PWD)/kexploit
@@ -66,11 +65,9 @@ FilzaApplySandboxExt_FILES += MondSandboxSPICompat.c
 FilzaApplySandboxExt_FILES += FilzaSupportPrompt.m
 
 before-FilzaApplySandboxExt-all::
-	# Add an Apps Manager long-press action that repackages the installed .app
-	# bundle as a standard Payload/<name>.app IPA and opens the system export UI.
-	# The bundle is archived exactly as installed; this does not decrypt FairPlay,
-	# strip DRM, alter entitlements, or resign the app.
-	@bash scripts/patch-3105-ipa-export.sh
+	# 3105 2.0 Sources is already the committed upstream-first integration layer.
+	# Do not reapply the generation patches here; verify each Filza adaptation is
+	# present so a clean checkout remains deterministic and idempotent.
 	@test -f scripts/patch-3105-ipa-export.sh || (echo "Missing 3105 IPA export patch" >&2; exit 1)
 	@grep -Fq 'Label("Repackage as IPA"' ThirdParty/3105/Sources/AppDataBrowserView.swift
 	@grep -Fq 'FilzaAppIPAExporter.repackage' ThirdParty/3105/Sources/AppDataBrowserView.swift
@@ -80,11 +77,10 @@ before-FilzaApplySandboxExt-all::
 	@test -f ThirdParty/3105/Sources/FilzaAppIPAExporter.swift
 	@test -f Filza3105IPAExportBridge.m
 
-	# Restore the requested View / Sort menu while preserving the original row UI.
+	# Verify the requested View / Sort menu while preserving the original row UI.
 	# Default remains the exact existing 3105 list/order. The broader Apple
 	# LaunchServices probe starts only when a research view is explicitly selected.
 	# No discovery badges or source labels are rendered in the app rows.
-	@bash scripts/patch-3105-app-manager-view-sort.sh
 	@test -f scripts/patch-3105-app-manager-view-sort.sh || (echo "Missing 3105 app view/sort patch" >&2; exit 1)
 	@grep -Fq 'FILZA_3105_APP_VIEW_SORT_V2' ThirdParty/3105/Sources/AppDataBrowserView.swift
 	@grep -Fq 'Picker("View", selection: $$appViewMode)' ThirdParty/3105/Sources/AppDataBrowserView.swift
@@ -101,17 +97,13 @@ before-FilzaApplySandboxExt-all::
 	# chooser itself uses SwiftUI fileImporter with UTType.item so the Files UI is
 	# presented by the current Settings view instead of stacking another custom
 	# SwiftUI sheet or changing 3105's navigation hierarchy.
-	@bash scripts/patch-3105-pairing-importer.sh
 	@test -f scripts/patch-3105-pairing-importer.sh || (echo "Missing 3105 pairing importer patch" >&2; exit 1)
 	@grep -Fq '.sheet(isPresented: $$showSettings) { ThreeOneOSFiveSettingsView() }' ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
 	@grep -Fq 'allowedContentTypes: [.item]' ThirdParty/3105/Sources/FilzaSharedPairingSupport.swift
 	@grep -Fq 'handlePairingImport(_ result: Result<[URL], Error>)' ThirdParty/3105/Sources/FilzaSharedPairingSupport.swift
 	@! grep -Fq '.sheet(isPresented: $$showingPairingImporter)' ThirdParty/3105/Sources/FilzaSharedPairingSupport.swift
 
-	# stage-3105-v1.sh runs in the main Makefile hook before this included
-	# fragment. Replace only the generated Filza icon glue with the optimized
-	# persistent-client implementation after the immutable 3105 stage completes.
-	@bash scripts/patch-3105-icon-performance.sh
+	# Verify the committed optimized persistent-client icon implementation.
 	@test -f scripts/patch-3105-icon-performance.sh || (echo "Missing 3105 icon performance patch" >&2; exit 1)
 	@grep -Fq 'FilzaSharedPairingSupport.enhancedIcon' ThirdParty/3105/Sources/AppDataBrowserView.swift
 	@grep -Fq 'FILZA_SBS_ICON_WORKERS 3' ThirdParty/3105/Sources/AppIconHelper.m
