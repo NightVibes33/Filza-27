@@ -98,3 +98,13 @@ test -f scripts/patch-3105-feature-tabs.sh || {
   exit 1
 }
 bash scripts/patch-3105-feature-tabs.sh
+
+# Compact iPhone TabView uses UITabBarController, which hard-caps visible tabs
+# at five and silently moves extras under More. 3105 2.0 can expose six or
+# seven sections after the feature toggles are enabled, so use a page container
+# plus our own compact tab strip while leaving regular-width navigation intact.
+test -f scripts/patch-3105-compact-tabbar.sh || {
+  echo "Missing 3105 compact tabbar compatibility script" >&2
+  exit 1
+}
+bash scripts/patch-3105-compact-tabbar.sh
