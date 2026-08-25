@@ -49,6 +49,31 @@ if old_visibility_state not in navigation:
     raise SystemExit("3105 feature tabs: FeatureVisibility state anchor changed")
 navigation = navigation.replace(old_visibility_state, new_visibility_state, 1)
 
+# Keep Apple's native compact UITabBar. It has five visible slots, so when a
+# feature toggle is enabled we prioritize that feature into those five slots
+# instead of replacing the tab container or squeezing seven custom buttons into
+# the iPhone width. Lower-priority repository tabs remain reachable via native
+# More only when necessary.
+old_visible_sections = '''    var visibleSections: [AppSection] {
+        AppSection.allCases.filter(isVisible)
+    }
+'''
+new_visible_sections = '''    var visibleSections: [AppSection] {
+        if developerModeEnabled && cleanerEnabled {
+            return [.home, .new, .installed, .files, .cleaner, .sources, .search]
+        }
+
+        var sections: [AppSection] = [.home, .new, .sources, .installed]
+        if developerModeEnabled { sections.append(.files) }
+        if cleanerEnabled { sections.append(.cleaner) }
+        sections.append(.search)
+        return sections
+    }
+'''
+if old_visible_sections not in navigation:
+    raise SystemExit("3105 feature tabs: visibleSections anchor changed")
+navigation = navigation.replace(old_visible_sections, new_visible_sections, 1)
+
 # stage-3105-v2-overlay intentionally made Files always visible to preserve the
 # Filza Apps Manager route. Move that exception into ContentView so it applies
 # only when Filza actually opens the dedicated Apps Manager controller. In the
@@ -176,10 +201,13 @@ PY
 grep -Fq 'case cleaner' "$NAVIGATION"
 grep -Fq 'return developerModeEnabled' "$NAVIGATION"
 grep -Fq 'return cleanerEnabled' "$NAVIGATION"
+grep -Fq 'return [.home, .new, .installed, .files, .cleaner, .sources, .search]' "$NAVIGATION"
 grep -Fq '@AppStorage(FeatureVisibility.cleanerStorageKey)' "$CONTENT"
 grep -Fq 'forceFilesVisible = requestedInitialTab == AppSection.files.rawValue' "$CONTENT"
 grep -Fq 'developerModeEnabled: developerModeActive || forceFilesVisible' "$CONTENT"
 grep -Fq 'case .cleaner:' "$CONTENT"
 grep -Fq 'CleanerView()' "$CONTENT"
+grep -Fq '.tabItem {' "$CONTENT"
+! grep -Fq '.tabViewStyle(.page' "$CONTENT"
 
-echo "Restored 3105 Developer Mode and Cleaner tab visibility while preserving Filza Apps Manager routing"
+echo "Restored native 3105 tabs with feature-priority ordering and Filza Apps Manager routing"
