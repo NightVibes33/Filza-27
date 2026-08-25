@@ -1,0 +1,15 @@
+* text=auto eol=lf
+
+*.swift text diff=swift
+*.m text
+*.h text
+*.c text
+*.plist text
+*.strings text
+*.pbxproj text
+*.yml text
+*.yaml text
+*.md text
+*.png binary
+*.car binary
+*.ipa binary

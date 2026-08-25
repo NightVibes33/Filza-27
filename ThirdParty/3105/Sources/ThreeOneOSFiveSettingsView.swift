@@ -5,6 +5,9 @@ struct ThreeOneOSFiveSettingsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var appState: AppState
     @AppStorage(AppLanguage.storageKey) private var languageCode = AppLanguage.english.rawValue
+    @AppStorage(FeatureVisibility.cleanerStorageKey) private var cleanerEnabled = true
+    @AppStorage(FeatureVisibility.developerModeStorageKey)
+    private var developerModeEnabled = false
 
     var body: some View {
         NavigationStack {
@@ -33,29 +36,65 @@ struct ThreeOneOSFiveSettingsView: View {
                     .labelsHidden()
                 }
 
+                Section {
+                    Toggle(isOn: $cleanerEnabled) {
+                        Label(language.text("tab.cleaner"), systemImage: "sparkles")
+                    }
+                    Toggle(isOn: $developerModeEnabled) {
+                        Label(
+                            language.text("settings.developer_mode"),
+                            systemImage: "hammer.fill"
+                        )
+                    }
+                } header: {
+                    Text(language.text("dashboard.features"))
+                } footer: {
+                    Text(language.text("settings.developer_mode_footer"))
+                }
+
+                if WallpaperFeatureSupportPolicy.isSupported(
+                    major: AppInfo.versionTuple.major
+                ) {
+                    Section {
+                        NavigationLink {
+                            WallpaperResetSettingsView()
+                        } label: {
+                            Label(
+                                language.text("wallpaper.reset"),
+                                systemImage: "arrow.counterclockwise"
+                            )
+                        }
+                    } header: {
+                        Text(language.text("tab.wallpapers"))
+                    } footer: {
+                        Text(language.text("wallpaper.reset_settings_footer"))
+                    }
+                }
+
                 Section(language.text("common.device")) {
                     LabeledContent(language.text("dashboard.hardware_model"), value: AppInfo.displayMachineName)
                     LabeledContent(language.text("settings.ios_version"), value: "\(AppInfo.osVersion) (\(AppInfo.osBuild))")
                 }
 
+                Filza3105PairingSettingsSection()
+
                 Section {
                     HStack {
                         Text(language.text("settings.current_version"))
                         Spacer()
-                        Label(
-                            language.text(appState.isSupported ? "settings.supported" : "settings.unsupported"),
-                            systemImage: appState.isSupported ? "checkmark.circle.fill" : "xmark.circle.fill"
-                        )
+                        Text(language.text(appState.isSupported ? "settings.supported" : "settings.unsupported"))
                         .foregroundStyle(appState.isSupported ? Color.green : Color.red)
                     }
+                    LabeledContent("iOS 17", value: ExploitSupportPolicy.verifiedIOS17Range)
+                    LabeledContent("iOS 18", value: ExploitSupportPolicy.verifiedIOS18Range)
                     LabeledContent("iOS 26", value: ExploitSupportPolicy.verifiedIOS26Range)
                     VStack(alignment: .leading, spacing: 8) {
                         Text("iOS 27.0")
                             .font(.body)
                         ForEach(ExploitSupportPolicy.verifiedIOS27Builds, id: \.build) { version in
                             Text(versionLabel(version))
-                                .font(.caption.monospaced())
-                                .foregroundStyle(.secondary)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
                         }
                     }
                     .padding(.vertical, 2)
@@ -63,6 +102,19 @@ struct ThreeOneOSFiveSettingsView: View {
                     Text(language.text("settings.verified_versions"))
                 } footer: {
                     Text(language.text("settings.supported_versions_footer"))
+                }
+
+                Section(language.text("settings.social_media")) {
+                    creditsRow(
+                        name: "GitHub",
+                        role: language.text("social.github_role"),
+                        url: "https://github.com/YangJiiii/3105"
+                    )
+                    creditsRow(
+                        name: "Cộng Đồng IOSVN",
+                        role: language.text("social.iosvn_role"),
+                        url: "https://t.me/ioscrackvn"
+                    )
                 }
 
                 Section(language.text("settings.credits")) {
@@ -108,7 +160,7 @@ struct ThreeOneOSFiveSettingsView: View {
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "AppReleaseDisplayVersion") as? String
             ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "1.0.1"
+            ?? "1.0"
     }
 
     private func versionLabel(

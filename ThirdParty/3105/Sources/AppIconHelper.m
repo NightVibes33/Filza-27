@@ -117,38 +117,90 @@ static NSDictionary *appsFromMobileInstallation(void) {
     return result;
 }
 
+static void ensureLaunchServicesLoaded(void) {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        const char *candidates[] = {
+            "/System/Library/Frameworks/CoreServices.framework/CoreServices",
+            "/System/Library/PrivateFrameworks/MobileCoreServices.framework/MobileCoreServices",
+            "/System/Library/Frameworks/MobileCoreServices.framework/MobileCoreServices",
+        };
+        for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) {
+            if (dlopen(candidates[i], RTLD_LAZY | RTLD_GLOBAL)) {
+                NSLog(@"[3105] ls: loaded %s", candidates[i]);
+                return;
+            }
+        }
+        NSLog(@"[3105] ls: CoreServices/MobileCoreServices dlopen failed");
+    });
+}
+
 static NSDictionary *appsFromWorkspace(void) {
     NSMutableDictionary *result = [NSMutableDictionary dictionary];
+    ensureLaunchServicesLoaded();
 
     Class workspaceClass = NSClassFromString(@"LSApplicationWorkspace");
-    if (!workspaceClass) return result;
+    if (!workspaceClass) {
+        NSLog(@"[3105] ls: LSApplicationWorkspace class unavailable");
+        return result;
+    }
     SEL defaultWorkspaceSel = NSSelectorFromString(@"defaultWorkspace");
-    if (![workspaceClass respondsToSelector:defaultWorkspaceSel]) return result;
+    if (![workspaceClass respondsToSelector:defaultWorkspaceSel]) {
+        NSLog(@"[3105] ls: defaultWorkspace selector unavailable");
+        return result;
+    }
     id workspace = ((id (*)(id, SEL))objc_msgSend)(workspaceClass, defaultWorkspaceSel);
-    if (!workspace) return result;
+    if (!workspace) {
+        NSLog(@"[3105] ls: defaultWorkspace returned nil");
+        return result;
+    }
+
     NSArray *apps = nil;
-    for (NSString *selectorName in @[@"allInstalledApplications", @"allApplications"]) {
+    NSString *usedSelector = nil;
+    for (NSString *selectorName in @[@"allApplications", @"allInstalledApplications"]) {
         SEL allAppsSel = NSSelectorFromString(selectorName);
         if (![workspace respondsToSelector:allAppsSel]) continue;
         id candidate = ((id (*)(id, SEL))objc_msgSend)(workspace, allAppsSel);
         if ([candidate isKindOfClass:[NSArray class]] && [candidate count] > 0) {
             apps = candidate;
+            usedSelector = selectorName;
             break;
         }
+        NSLog(@"[3105] ls: %@ returned %lu", selectorName,
+              (unsigned long)([candidate isKindOfClass:[NSArray class]] ? [candidate count] : 0));
     }
-    if (!apps || apps.count == 0) return result;
+    if (!apps || apps.count == 0) {
+        NSLog(@"[3105] ls: workspace enumeration empty");
+        return result;
+    }
+    NSLog(@"[3105] ls: %@ returned %lu proxies", usedSelector, (unsigned long)apps.count);
 
+    NSUInteger withContainer = 0;
     for (id app in apps) {
         @autoreleasepool {
             NSString *bundleID = nil;
-            SEL bundleSel = NSSelectorFromString(@"bundleIdentifier");
-            if ([app respondsToSelector:bundleSel]) bundleID = ((id (*)(id, SEL))objc_msgSend)(app, bundleSel);
-            if (![bundleID isKindOfClass:[NSString class]] || bundleID.length == 0) continue;
+            for (NSString *selectorName in @[@"bundleIdentifier", @"applicationIdentifier"]) {
+                SEL bundleSel = NSSelectorFromString(selectorName);
+                if (![app respondsToSelector:bundleSel]) continue;
+                id value = ((id (*)(id, SEL))objc_msgSend)(app, bundleSel);
+                if ([value isKindOfClass:[NSString class]] && [value length] > 0) {
+                    bundleID = value;
+                    break;
+                }
+            }
+            if (bundleID.length == 0) continue;
 
             NSString *name = nil;
-            SEL nameSel = NSSelectorFromString(@"localizedName");
-            if ([app respondsToSelector:nameSel]) name = ((id (*)(id, SEL))objc_msgSend)(app, nameSel);
-            if (![name isKindOfClass:[NSString class]]) name = bundleID;
+            for (NSString *selectorName in @[@"localizedName", @"localizedShortName"]) {
+                SEL nameSel = NSSelectorFromString(selectorName);
+                if (![app respondsToSelector:nameSel]) continue;
+                id value = ((id (*)(id, SEL))objc_msgSend)(app, nameSel);
+                if ([value isKindOfClass:[NSString class]] && [value length] > 0) {
+                    name = value;
+                    break;
+                }
+            }
+            if (name.length == 0) name = bundleID;
 
             NSMutableDictionary *entry = [NSMutableDictionary dictionary];
             entry[@"name"] = name;
@@ -159,19 +211,25 @@ static NSDictionary *appsFromWorkspace(void) {
                 NSString *containerPath = [containerValue isKindOfClass:[NSURL class]] ? [containerValue path] : containerValue;
                 if ([containerPath isKindOfClass:[NSString class]] && containerPath.length > 0) {
                     entry[@"container"] = containerPath;
+                    withContainer++;
                     break;
                 }
             }
             result[bundleID] = entry;
         }
     }
+    NSLog(@"[3105] ls: extracted %lu apps (%lu with container)",
+          (unsigned long)result.count, (unsigned long)withContainer);
     return result;
 }
 
 NSDictionary<NSString *, NSDictionary *> *installedAppInfo(void) {
     NSDictionary *workspace = appsFromWorkspace();
     if (workspace.count > 0) return workspace;
-    return appsFromMobileInstallation();
+    NSDictionary *mobileInstallation = appsFromMobileInstallation();
+    NSLog(@"[3105] ls: workspace empty; MobileInstallation=%lu",
+          (unsigned long)mobileInstallation.count);
+    return mobileInstallation;
 }
 
 // Icon via LSApplicationProxy (per bundle ID)
@@ -219,16 +277,50 @@ NSDictionary *appInfoForBundleID(NSString *bundleID) {
     if (!matchesRequestedIdentifier) return result;
     result[@"found"] = @YES;
 
-    SEL nameSel = NSSelectorFromString(@"localizedName");
-    if ([proxy respondsToSelector:nameSel]) {
-        NSString *name = ((id (*)(id, SEL))objc_msgSend)(proxy, nameSel);
-        if ([name isKindOfClass:[NSString class]] && name.length > 0) result[@"name"] = name;
+    NSURL *bundleURL = nil;
+    SEL bundleURLSel = NSSelectorFromString(@"bundleURL");
+    if ([proxy respondsToSelector:bundleURLSel]) {
+        id value = ((id (*)(id, SEL))objc_msgSend)(proxy, bundleURLSel);
+        if ([value isKindOfClass:[NSURL class]]) bundleURL = value;
     }
 
-    SEL versionSel = NSSelectorFromString(@"shortVersionString");
-    if ([proxy respondsToSelector:versionSel]) {
-        NSString *version = ((id (*)(id, SEL))objc_msgSend)(proxy, versionSel);
-        if ([version isKindOfClass:[NSString class]] && version.length > 0) result[@"version"] = version;
+    NSBundle *applicationBundle = bundleURL ? [NSBundle bundleWithURL:bundleURL] : nil;
+    NSDictionary *localizedInfo = applicationBundle.localizedInfoDictionary;
+    NSDictionary *bundleInfo = applicationBundle.infoDictionary;
+    NSString *bundleName = stringForFirstKey(localizedInfo, @[
+        @"CFBundleDisplayName", @"CFBundleName"
+    ]);
+    if (bundleName.length == 0) {
+        bundleName = stringForFirstKey(bundleInfo, @[
+            @"CFBundleDisplayName", @"CFBundleName"
+        ]);
+    }
+    if (bundleName.length > 0) result[@"name"] = bundleName;
+
+    if ([result[@"name"] isEqualToString:bundleID]) {
+        for (NSString *selectorName in @[@"localizedName", @"localizedShortName"]) {
+            SEL nameSel = NSSelectorFromString(selectorName);
+            if (![proxy respondsToSelector:nameSel]) continue;
+            NSString *name = ((id (*)(id, SEL))objc_msgSend)(proxy, nameSel);
+            if ([name isKindOfClass:[NSString class]] && name.length > 0) {
+                result[@"name"] = name;
+                break;
+            }
+        }
+    }
+
+    NSString *bundleVersion = stringForFirstKey(bundleInfo, @[
+        @"CFBundleShortVersionString"
+    ]);
+    if (bundleVersion.length > 0) result[@"version"] = bundleVersion;
+    if (!result[@"version"]) {
+        SEL versionSel = NSSelectorFromString(@"shortVersionString");
+        if ([proxy respondsToSelector:versionSel]) {
+            NSString *version = ((id (*)(id, SEL))objc_msgSend)(proxy, versionSel);
+            if ([version isKindOfClass:[NSString class]] && version.length > 0) {
+                result[@"version"] = version;
+            }
+        }
     }
 
     for (NSString *selectorName in @[@"dataContainerURL", @"containerURL"]) {
@@ -260,4 +352,222 @@ BOOL openApplicationForBundleID(NSString *bundleID) {
     SEL openSelector = NSSelectorFromString(@"openApplicationWithBundleID:");
     if (![workspace respondsToSelector:openSelector]) return NO;
     return ((BOOL (*)(id, SEL, id))objc_msgSend)(workspace, openSelector, bundleID);
+}
+
+
+#pragma mark - Filza shared paired SpringBoard icon service
+
+#include <pthread.h>
+
+#define FILZA_SBS_ICON_WORKERS 3
+
+typedef struct {
+    struct SpringBoardServicesClientHandle *client;
+    struct AdapterHandle *adapter;
+    struct RsdHandshakeHandle *handshake;
+} FilzaRSDIconSlot;
+
+typedef struct {
+    struct SpringBoardServicesClientHandle *client;
+    struct IdeviceProviderHandle *provider;
+} FilzaProviderIconSlot;
+
+static FilzaRSDIconSlot gFilzaRSDIconSlots[FILZA_SBS_ICON_WORKERS];
+static FilzaProviderIconSlot gFilzaProviderIconSlots[FILZA_SBS_ICON_WORKERS];
+static pthread_mutex_t gFilzaRSDIconLocks[FILZA_SBS_ICON_WORKERS] = {
+    PTHREAD_MUTEX_INITIALIZER,
+    PTHREAD_MUTEX_INITIALIZER,
+    PTHREAD_MUTEX_INITIALIZER,
+};
+static pthread_mutex_t gFilzaProviderIconLocks[FILZA_SBS_ICON_WORKERS] = {
+    PTHREAD_MUTEX_INITIALIZER,
+    PTHREAD_MUTEX_INITIALIZER,
+    PTHREAD_MUTEX_INITIALIZER,
+};
+
+static NSUInteger FilzaSpringBoardWorkerIndex(NSString *bundleID) {
+    if (bundleID.length == 0) return 0;
+    return bundleID.hash % FILZA_SBS_ICON_WORKERS;
+}
+
+static UIImage *FilzaSpringBoardImageFromClient(
+    struct SpringBoardServicesClientHandle *client,
+    NSString *bundleID,
+    BOOL *serviceError
+) {
+    if (serviceError) *serviceError = NO;
+    if (!client || bundleID.length == 0) return nil;
+
+    void *pngData = NULL;
+    size_t dataLen = 0;
+    struct IdeviceFfiError *error = springboard_services_get_icon(
+        client,
+        bundleID.UTF8String,
+        &pngData,
+        &dataLen
+    );
+    if (error) {
+        const char *message = error->message ? error->message : "unknown error";
+        NSLog(@"[Filza3105Icons] SpringBoard icon failed for %@: %s", bundleID, message);
+        if (serviceError) *serviceError = YES;
+        idevice_error_free(error);
+        if (pngData) idevice_data_free((uint8_t *)pngData, dataLen);
+        return nil;
+    }
+
+    if (!pngData || dataLen == 0) {
+        if (pngData) idevice_data_free((uint8_t *)pngData, dataLen);
+        NSLog(@"[Filza3105Icons] SpringBoard has no rendered icon bytes for %@", bundleID);
+        return nil;
+    }
+
+    NSData *data = [NSData dataWithBytes:pngData length:dataLen];
+    idevice_data_free((uint8_t *)pngData, dataLen);
+    UIImage *image = [UIImage imageWithData:data];
+    if (!image) {
+        NSLog(@"[Filza3105Icons] SpringBoard returned %zu undecodable bytes for %@", dataLen, bundleID);
+    }
+    return image;
+}
+
+static void FilzaInvalidateRSDIconClientLocked(NSUInteger index) {
+    FilzaRSDIconSlot *slot = &gFilzaRSDIconSlots[index];
+    if (slot->client) {
+        springboard_services_free(slot->client);
+        slot->client = NULL;
+    }
+}
+
+static void FilzaInvalidateProviderIconClientLocked(NSUInteger index) {
+    FilzaProviderIconSlot *slot = &gFilzaProviderIconSlots[index];
+    if (slot->client) {
+        springboard_services_free(slot->client);
+        slot->client = NULL;
+    }
+}
+
+static struct SpringBoardServicesClientHandle *FilzaEnsureRSDIconClientLocked(
+    NSUInteger index,
+    struct AdapterHandle *adapter,
+    struct RsdHandshakeHandle *handshake
+) {
+    FilzaRSDIconSlot *slot = &gFilzaRSDIconSlots[index];
+
+    if (slot->adapter != adapter || slot->handshake != handshake) {
+        FilzaInvalidateRSDIconClientLocked(index);
+        slot->adapter = adapter;
+        slot->handshake = handshake;
+    }
+
+    if (slot->client) return slot->client;
+
+    struct SpringBoardServicesClientHandle *client = NULL;
+    struct IdeviceFfiError *error = springboard_services_connect_rsd(
+        adapter,
+        handshake,
+        &client
+    );
+    if (error) {
+        const char *message = error->message ? error->message : "unknown error";
+        NSLog(@"[Filza3105Icons] SpringBoardServices RSD connect failed on worker %lu: %s",
+              (unsigned long)index,
+              message);
+        idevice_error_free(error);
+        return NULL;
+    }
+
+    slot->client = client;
+    return slot->client;
+}
+
+static struct SpringBoardServicesClientHandle *FilzaEnsureProviderIconClientLocked(
+    NSUInteger index,
+    struct IdeviceProviderHandle *provider
+) {
+    FilzaProviderIconSlot *slot = &gFilzaProviderIconSlots[index];
+
+    if (slot->provider != provider) {
+        FilzaInvalidateProviderIconClientLocked(index);
+        slot->provider = provider;
+    }
+
+    if (slot->client) return slot->client;
+
+    struct SpringBoardServicesClientHandle *client = NULL;
+    struct IdeviceFfiError *error = springboard_services_connect(provider, &client);
+    if (error) {
+        const char *message = error->message ? error->message : "unknown error";
+        NSLog(@"[Filza3105Icons] SpringBoardServices provider connect failed on worker %lu: %s",
+              (unsigned long)index,
+              message);
+        idevice_error_free(error);
+        return NULL;
+    }
+
+    slot->client = client;
+    return slot->client;
+}
+
+UIImage *filzaSpringBoardIconForBundleIDRSD(
+    struct AdapterHandle *adapter,
+    struct RsdHandshakeHandle *handshake,
+    NSString *bundleID
+) {
+    if (!adapter || !handshake || bundleID.length == 0) return nil;
+
+    NSUInteger index = FilzaSpringBoardWorkerIndex(bundleID);
+    pthread_mutex_lock(&gFilzaRSDIconLocks[index]);
+
+    UIImage *image = nil;
+    for (NSUInteger attempt = 0; attempt < 2 && !image; attempt++) {
+        struct SpringBoardServicesClientHandle *client = FilzaEnsureRSDIconClientLocked(
+            index,
+            adapter,
+            handshake
+        );
+        if (!client) continue;
+
+        BOOL serviceError = NO;
+        image = FilzaSpringBoardImageFromClient(client, bundleID, &serviceError);
+        if (!image && serviceError) {
+            // A stale RSD service is common after VPN/tunnel churn. Drop only
+            // this worker's client and reconnect once; other workers continue.
+            FilzaInvalidateRSDIconClientLocked(index);
+        } else {
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&gFilzaRSDIconLocks[index]);
+    return image;
+}
+
+UIImage *filzaSpringBoardIconForBundleIDProvider(
+    struct IdeviceProviderHandle *provider,
+    NSString *bundleID
+) {
+    if (!provider || bundleID.length == 0) return nil;
+
+    NSUInteger index = FilzaSpringBoardWorkerIndex(bundleID);
+    pthread_mutex_lock(&gFilzaProviderIconLocks[index]);
+
+    UIImage *image = nil;
+    for (NSUInteger attempt = 0; attempt < 2 && !image; attempt++) {
+        struct SpringBoardServicesClientHandle *client = FilzaEnsureProviderIconClientLocked(
+            index,
+            provider
+        );
+        if (!client) continue;
+
+        BOOL serviceError = NO;
+        image = FilzaSpringBoardImageFromClient(client, bundleID, &serviceError);
+        if (!image && serviceError) {
+            FilzaInvalidateProviderIconClientLocked(index);
+        } else {
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&gFilzaProviderIconLocks[index]);
+    return image;
 }
