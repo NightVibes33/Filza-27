@@ -67,3 +67,4 @@ __attribute__((constructor)) static void RSRuntimeStabilityInit(void) {
 // experiment does not disturb Filza-27's large Theos source graph.
 #import "AirliftOnDeviceProbe.inc"
 #import "AirliftEndpointAdmissionProbe.inc"
+#import "AirliftLockdownTransportProbe.m"
