@@ -11,7 +11,8 @@
 // material to act as a host for the phone's own lockdown service
 // "com.apple.atc". This probe creates a completely separate RP tunnel, asks
 // lockdownd to start com.apple.atc, opens the returned TCP port, sends ZERO
-// bytes, and then tears the entire temporary tunnel down.
+// bytes, frees that exact raw stream wrapper through idevice_stream_free(),
+// and then tears the entire temporary tunnel down.
 //
 // It does NOT send AssetManifest/FileComplete/AirTraffic messages and does not
 // invoke ATAirlock or any Airlift filesystem primitive.
@@ -83,8 +84,8 @@ static NSDictionary *FZAirliftProbeATCLockdownTransport(void)
         @"ReturnedSSL": @NO,
         @"PortConnected": @NO,
         @"PayloadBytesSent": @0,
-        @"StreamClosedByAdapterTeardown": @NO,
         @"ReadWriteOpaqueWrapperFreed": @NO,
+        @"AdapterStackClosed": @NO,
         @"TemporaryTunnelDestroyed": @NO
     } mutableCopy];
 
@@ -93,7 +94,6 @@ static NSDictionary *FZAirliftProbeATCLockdownTransport(void)
     struct RsdHandshakeHandle *handshake = NULL;
     struct LockdowndClientHandle *lockdown = NULL;
     struct ReadWriteOpaque *stream = NULL;
-    BOOL hadStream = NO;
 
     NSURL *pairingURL = FZAirliftRPPairingFileURL();
     result[@"PairingFilePath"] = pairingURL.path ?: @"";
@@ -179,7 +179,6 @@ static NSDictionary *FZAirliftProbeATCLockdownTransport(void)
         goto cleanup;
     }
 
-    hadStream = YES;
     result[@"PortConnected"] = @YES;
     result[@"PortConnect"] = @{ @"Success": @YES };
     result[@"PayloadBytesSent"] = @0;
@@ -187,15 +186,14 @@ static NSDictionary *FZAirliftProbeATCLockdownTransport(void)
 
 cleanup:
     if (stream) {
-        // IMPORTANT: adapter_connect() returns ReadWriteOpaque. In the pinned
-        // idevice revision, adapter_stream_close() accepts AdapterStreamHandle,
-        // which is a different Rust wrapper/layout. Never type-pun between
-        // them. The disposable adapter is torn down below, which closes the
-        // underlying transport. The one-shot ReadWriteOpaque wrapper itself is
-        // intentionally not dereferenced or falsely reported as freed because
-        // this pinned C ABI exposes no matching generic destructor.
-        result[@"ReadWriteOpaqueTeardown"] = @"Pinned idevice C ABI exposes no matching destructor for adapter_connect's ReadWriteOpaque. The disposable adapter/tunnel is closed instead; the one-shot opaque wrapper is not type-punned.";
+        // adapter_connect() returns ReadWriteOpaque. The pinned idevice ABI
+        // provides the exact matching destructor idevice_stream_free(). Do
+        // not use adapter_stream_close(): that API expects AdapterStreamHandle,
+        // which is a different Rust wrapper/layout.
+        idevice_stream_free(stream);
         stream = NULL;
+        result[@"ReadWriteOpaqueWrapperFreed"] = @YES;
+        result[@"StreamTeardown"] = @"Released with idevice_stream_free(ReadWriteOpaque *); never cast to AdapterStreamHandle.";
     }
     if (lockdown) {
         lockdownd_client_free(lockdown);
@@ -211,7 +209,7 @@ cleanup:
             result[@"AdapterClose"] = FZAirliftConsumeIdeviceError(adapterCloseError);
         } else {
             result[@"AdapterClose"] = @{ @"Success": @YES };
-            if (hadStream) result[@"StreamClosedByAdapterTeardown"] = @YES;
+            result[@"AdapterStackClosed"] = @YES;
         }
         adapter_free(adapter);
         adapter = NULL;
@@ -236,13 +234,13 @@ static void FZAirliftWriteATCTransportProbe(void)
     if (!directory) return;
 
     NSDictionary *report = @{
-        @"SchemaVersion": @2,
+        @"SchemaVersion": @3,
         @"GeneratedAt": [NSDate date],
         @"Process": NSProcessInfo.processInfo.processName ?: @"",
         @"PID": @(getpid()),
         @"SystemVersion": NSProcessInfo.processInfo.operatingSystemVersionString ?: @"",
         @"ATCLockdownTransport": FZAirliftProbeATCLockdownTransport(),
-        @"SafetyBoundary": @"Connect-and-teardown transport diagnostic only. PayloadBytesSent is always zero. No AssetManifest, FileComplete, ATAirlock, AFC, or filesystem mutation is attempted except writing this diagnostics plist inside Filza Documents. The raw ATC socket is closed by destroying the disposable RP adapter; ReadWriteOpaque is never cast to AdapterStreamHandle."
+        @"SafetyBoundary": @"Connect-and-teardown transport diagnostic only. PayloadBytesSent is always zero. No AssetManifest, FileComplete, ATAirlock, AFC, or filesystem mutation is attempted except writing this diagnostics plist inside Filza Documents. The ReadWriteOpaque returned by adapter_connect is freed only with idevice_stream_free, then the entire disposable RP adapter is closed and freed."
     };
 
     NSURL *output = [directory URLByAppendingPathComponent:@"Airlift ATC Lockdown Transport.plist"];
