@@ -1,0 +1,146 @@
+name: Verify Filza Airlift experiment
+
+on:
+  push:
+    branches: [ experiment/airlift-filza27 ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: filza-airlift-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AIRLIFT_COMMIT: bcd220412fd71b66c2a1459f1a49e255a08aea01
+
+jobs:
+  airlift-host:
+    runs-on: macos-26-intel
+    steps:
+      - name: Checkout Filza experiment
+        uses: actions/checkout@v4
+
+      - name: Verify pinned Airlift revision
+        run: |
+          set -euxo pipefail
+          test "$(tr -d '\n' < ThirdParty/Airlift/PINNED_REVISION)" = "$AIRLIFT_COMMIT"
+
+      - name: Build exact upstream Airlift host helpers
+        run: |
+          set -euxo pipefail
+          git clone --filter=blob:none https://github.com/0xjohnnydev/airlift.git "$RUNNER_TEMP/airlift"
+          git -C "$RUNNER_TEMP/airlift" checkout --detach "$AIRLIFT_COMMIT"
+          test "$(git -C "$RUNNER_TEMP/airlift" rev-parse HEAD)" = "$AIRLIFT_COMMIT"
+          make -C "$RUNNER_TEMP/airlift"
+          test -x "$RUNNER_TEMP/airlift/build/device_helper"
+          test -x "$RUNNER_TEMP/airlift/build/airtraffic_host"
+          otool -L "$RUNNER_TEMP/airlift/build/device_helper"
+          otool -L "$RUNNER_TEMP/airlift/build/airtraffic_host"
+          mkdir -p airlift-host-artifact
+          cp "$RUNNER_TEMP/airlift/build/device_helper" airlift-host-artifact/
+          cp "$RUNNER_TEMP/airlift/build/airtraffic_host" airlift-host-artifact/
+          cp "$RUNNER_TEMP/airlift/airlift.py" airlift-host-artifact/
+          cp ThirdParty/Airlift/PINNED_REVISION airlift-host-artifact/
+          shasum -a 256 airlift-host-artifact/* > airlift-host-artifact/SHA256.txt
+
+      - name: Upload pinned host build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Airlift-host-${{ github.sha }}
+          path: airlift-host-artifact/
+          if-no-files-found: error
+          compression-level: 0
+
+  filza-build:
+    runs-on: macos-26-intel
+    env:
+      THEOS: ${{ github.workspace }}/theos
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+      THEOS_COMMIT: 5280bd038207e14f8bd76f5417aa2fe641c03228
+      IDEVICE_COMMIT: 37ee77cf713f483551f3cf33ea8b2087a40058ca
+      LIBSSH_COMMIT: 07430deb9b97b751ec5ea5a7fc307f40bf042e0a
+      MBEDTLS_COMMIT: 068ff080b369adfac81509f9b57b2afabaf82dc5
+    steps:
+      - name: Xcode 26.2 setup
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.2'
+
+      - name: Checkout complete source tree
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Verify experiment wiring
+        run: |
+          set -euxo pipefail
+          grep -F '#import "AirliftOnDeviceProbe.inc"' RuntimeStability.m
+          grep -F 'com.apple.atc' AirliftOnDeviceProbe.inc
+          test "$(tr -d '\n' < ThirdParty/Airlift/PINNED_REVISION)" = "$AIRLIFT_COMMIT"
+
+      - name: Install Procursus build tools
+        uses: dhinakg/procursus-action@main
+        with:
+          packages: ldid make
+
+      - name: Restore pinned Theos cache
+        id: theos-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.THEOS }}
+          key: theos-${{ runner.os }}-${{ runner.arch }}-${{ env.THEOS_COMMIT }}
+
+      - name: Install pinned Theos
+        if: steps.theos-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          rm -rf "$THEOS"
+          git clone --filter=blob:none https://github.com/theos/theos.git "$THEOS"
+          git -C "$THEOS" checkout --detach "$THEOS_COMMIT"
+          git -C "$THEOS" submodule update --init --recursive
+
+      - name: Restore pinned idevice FFI cache
+        id: idevice-cache
+        uses: actions/cache@v4
+        with:
+          path: Vendor/idevice
+          key: idevice-ffi-${{ runner.os }}-${{ runner.arch }}-xcode26.2-ios26.2-${{ env.IDEVICE_COMMIT }}-${{ hashFiles('scripts/build-idevice.sh') }}
+
+      - name: Build pinned idevice FFI
+        if: steps.idevice-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          bash scripts/build-idevice.sh "$GITHUB_WORKSPACE/Vendor/idevice"
+
+      - name: Restore pinned SSH stack cache
+        id: ssh-cache
+        uses: actions/cache@v4
+        with:
+          path: Vendor/ssh
+          key: ssh-stack-${{ runner.os }}-${{ runner.arch }}-xcode26.2-ios26.2-${{ env.LIBSSH_COMMIT }}-${{ env.MBEDTLS_COMMIT }}-${{ hashFiles('scripts/build-ssh-stack.sh') }}
+
+      - name: Build pinned SSH stack
+        if: steps.ssh-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          bash scripts/build-ssh-stack.sh "$GITHUB_WORKSPACE/Vendor/ssh"
+
+      - name: Build Filza with Airlift on-device probe
+        run: |
+          set -euxo pipefail
+          export PATH="/opt/procursus/bin:$PATH"
+          mkdir -p .theos
+          gmake clean >/dev/null 2>&1 || true
+          set -o pipefail
+          gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:17.0 2>&1 | tee .theos/airlift-build.log
+
+      - name: Upload Filza experiment build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Filza-Airlift-build-log-${{ github.run_id }}
+          path: .theos/airlift-build.log
+          if-no-files-found: warn
+          retention-days: 14
