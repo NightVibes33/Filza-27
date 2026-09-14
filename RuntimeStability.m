@@ -62,3 +62,7 @@ __attribute__((constructor)) static void RSRuntimeStabilityInit(void) {
         RSInstallHooks();
     });
 }
+
+// Airlift is compiled into this already-built translation unit so the
+// experiment does not disturb Filza-27's large Theos source graph.
+#import "AirliftOnDeviceProbe.inc"
