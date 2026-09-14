@@ -25,6 +25,8 @@
 
 static NSString *const FZAirliftPinnedRevision = @"bcd220412fd71b66c2a1459f1a49e255a08aea01";
 static NSString *const FZAirliftPrimaryXPCService = @"com.apple.atc.xpc";
+static NSString *const FZAirliftServiceProxyName = @"com.apple.atc.xpc.service";
+static NSString *const FZAirliftFrameworkPath = @"/System/Library/PrivateFrameworks/AirTraffic.framework/AirTraffic";
 
 // Read-only subset of ATXPCInterfaceProtocol. On the device side this method
 // simply returns the legacy sync manager's currentSyncState and an NSError.
@@ -131,6 +133,7 @@ static NSDictionary *FZAirliftProbeReadOnlyXPC(void)
 
     dispatch_semaphore_t terminal = dispatch_semaphore_create(0);
     __block BOOL finished = NO;
+    __block BOOL replyReceived = NO;
     __block BOOL interrupted = NO;
     __block BOOL invalidated = NO;
     __block NSError *proxyError = nil;
@@ -185,6 +188,7 @@ static NSDictionary *FZAirliftProbeReadOnlyXPC(void)
     if (proxy && [proxy respondsToSelector:syncSelector]) {
         ((void (*)(id, SEL, id))objc_msgSend)(proxy, syncSelector,
             ^(NSError *error, NSDictionary *state) {
+                replyReceived = YES;
                 replyError = error;
                 if ([state isKindOfClass:NSDictionary.class]) syncState = state;
                 signalOnce();
@@ -200,7 +204,7 @@ static NSDictionary *FZAirliftProbeReadOnlyXPC(void)
 
     result[@"Interrupted"] = @(interrupted);
     result[@"Invalidated"] = @(invalidated);
-    result[@"CompletionReceived"] = @(syncState != nil || replyError != nil);
+    result[@"CompletionReceived"] = @(replyReceived);
     if (proxyError) {
         result[@"ProxyErrorDomain"] = proxyError.domain ?: @"";
         result[@"ProxyErrorCode"] = @(proxyError.code);
@@ -226,6 +230,129 @@ static NSDictionary *FZAirliftProbeReadOnlyXPC(void)
     return result;
 }
 
+static NSDictionary *FZAirliftDescribeMessageLink(id link)
+{
+    NSMutableDictionary *description = [@{
+        @"Class": link ? NSStringFromClass([link class]) : @"",
+        @"Description": link ? [link description] ?: @"" : @""
+    } mutableCopy];
+
+    SEL identifierSelector = NSSelectorFromString(@"identifier");
+    if (link && [link respondsToSelector:identifierSelector]) {
+        id value = ((id (*)(id, SEL))objc_msgSend)(link, identifierSelector);
+        if (value) description[@"Identifier"] = [value description] ?: @"";
+    }
+    SEL openSelector = NSSelectorFromString(@"isOpen");
+    if (link && [link respondsToSelector:openSelector]) {
+        description[@"Open"] = @(((BOOL (*)(id, SEL))objc_msgSend)(link, openSelector));
+    }
+    SEL initializedSelector = NSSelectorFromString(@"isInitialized");
+    if (link && [link respondsToSelector:initializedSelector]) {
+        description[@"Initialized"] = @(((BOOL (*)(id, SEL))objc_msgSend)(link, initializedSelector));
+    }
+    SEL endpointTypeSelector = NSSelectorFromString(@"endpointType");
+    if (link && [link respondsToSelector:endpointTypeSelector]) {
+        description[@"EndpointType"] = @(((NSInteger (*)(id, SEL))objc_msgSend)(link, endpointTypeSelector));
+    }
+    return description;
+}
+
+// Uses Apple's ATServiceProxy client exactly for the operation it is designed
+// to expose: fetch existing daemon-owned message-link endpoints. This function
+// never invokes sendRequest:, sendResponse:, requestSyncForLibrary:, or any
+// asset method. A bounded outer wait prevents the diagnostics writer itself
+// from hanging if the private service is unavailable to the Filza sandbox.
+static NSDictionary *FZAirliftProbeServiceProxy(void)
+{
+    NSMutableDictionary *result = [@{
+        @"Service": FZAirliftServiceProxyName,
+        @"Attempted": @NO,
+        @"ClassPresent": @NO,
+        @"ProxyCreated": @NO,
+        @"Completed": @NO,
+        @"TimedOut": @NO,
+        @"MessageLinkCount": @0
+    } mutableCopy];
+
+    dlerror();
+    void *airTrafficHandle = dlopen(FZAirliftFrameworkPath.fileSystemRepresentation,
+                                    RTLD_LAZY | RTLD_LOCAL);
+    const char *loadError = dlerror();
+    result[@"AirTrafficLoaded"] = @(airTrafficHandle != NULL);
+    if (loadError) {
+        result[@"AirTrafficLoadError"] = [NSString stringWithUTF8String:loadError] ?: @"unknown";
+    }
+
+    Class proxyClass = NSClassFromString(@"ATServiceProxy");
+    result[@"ClassPresent"] = @(proxyClass != Nil);
+    if (!proxyClass) {
+        if (airTrafficHandle) dlclose(airTrafficHandle);
+        return result;
+    }
+
+    SEL initSelector = NSSelectorFromString(@"initWithConnection:");
+    SEL linksSelector = NSSelectorFromString(@"messageLinks");
+    if (![proxyClass instancesRespondToSelector:initSelector] ||
+        ![proxyClass instancesRespondToSelector:linksSelector]) {
+        result[@"ExpectedSelectorsPresent"] = @NO;
+        if (airTrafficHandle) dlclose(airTrafficHandle);
+        return result;
+    }
+    result[@"ExpectedSelectorsPresent"] = @YES;
+    result[@"Attempted"] = @YES;
+
+    id allocated = ((id (*)(id, SEL))objc_msgSend)((id)proxyClass, sel_registerName("alloc"));
+    id serviceProxy = ((id (*)(id, SEL, id))objc_msgSend)(allocated, initSelector, nil);
+    result[@"ProxyCreated"] = @(serviceProxy != nil);
+    if (!serviceProxy) {
+        if (airTrafficHandle) dlclose(airTrafficHandle);
+        return result;
+    }
+
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    __block id links = nil;
+    __block BOOL completed = NO;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        @autoreleasepool {
+            links = ((id (*)(id, SEL))objc_msgSend)(serviceProxy, linksSelector);
+            completed = YES;
+            dispatch_semaphore_signal(done);
+        }
+    });
+
+    long waitResult = dispatch_semaphore_wait(
+        done, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)));
+    if (waitResult != 0) {
+        result[@"TimedOut"] = @YES;
+    } else {
+        result[@"Completed"] = @(completed);
+        NSArray *objects = nil;
+        if ([links isKindOfClass:NSSet.class]) {
+            objects = [(NSSet *)links allObjects];
+        } else if ([links isKindOfClass:NSArray.class]) {
+            objects = links;
+        }
+        if (objects) {
+            result[@"ResultClass"] = NSStringFromClass([links class]) ?: @"";
+            result[@"MessageLinkCount"] = @(objects.count);
+            NSMutableArray *descriptions = [NSMutableArray arrayWithCapacity:objects.count];
+            for (id link in objects) {
+                [descriptions addObject:FZAirliftDescribeMessageLink(link)];
+            }
+            result[@"MessageLinks"] = descriptions;
+        } else if (links) {
+            result[@"ResultClass"] = NSStringFromClass([links class]) ?: @"";
+            result[@"UnexpectedResult"] = [links description] ?: @"";
+        }
+    }
+
+    // ATServiceProxy owns the private XPC connection. Do not explicitly tear
+    // it down on the timeout path because the worker may still be inside the
+    // synchronous messageLinks call. Process teardown will reclaim it safely.
+    if (waitResult == 0 && airTrafficHandle) dlclose(airTrafficHandle);
+    return result;
+}
+
 static void FZAirliftWriteProbe(void)
 {
     NSString *virtualRoot = MCMFilzaVirtualRoot();
@@ -247,16 +374,21 @@ static void FZAirliftWriteProbe(void)
     NSArray *services = @[
         FZAirliftProbeMachService(@"com.apple.atc"),
         FZAirliftProbeMachService(@"com.apple.atc.xpc"),
+        FZAirliftProbeMachService(@"com.apple.atc.xpc.service"),
         FZAirliftProbeMachService(@"com.apple.atc.xpc.sessions")
     ];
 
     NSArray *images = @[
-        FZAirliftProbeImage(@"/System/Library/PrivateFrameworks/AirTraffic.framework/AirTraffic"),
+        FZAirliftProbeImage(FZAirliftFrameworkPath),
+        FZAirliftProbeImage(@"/System/Library/PrivateFrameworks/ATFoundation.framework/ATFoundation"),
         FZAirliftProbeImage(@"/System/Library/PrivateFrameworks/AirTrafficDevice.framework/AirTrafficDevice"),
         FZAirliftProbeImage(@"/System/Library/PrivateFrameworks/AirTrafficHost.framework/AirTrafficHost")
     ];
 
     NSArray *classes = @[
+        FZAirliftProbeClass(@"ATConnection"),
+        FZAirliftProbeClass(@"ATServiceProxy"),
+        FZAirliftProbeClass(@"ATMessageLinkProxy"),
         FZAirliftProbeClass(@"ATDeviceService"),
         FZAirliftProbeClass(@"ATXPCListener"),
         FZAirliftProbeClass(@"AirTrafficDevice"),
@@ -266,7 +398,7 @@ static void FZAirliftWriteProbe(void)
     ];
 
     NSDictionary *report = @{
-        @"SchemaVersion": @2,
+        @"SchemaVersion": @3,
         @"PinnedAirliftRevision": FZAirliftPinnedRevision,
         @"GeneratedAt": [NSDate date],
         @"Process": NSProcessInfo.processInfo.processName ?: @"",
@@ -277,7 +409,8 @@ static void FZAirliftWriteProbe(void)
         @"PrivateFrameworks": images,
         @"RuntimeClasses": classes,
         @"ReadOnlyXPCHandshake": FZAirliftProbeReadOnlyXPC(),
-        @"Interpretation": @"com.apple.atc.xpc BootstrapReachable=true proves only mach lookup. ReadOnlyXPCHandshake.SyncStateReceived=true additionally proves ATDeviceService accepted the Filza XPC connection and answered getSyncStateWithCompletion:. Neither result invokes the Airlift file primitive."
+        @"ServiceProxyEnumeration": FZAirliftProbeServiceProxy(),
+        @"Interpretation": @"com.apple.atc.xpc answers sync-state queries through ATDeviceService. com.apple.atc.xpc.service is Apple's service-proxy channel for enumerating daemon-owned ATMessageLink endpoints. MessageLinkCount > 0 proves those endpoints are exposed to this process, but this probe never sends FileComplete or any crafted AirTraffic message and therefore does not claim an Airlift write primitive."
     };
 
     NSString *plistPath = [directory stringByAppendingPathComponent:@"Airlift On-Device Probe.plist"];
@@ -286,8 +419,9 @@ static void FZAirliftWriteProbe(void)
     NSString *readme =
         @"Airlift experimental integration\n\n"
          "This probe checks whether the current Filza process can reach the iOS-side AirTraffic/ATC machinery used by Airlift. It does not claim a sandbox escape.\n\n"
-         "Primary service: com.apple.atc.xpc. The probe first checks sandbox/bootstrap visibility, then performs one read-only getSyncStateWithCompletion: XPC request. No sync is requested, no Books state is modified, and no Airlift file operation is attempted.\n\n"
-         "If ReadOnlyXPCHandshake -> SyncStateReceived is true, the next engineering step is mapping the Books/asset transport reachable over the accepted AT connection. If it is false, inspect ProxyError/ReplyError plus the mach lookup results.\n\n"
+         "Probe 1: com.apple.atc.xpc receives one read-only getSyncStateWithCompletion: request. No sync is requested and no asset state is changed.\n\n"
+         "Probe 2: com.apple.atc.xpc.service uses Apple's ATServiceProxy to enumerate existing daemon-owned message-link endpoints. It does not call sendRequest:, sendResponse:, requestSyncForLibrary:, prioritizeAsset:, or any FileComplete path.\n\n"
+         "If ReadOnlyXPCHandshake -> SyncStateReceived is true and ServiceProxyEnumeration -> MessageLinkCount is greater than zero, the next engineering step is a separately gated message-format experiment against an existing daemon link. That still would not imply full filesystem access.\n\n"
          "The public Airlift PoC remains host-assisted and is pinned by this branch to revision bcd220412fd71b66c2a1459f1a49e255a08aea01.\n";
     [readme writeToFile:[directory stringByAppendingPathComponent:@"README.txt"]
               atomically:YES
