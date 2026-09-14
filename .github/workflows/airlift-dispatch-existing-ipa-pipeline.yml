@@ -1,0 +1,28 @@
+name: Dispatch verified IPA pipeline for Airlift branch
+
+on:
+  push:
+    branches: [ experiment/airlift-filza27 ]
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: airlift-dispatch-verified-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch existing verified Filza IPA workflow on this branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          gh workflow run verify-upstream-byetunes-ssh.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref experiment/airlift-filza27
+          echo "Dispatched verify-upstream-byetunes-ssh.yml against experiment/airlift-filza27"
