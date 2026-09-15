@@ -22,8 +22,10 @@
 static NSString *const FZAirliftATCService = @"com.apple.atc";
 static NSString *const FZAirliftPairingGroup = @"group.com.edualexxis.MusicManager";
 static const uint16_t FZAirliftRPPairingPort = 49152;
-static const size_t FZAirliftInitialReadCapacity = 4096;
-static const size_t FZAirliftInitialHexPreviewCapacity = 256;
+enum {
+    FZAirliftInitialReadCapacity = 4096,
+    FZAirliftInitialHexPreviewCapacity = 256
+};
 
 static NSDictionary *FZAirliftConsumeIdeviceError(IdeviceFfiError *error)
 {
