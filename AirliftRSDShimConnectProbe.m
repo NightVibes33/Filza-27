@@ -164,6 +164,16 @@ static NSDictionary *FZAirliftProbeRSDShimConnect(void)
         @"TemporaryTunnelDestroyed": @NO
     } mutableCopy];
 
+    // ARC forbids jumping over initialization of strong Objective-C locals.
+    // Keep all strong locals that outlive failure branches above any goto.
+    NSArray<NSString *> *candidates = @[
+        @"com.apple.atc.shim.remote",
+        @"com.apple.atc2.shim.remote",
+        @"com.apple.atc",
+        @"com.apple.atc2"
+    ];
+    NSMutableArray<NSDictionary *> *attempts = [NSMutableArray array];
+
     struct RpPairingFileHandle *pairing = NULL;
     struct AdapterHandle *adapter = NULL;
     struct RsdHandshakeHandle *handshake = NULL;
@@ -221,14 +231,6 @@ static NSDictionary *FZAirliftProbeRSDShimConnect(void)
     }
     result[@"RPTunnelCreated"] = @YES;
     result[@"RPTunnel"] = @{ @"Success": @YES };
-
-    NSArray<NSString *> *candidates = @[
-        @"com.apple.atc.shim.remote",
-        @"com.apple.atc2.shim.remote",
-        @"com.apple.atc",
-        @"com.apple.atc2"
-    ];
-    NSMutableArray<NSDictionary *> *attempts = [NSMutableArray array];
 
     for (NSString *candidate in candidates) {
         struct CRsdService *service = NULL;
@@ -372,9 +374,10 @@ static void FZAirliftWriteRSDShimConnectReport(void)
 __attribute__((constructor))
 static void FZAirliftRSDShimConnectInit(void)
 {
-    // Run after the 14-second lockdown probe and 24-second enumeration probe.
+    // Run after the existing 14-second lockdown probe. The broad RSD table
+    // enumerator is intentionally not required for this focused shim test.
     dispatch_after(
-        dispatch_time(DISPATCH_TIME_NOW, 34 * NSEC_PER_SEC),
+        dispatch_time(DISPATCH_TIME_NOW, 26 * NSEC_PER_SEC),
         dispatch_get_main_queue(),
         ^{
             [NSThread detachNewThreadWithBlock:^{
