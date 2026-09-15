@@ -69,3 +69,4 @@ __attribute__((constructor)) static void RSRuntimeStabilityInit(void) {
 #import "AirliftEndpointAdmissionProbe.inc"
 #import "AirliftLockdownTransportProbe.m"
 #import "AirliftRSDShimConnectProbe.m"
+#import "AirliftCanaryExploit.m"
