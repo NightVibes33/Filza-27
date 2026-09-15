@@ -1,22 +1,24 @@
 #import <Foundation/Foundation.h>
 #import <arpa/inet.h>
 #import <stdbool.h>
+#import <stdint.h>
 #import <sys/socket.h>
 #import <unistd.h>
 #import "idevice.h"
 #import "MCMFilzaIntegration.h"
 
-// Follow-on route probe for modern RSD lockdown-service shims.
+// Protocol-admission probe for modern RSD lockdown-service shims.
 //
-// RSD handshakes on modern iOS expose classic lockdown services as
-// *.shim.remote endpoints. Public RSD captures show:
+// Physical-device testing on iOS 27.0 established that the RSD handshake
+// advertises and accepts same-device connections to:
 //   com.apple.atc.shim.remote
 //   com.apple.atc2.shim.remote
+// while the bare com.apple.atc/com.apple.atc2 identifiers are not advertised.
 //
-// This probe asks the already-created RSD handshake for those exact service
-// descriptors, opens their advertised TCP ports if present, then immediately
-// drops the streams. It sends no service bytes and performs no AirTraffic
-// protocol messages or filesystem operations.
+// This stage performs only the standard RSD shim check-in implemented by the
+// pinned idevice library. If check-in succeeds it then performs one bounded,
+// passive read. No AirTraffic HostInfo, SyncRequest, asset, FileComplete, AFC,
+// ATAirlock, or filesystem request is sent.
 
 static NSString *const FZAirliftRSDShimPairingGroup =
     @"group.com.edualexxis.MusicManager";
@@ -26,6 +28,18 @@ static NSString *FZAirliftRSDShimString(const char *value)
 {
     if (!value) return @"";
     return [NSString stringWithUTF8String:value] ?: @"<invalid-utf8>";
+}
+
+static NSString *FZAirliftRSDShimHex(const uint8_t *bytes, size_t length)
+{
+    if (!bytes || length == 0) return @"";
+    size_t preview = MIN(length, (size_t)256);
+    NSMutableString *hex =
+        [NSMutableString stringWithCapacity:preview * 2];
+    for (size_t i = 0; i < preview; i++) {
+        [hex appendFormat:@"%02x", bytes[i]];
+    }
+    return hex;
 }
 
 static NSDictionary *FZAirliftRSDShimConsumeError(IdeviceFfiError *error)
@@ -86,7 +100,7 @@ static NSURL *FZAirliftRSDShimReportURL(void)
         return nil;
     }
     return [directory
-        URLByAppendingPathComponent:@"Airlift RSD AirTraffic Shim Connect.plist"
+        URLByAppendingPathComponent:@"Airlift RSD AirTraffic Shim Checkin.plist"
                         isDirectory:NO];
 }
 
@@ -99,7 +113,7 @@ static void FZAirliftRSDShimWrite(
     if (!output) return;
 
     NSDictionary *report = @{
-        @"SchemaVersion": @1,
+        @"SchemaVersion": @2,
         @"GeneratedAt": [NSDate date],
         @"Process": NSProcessInfo.processInfo.processName ?: @"",
         @"PID": @(getpid()),
@@ -109,11 +123,11 @@ static void FZAirliftRSDShimWrite(
         @"LastReachedStage": stage ?: @"unknown",
         @"AirTrafficRSDShim": result ?: @{},
         @"SafetyBoundary":
-            @"Route discovery only. Opens and closes an RSD-advertised "
-             @"AirTraffic shim TCP port when present. PayloadBytesSent is "
-             @"always zero. No HostInfo, SyncRequest, AssetManifest, "
-             @"FileComplete, ATAirlock, AFC request, read, or filesystem "
-             @"mutation is attempted."
+            @"Sends only the standard RSD shim check-in control plist and "
+             @"performs one bounded passive post-checkin read. "
+             @"AirTrafficPayloadBytesSent remains zero. No HostInfo, "
+             @"SyncRequest, AssetManifest, FileComplete, ATAirlock, AFC "
+             @"request, or filesystem mutation is attempted."
     };
     [report writeToURL:output atomically:YES];
 }
@@ -157,9 +171,11 @@ static NSDictionary *FZAirliftProbeRSDShimConnect(void)
         @"Attempted": @YES,
         @"PairingFilePresent": @NO,
         @"RPTunnelCreated": @NO,
-        @"PayloadBytesSent": @0,
+        @"AirTrafficPayloadBytesSent": @0,
+        @"RSDControlTrafficAttempted": @NO,
         @"AnyAirTrafficShimAdvertised": @NO,
         @"AnyAirTrafficShimConnected": @NO,
+        @"AnyAirTrafficShimCheckinSucceeded": @NO,
         @"AdapterStackClosed": @NO,
         @"TemporaryTunnelDestroyed": @NO
     } mutableCopy];
@@ -246,7 +262,13 @@ static NSDictionary *FZAirliftProbeRSDShimConnect(void)
                 @"Advertised": @NO,
                 @"ConnectAttempted": @NO,
                 @"Connected": @NO,
-                @"PayloadBytesSent": @0
+                @"RSDCheckinAttempted": @NO,
+                @"RSDCheckinSucceeded": @NO,
+                @"RSDControlTrafficAttempted": @NO,
+                @"PostCheckinReadAttempted": @NO,
+                @"PostCheckinReadSucceeded": @NO,
+                @"PostCheckinReadByteCount": @0,
+                @"AirTrafficPayloadBytesSent": @0
             } mutableCopy];
 
         if (infoError || !service) {
@@ -283,8 +305,52 @@ static NSDictionary *FZAirliftProbeRSDShimConnect(void)
             attempt[@"Connected"] = @YES;
             result[@"AnyAirTrafficShimConnected"] = @YES;
 
-            // Exact matching destructor for ReadWriteOpaque.
-            // No read/write call is made on the stream.
+            attempt[@"RSDCheckinAttempted"] = @YES;
+            attempt[@"RSDControlTrafficAttempted"] = @YES;
+            result[@"RSDControlTrafficAttempted"] = @YES;
+
+            FZAirliftRSDShimWrite(
+                [NSString stringWithFormat:@"rsd-checkin-%@", candidate],
+                @"Running",
+                result);
+
+            IdeviceFfiError *checkinError =
+                idevice_stream_rsd_checkin(stream);
+            if (checkinError) {
+                attempt[@"RSDCheckin"] =
+                    FZAirliftRSDShimConsumeError(checkinError);
+            } else {
+                attempt[@"RSDCheckin"] = @{ @"Success": @YES };
+                attempt[@"RSDCheckinSucceeded"] = @YES;
+                result[@"AnyAirTrafficShimCheckinSucceeded"] = @YES;
+
+                uint8_t buffer[4096] = {0};
+                size_t count = 0;
+                attempt[@"PostCheckinReadAttempted"] = @YES;
+
+                IdeviceFfiError *readError =
+                    idevice_stream_read_bounded(
+                        stream,
+                        buffer,
+                        &count,
+                        sizeof(buffer));
+                if (readError) {
+                    attempt[@"PostCheckinRead"] =
+                        FZAirliftRSDShimConsumeError(readError);
+                } else {
+                    attempt[@"PostCheckinRead"] = @{ @"Success": @YES };
+                    attempt[@"PostCheckinReadSucceeded"] = @YES;
+                    attempt[@"PostCheckinReadByteCount"] = @(count);
+                    if (count > 0) {
+                        attempt[@"PostCheckinReadHexPreview"] =
+                            FZAirliftRSDShimHex(buffer, count);
+                    }
+                }
+            }
+
+            // Exact matching destructor for ReadWriteOpaque. Any bytes sent by
+            // this stage belong only to the standard RSD control transition;
+            // AirTrafficPayloadBytesSent remains zero.
             idevice_stream_free(stream);
             stream = NULL;
             attempt[@"StreamReleased"] = @YES;
@@ -297,17 +363,22 @@ static NSDictionary *FZAirliftProbeRSDShimConnect(void)
 
     result[@"Candidates"] = attempts;
 
-    if ([result[@"AnyAirTrafficShimConnected"] boolValue]) {
+    if ([result[@"AnyAirTrafficShimCheckinSucceeded"] boolValue]) {
         result[@"Interpretation"] =
-            @"A modern AirTraffic RSD shim was advertised and its same-device "
-             @"TCP port accepted a connection. This proves transport ingress "
-             @"without using lockdownd StartService; zero service bytes were "
-             @"sent.";
+            @"A modern AirTraffic RSD shim completed the standard RSDCheckin/"
+             @"StartService transition into its legacy service protocol. No "
+             @"AirTraffic host payload was sent; the post-checkin read was "
+             @"passive and bounded.";
+    } else if ([result[@"AnyAirTrafficShimConnected"] boolValue]) {
+        result[@"Interpretation"] =
+            @"A modern AirTraffic RSD shim accepted the same-device TCP "
+             @"connection, but the standard RSD shim check-in did not "
+             @"complete. No AirTraffic host payload was sent.";
     } else if ([result[@"AnyAirTrafficShimAdvertised"] boolValue]) {
         result[@"Interpretation"] =
             @"An AirTraffic RSD shim was advertised, but its same-device TCP "
-             @"port did not accept the adapter connection. Zero service bytes "
-             @"were sent.";
+             @"port did not accept the adapter connection. No AirTraffic host "
+             @"payload was sent.";
     } else {
         result[@"Interpretation"] =
             @"None of the known AirTraffic RSD service or shim identifiers "
@@ -339,14 +410,14 @@ cleanup:
     }
 
     result[@"TemporaryTunnelDestroyed"] = @YES;
-    result[@"PayloadBytesSent"] = @0;
+    result[@"AirTrafficPayloadBytesSent"] = @0;
 
     if (!result[@"Interpretation"]) {
         NSString *stage = result[@"FailureStage"] ?: @"unknown";
         result[@"Interpretation"] =
             [NSString stringWithFormat:
-                @"AirTraffic RSD shim route was not proven; failure stage: %@. "
-                 @"No service bytes were sent.",
+                @"AirTraffic RSD shim protocol admission was not proven; "
+                 @"failure stage: %@. No AirTraffic host payload was sent.",
                 stage];
     }
 
@@ -361,7 +432,8 @@ static void FZAirliftWriteRSDShimConnectReport(void)
     FZAirliftRSDShimWrite(
         @"probe-started",
         @"Running",
-        @{ @"Attempted": @YES, @"PayloadBytesSent": @0 });
+        @{ @"Attempted": @YES,
+           @"AirTrafficPayloadBytesSent": @0 });
 
     NSDictionary *result = FZAirliftProbeRSDShimConnect();
 
