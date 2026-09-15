@@ -46,9 +46,10 @@ grep -Fq 'let _ = subscriber.try_init();' "$LOGGING_RS"
 
 # adapter_connect() returns ReadWriteOpaque*, while adapter_recv() expects the
 # unrelated AdapterStreamHandle* wrapper. Never cast between those layouts.
-# Export one narrowly-scoped bounded reader for the exact ReadWriteOpaque that
-# adapter_connect() gives Filza. The first ATC protocol probe is receive-only;
-# no raw-stream write wrapper is exposed at this stage.
+# Export narrowly-scoped helpers for the exact ReadWriteOpaque that
+# adapter_connect() gives Filza. The RSD helper sends only the standard RSD
+# check-in control plist; the post-checkin AirTraffic probe remains passive and
+# exposes no generic raw-stream write wrapper.
 ADAPTER_RS="$SOURCE_ROOT/ffi/src/adapter.rs"
 test -f "$ADAPTER_RS"
 python3 - "$ADAPTER_RS" <<'PY'
@@ -57,18 +58,64 @@ import sys
 
 path = Path(sys.argv[1])
 text = path.read_text()
-marker = 'pub unsafe extern "C" fn idevice_stream_read_bounded('
-if marker in text:
+reader_marker = 'pub unsafe extern "C" fn idevice_stream_read_bounded('
+checkin_marker = 'pub unsafe extern "C" fn idevice_stream_rsd_checkin('
+if reader_marker in text:
     raise SystemExit("bounded raw stream reader already present unexpectedly")
+if checkin_marker in text:
+    raise SystemExit("RSD stream check-in bridge already present unexpectedly")
 
 addition = r'''
+
+/// Performs only the standard RSD shim check-in on the generic stream returned
+/// by adapter_connect(), then restores the same socket to ReadWriteOpaque.
+///
+/// This sends idevice's normal length-prefixed RSDCheckin control plist and
+/// validates both the RSDCheckin and StartService replies. It does not send an
+/// AirTraffic HostInfo, SyncRequest, asset message, or any filesystem request.
+///
+/// # Safety
+/// `handle` must be a valid ReadWriteOpaque allocated by this library.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn idevice_stream_rsd_checkin(
+    handle: *mut ReadWriteOpaque,
+) -> *mut IdeviceFfiError {
+    if handle.is_null() {
+        return ffi_err!(IdeviceError::FfiInvalidArg);
+    }
+
+    let stream = unsafe { &mut *handle };
+    let inner = match stream.inner.take() {
+        Some(inner) => inner,
+        None => return ffi_err!(IdeviceError::FfiInvalidArg),
+    };
+
+    let (result, restored) = run_sync(async move {
+        let mut device =
+            idevice::Idevice::new(inner, "Filza-Airlift-RSD-Shim-Probe");
+        let result = device.rsd_checkin().await;
+        let restored = device.get_socket();
+        (result, restored)
+    });
+
+    stream.inner = restored;
+
+    match result {
+        Ok(()) => null_mut(),
+        Err(e) => {
+            tracing::debug!("RSD shim check-in failed: {e}");
+            ffi_err!(e)
+        }
+    }
+}
 
 /// Reads at most `max_length` bytes from the generic ReadWriteOpaque returned
 /// by adapter_connect(). The read is bounded to five seconds so a service that
 /// does not emit an initial frame cannot hang an embedding process forever.
 ///
-/// This intentionally has no matching write export in Filza's pinned build:
-/// the current Airlift stage is passive protocol discovery only.
+/// This intentionally has no matching generic write export in Filza's pinned
+/// build: after RSD admission the current AirTraffic stage is passive protocol
+/// discovery only.
 ///
 /// # Safety
 /// `handle` must be a valid ReadWriteOpaque allocated by this library.
@@ -136,6 +183,7 @@ pub unsafe extern "C" fn idevice_stream_read_bounded(
 
 path.write_text(text + addition)
 PY
+grep -Fq 'idevice_stream_rsd_checkin' "$ADAPTER_RS"
 grep -Fq 'idevice_stream_read_bounded' "$ADAPTER_RS"
 grep -Fq 'bounded ReadWriteOpaque read timed out' "$ADAPTER_RS"
 
@@ -156,6 +204,7 @@ mkdir -p "$OUTPUT_ROOT/lib" "$OUTPUT_ROOT/include"
 cp "$LIBRARY" "$OUTPUT_ROOT/lib/libidevice_ffi.a"
 cp "$SOURCE_ROOT/ffi/idevice.h" "$OUTPUT_ROOT/include/idevice.h"
 
+grep -Fq 'idevice_stream_rsd_checkin' "$OUTPUT_ROOT/include/idevice.h"
 grep -Fq 'idevice_stream_read_bounded' "$OUTPUT_ROOT/include/idevice.h"
 file "$OUTPUT_ROOT/lib/libidevice_ffi.a"
 test -s "$OUTPUT_ROOT/lib/libidevice_ffi.a"
