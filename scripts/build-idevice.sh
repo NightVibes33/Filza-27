@@ -44,6 +44,101 @@ PY
 grep -Fq 'let _ = subscriber.try_init();' "$LOGGING_RS"
 ! grep -Fq 'subscriber.init();' "$LOGGING_RS"
 
+# adapter_connect() returns ReadWriteOpaque*, while adapter_recv() expects the
+# unrelated AdapterStreamHandle* wrapper. Never cast between those layouts.
+# Export one narrowly-scoped bounded reader for the exact ReadWriteOpaque that
+# adapter_connect() gives Filza. The first ATC protocol probe is receive-only;
+# no raw-stream write wrapper is exposed at this stage.
+ADAPTER_RS="$SOURCE_ROOT/ffi/src/adapter.rs"
+test -f "$ADAPTER_RS"
+python3 - "$ADAPTER_RS" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+marker = 'pub unsafe extern "C" fn idevice_stream_read_bounded('
+if marker in text:
+    raise SystemExit("bounded raw stream reader already present unexpectedly")
+
+addition = r'''
+
+/// Reads at most `max_length` bytes from the generic ReadWriteOpaque returned
+/// by adapter_connect(). The read is bounded to five seconds so a service that
+/// does not emit an initial frame cannot hang an embedding process forever.
+///
+/// This intentionally has no matching write export in Filza's pinned build:
+/// the current Airlift stage is passive protocol discovery only.
+///
+/// # Safety
+/// `handle` must be a valid ReadWriteOpaque allocated by this library.
+/// `data` must point to at least `max_length` writable bytes.
+/// `length` must point to writable usize storage.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn idevice_stream_read_bounded(
+    handle: *mut ReadWriteOpaque,
+    data: *mut u8,
+    length: *mut usize,
+    max_length: usize,
+) -> *mut IdeviceFfiError {
+    if handle.is_null() || data.is_null() || length.is_null() || max_length == 0 {
+        return ffi_err!(IdeviceError::FfiInvalidArg);
+    }
+
+    // Keep diagnostic capture deliberately small even if a caller passes an
+    // unreasonable capacity. Filza currently requests only 4096 bytes.
+    if max_length > 65536 {
+        return ffi_err!(IdeviceError::FfiInvalidArg);
+    }
+
+    let stream = unsafe { &mut *handle };
+    let inner = match stream.inner.as_mut() {
+        Some(inner) => inner,
+        None => return ffi_err!(IdeviceError::FfiInvalidArg),
+    };
+
+    let res: Result<Vec<u8>, std::io::Error> = run_sync(async move {
+        let mut buf = vec![0u8; max_length];
+        let count = match tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            inner.read(&mut buf),
+        )
+        .await
+        {
+            Ok(read_result) => read_result?,
+            Err(_) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "bounded ReadWriteOpaque read timed out",
+                ));
+            }
+        };
+        buf.truncate(count);
+        Ok(buf)
+    });
+
+    match res {
+        Ok(received_data) => {
+            let received_len = received_data.len();
+            unsafe {
+                std::ptr::copy_nonoverlapping(received_data.as_ptr(), data, received_len);
+                *length = received_len;
+            }
+            null_mut()
+        }
+        Err(e) => {
+            tracing::debug!("Bounded raw stream read failed: {e}");
+            ffi_err!(e)
+        }
+    }
+}
+'''
+
+path.write_text(text + addition)
+PY
+grep -Fq 'idevice_stream_read_bounded' "$ADAPTER_RS"
+grep -Fq 'bounded ReadWriteOpaque read timed out' "$ADAPTER_RS"
+
 # The complete ByeTunes DeviceManager uses substantially more than AFC: it
 # opens heartbeat, lockdown/notification-proxy and RSD/CoreDevice paths too.
 # Build idevice-ffi with its normal default feature set, matching ByeTunes'
@@ -61,6 +156,7 @@ mkdir -p "$OUTPUT_ROOT/lib" "$OUTPUT_ROOT/include"
 cp "$LIBRARY" "$OUTPUT_ROOT/lib/libidevice_ffi.a"
 cp "$SOURCE_ROOT/ffi/idevice.h" "$OUTPUT_ROOT/include/idevice.h"
 
+grep -Fq 'idevice_stream_read_bounded' "$OUTPUT_ROOT/include/idevice.h"
 file "$OUTPUT_ROOT/lib/libidevice_ffi.a"
 test -s "$OUTPUT_ROOT/lib/libidevice_ffi.a"
 test -s "$OUTPUT_ROOT/include/idevice.h"
