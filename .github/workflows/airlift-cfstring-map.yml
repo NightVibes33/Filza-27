@@ -1,0 +1,66 @@
+name: Map AirTrafficHost CFStrings
+
+on:
+  push:
+    branches: [ experiment/airlift-filza27 ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  map:
+    runs-on: macos-26-intel
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Map AirTrafficHost CFString and cstring sections
+        run: |
+          set -euxo pipefail
+          FRAMEWORK=/System/Library/PrivateFrameworks/AirTrafficHost.framework/AirTrafficHost
+          OUT=airtraffic-cfstring-map
+          test -f "$FRAMEWORK"
+          mkdir -p "$OUT"
+          otool -l "$FRAMEWORK" > "$OUT/load-commands.txt"
+          otool -tvV "$FRAMEWORK" > "$OUT/disasm.txt"
+          otool -v -s __DATA __cfstring "$FRAMEWORK" > "$OUT/cfstring-data.txt" || true
+          otool -v -s __DATA_CONST __cfstring "$FRAMEWORK" > "$OUT/cfstring-data-const.txt" || true
+          otool -v -s __TEXT __cstring "$FRAMEWORK" > "$OUT/cstring.txt" || true
+          strings -a -t x "$FRAMEWORK" > "$OUT/strings-offsets.txt" || true
+          nm -nm "$FRAMEWORK" > "$OUT/nm.txt" || true
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          dis = Path('airtraffic-cfstring-map/disasm.txt').read_text(errors='replace').splitlines()
+          names = [
+              '_ATCFMessageCreate:',
+              '_ATHostConnectionSendHostInfo:',
+              '_ATHostConnectionSendSyncRequest:',
+              '_ATHostConnectionSendMetadataSyncFinished:',
+              '_ATHostConnectionSendAssetCompleted:',
+              '__ATHostMessageLinkSendNextMessage:',
+              '__ATHostMessageLinkHandleSocketNotification:',
+          ]
+          out=[]
+          for name in names:
+              out.append('===== '+name+' =====')
+              hit=next((i for i,l in enumerate(dis) if name in l),None)
+              if hit is None:
+                  out.append('NOT FOUND')
+                  continue
+              for l in dis[hit:hit+420]:
+                  if l != dis[hit] and re.match(r'^[0-9a-fA-F]+\s+_[A-Za-z0-9_$]+:$', l.strip()):
+                      break
+                  out.append(l)
+          Path('airtraffic-cfstring-map/targeted-disasm.txt').write_text('\n'.join(out)+'\n')
+          PY
+
+      - name: Upload map
+        uses: actions/upload-artifact@v4
+        with:
+          name: AirTrafficHost-CFString-map-${{ github.sha }}
+          path: airtraffic-cfstring-map/
+          compression-level: 0
+          if-no-files-found: error
