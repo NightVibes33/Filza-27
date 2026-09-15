@@ -4,6 +4,7 @@
 #import <sys/socket.h>
 #import <unistd.h>
 #import "idevice.h"
+#import "MCMFilzaIntegration.h"
 
 // Fourth-stage Airlift diagnostic.
 //
@@ -56,10 +57,21 @@ static NSURL *FZAirliftRPPairingFileURL(void)
 static NSURL *FZAirliftDiagnosticsDirectoryURL(void)
 {
     NSFileManager *fm = NSFileManager.defaultManager;
-    NSURL *documents = [fm URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask].firstObject;
-    if (!documents) return nil;
 
-    NSURL *directory = [documents URLByAppendingPathComponent:@"Airlift - Experimental" isDirectory:YES];
+    // Keep this probe beside the other Airlift diagnostics that the user is
+    // already viewing in Filza. Fall back to the raw app Documents directory
+    // only if the virtual root has not been initialized yet.
+    NSURL *base = nil;
+    NSString *virtualRoot = MCMFilzaVirtualRoot();
+    if (virtualRoot.length) {
+        base = [NSURL fileURLWithPath:virtualRoot isDirectory:YES];
+    }
+    if (!base) {
+        base = [fm URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask].firstObject;
+    }
+    if (!base) return nil;
+
+    NSURL *directory = [base URLByAppendingPathComponent:@"Airlift - Experimental" isDirectory:YES];
     NSError *error = nil;
     if (![fm createDirectoryAtURL:directory
        withIntermediateDirectories:YES
@@ -69,6 +81,34 @@ static NSURL *FZAirliftDiagnosticsDirectoryURL(void)
         return nil;
     }
     return directory;
+}
+
+static NSURL *FZAirliftATCReportURL(void)
+{
+    NSURL *directory = FZAirliftDiagnosticsDirectoryURL();
+    return [directory URLByAppendingPathComponent:@"Airlift ATC Lockdown Transport.plist"];
+}
+
+static void FZAirliftWriteATCProgress(NSString *stage, NSDictionary *transportState)
+{
+    NSURL *output = FZAirliftATCReportURL();
+    if (!output) return;
+
+    NSDictionary *report = @{
+        @"SchemaVersion": @4,
+        @"GeneratedAt": [NSDate date],
+        @"Process": NSProcessInfo.processInfo.processName ?: @"",
+        @"PID": @(getpid()),
+        @"SystemVersion": NSProcessInfo.processInfo.operatingSystemVersionString ?: @"",
+        @"State": @"Running",
+        @"LastReachedStage": stage ?: @"unknown",
+        @"ATCLockdownTransport": transportState ?: @{},
+        @"SafetyBoundary": @"Progress-only transport diagnostic. No AirTraffic payload bytes are sent. No AssetManifest, FileComplete, ATAirlock, AFC, or filesystem mutation is attempted except writing this diagnostics plist."
+    };
+
+    BOOL wrote = [report writeToURL:output atomically:YES];
+    NSLog(@"[AirliftATCProbe] progress stage=%@ %@ at %@",
+          stage ?: @"unknown", wrote ? @"written" : @"failed", output.path);
 }
 
 static NSDictionary *FZAirliftProbeATCLockdownTransport(void)
@@ -97,6 +137,7 @@ static NSDictionary *FZAirliftProbeATCLockdownTransport(void)
 
     NSURL *pairingURL = FZAirliftRPPairingFileURL();
     result[@"PairingFilePath"] = pairingURL.path ?: @"";
+    FZAirliftWriteATCProgress(@"pairing-file", result);
     if (!pairingURL || ![NSFileManager.defaultManager fileExistsAtPath:pairingURL.path]) {
         result[@"FailureStage"] = @"pairing-file";
         result[@"Interpretation"] = @"RP pairing file is unavailable, so self-hosted ATC transport was not attempted.";
@@ -104,6 +145,7 @@ static NSDictionary *FZAirliftProbeATCLockdownTransport(void)
     }
     result[@"PairingFilePresent"] = @YES;
 
+    FZAirliftWriteATCProgress(@"pairing-read", result);
     IdeviceFfiError *error = rp_pairing_file_read(pairingURL.fileSystemRepresentation, &pairing);
     if (error) {
         result[@"PairingRead"] = FZAirliftConsumeIdeviceError(error);
@@ -122,6 +164,7 @@ static NSDictionary *FZAirliftProbeATCLockdownTransport(void)
         goto cleanup;
     }
 
+    FZAirliftWriteATCProgress(@"rp-tunnel", result);
     error = tunnel_create_rppairing(
         (const idevice_sockaddr *)&address,
         (idevice_socklen_t)sizeof(address),
@@ -141,6 +184,7 @@ static NSDictionary *FZAirliftProbeATCLockdownTransport(void)
     result[@"RPTunnelCreated"] = @YES;
     result[@"RPTunnel"] = @{ @"Success": @YES };
 
+    FZAirliftWriteATCProgress(@"lockdown-connect", result);
     error = lockdownd_connect_rsd(adapter, handshake, &lockdown);
     if (error || !lockdown) {
         result[@"LockdownConnect"] = error
@@ -154,6 +198,7 @@ static NSDictionary *FZAirliftProbeATCLockdownTransport(void)
 
     uint16_t port = 0;
     bool ssl = false;
+    FZAirliftWriteATCProgress(@"start-service", result);
     error = lockdownd_start_service(lockdown, FZAirliftATCService.UTF8String, &port, &ssl);
     if (error || port == 0) {
         result[@"StartService"] = error
@@ -170,6 +215,7 @@ static NSDictionary *FZAirliftProbeATCLockdownTransport(void)
 
     // This is deliberately only a TCP-open reachability test. Do not send a
     // protocol preface, plist, AssetManifest, FileComplete, or any payload.
+    FZAirliftWriteATCProgress(@"port-connect", result);
     error = adapter_connect(adapter, port, &stream);
     if (error || !stream) {
         result[@"PortConnect"] = error
@@ -185,6 +231,7 @@ static NSDictionary *FZAirliftProbeATCLockdownTransport(void)
     result[@"Interpretation"] = @"Filza successfully used a disposable iOS 27 RP tunnel to ask lockdownd to start com.apple.atc and open the returned service port. This proves self-hosted ATC transport reachability only; no AirTraffic protocol message or Airlift filesystem primitive was invoked.";
 
 cleanup:
+    FZAirliftWriteATCProgress(@"cleanup", result);
     if (stream) {
         // adapter_connect() returns ReadWriteOpaque. The pinned idevice ABI
         // provides the exact matching destructor idevice_stream_free(). Do
@@ -230,22 +277,32 @@ cleanup:
 
 static void FZAirliftWriteATCTransportProbe(void)
 {
-    NSURL *directory = FZAirliftDiagnosticsDirectoryURL();
-    if (!directory) return;
+    NSURL *output = FZAirliftATCReportURL();
+    if (!output) return;
 
+    // Write immediately before doing any potentially blocking FFI work. If a
+    // call stalls, the user still gets a visible report with LastReachedStage.
+    FZAirliftWriteATCProgress(@"probe-started", @{
+        @"Service": FZAirliftATCService,
+        @"Attempted": @YES,
+        @"PayloadBytesSent": @0
+    });
+
+    NSDictionary *transport = FZAirliftProbeATCLockdownTransport();
     NSDictionary *report = @{
-        @"SchemaVersion": @3,
+        @"SchemaVersion": @4,
         @"GeneratedAt": [NSDate date],
         @"Process": NSProcessInfo.processInfo.processName ?: @"",
         @"PID": @(getpid()),
         @"SystemVersion": NSProcessInfo.processInfo.operatingSystemVersionString ?: @"",
-        @"ATCLockdownTransport": FZAirliftProbeATCLockdownTransport(),
-        @"SafetyBoundary": @"Connect-and-teardown transport diagnostic only. PayloadBytesSent is always zero. No AssetManifest, FileComplete, ATAirlock, AFC, or filesystem mutation is attempted except writing this diagnostics plist inside Filza Documents. The ReadWriteOpaque returned by adapter_connect is freed only with idevice_stream_free, then the entire disposable RP adapter is closed and freed."
+        @"State": @"Completed",
+        @"LastReachedStage": @"completed",
+        @"ATCLockdownTransport": transport,
+        @"SafetyBoundary": @"Connect-and-teardown transport diagnostic only. PayloadBytesSent is always zero. No AssetManifest, FileComplete, ATAirlock, AFC, or filesystem mutation is attempted except writing this diagnostics plist inside Filza's visible Airlift diagnostics directory. The ReadWriteOpaque returned by adapter_connect is freed only with idevice_stream_free, then the entire disposable RP adapter is closed and freed."
     };
 
-    NSURL *output = [directory URLByAppendingPathComponent:@"Airlift ATC Lockdown Transport.plist"];
     BOOL wrote = [report writeToURL:output atomically:YES];
-    NSLog(@"[AirliftATCProbe] report %@ at %@", wrote ? @"written" : @"failed", output.path);
+    NSLog(@"[AirliftATCProbe] final report %@ at %@", wrote ? @"written" : @"failed", output.path);
 }
 
 __attribute__((constructor)) static void FZAirliftATCTransportProbeInit(void)
