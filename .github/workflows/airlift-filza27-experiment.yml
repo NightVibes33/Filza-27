@@ -45,6 +45,49 @@ jobs:
           cp ThirdParty/Airlift/PINNED_REVISION airlift-host-artifact/
           shasum -a 256 airlift-host-artifact/* > airlift-host-artifact/SHA256.txt
 
+      - name: Inspect Apple AirTrafficHost wire helpers
+        run: |
+          set -euxo pipefail
+          FRAMEWORK=/System/Library/PrivateFrameworks/AirTrafficHost.framework/AirTrafficHost
+          test -f "$FRAMEWORK"
+          mkdir -p airlift-host-artifact/reverse
+          nm -nm "$FRAMEWORK" > airlift-host-artifact/reverse/nm.txt || true
+          nm -gU "$FRAMEWORK" > airlift-host-artifact/reverse/exports.txt || true
+          otool -tvV "$FRAMEWORK" > airlift-host-artifact/reverse/disasm.txt
+          strings -a "$FRAMEWORK" > airlift-host-artifact/reverse/strings.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('airlift-host-artifact/reverse/disasm.txt')
+          lines = p.read_text(errors='replace').splitlines()
+          targets = [
+              '_ATHostMessageLinkSendMessage:',
+              '_ATCFMessageCreate:',
+              '_ATCFMessageVerify:',
+              '_ATHostConnectionSendHostInfo:',
+              '_ATHostConnectionSendSyncRequest:',
+              '_ATHostConnectionSendMetadataSyncFinished:',
+              '_ATHostConnectionSendAssetCompleted:',
+              '_ATHostConnectionReadMessage:',
+          ]
+          out = []
+          for target in targets:
+              out.append(f'===== {target} =====')
+              hit = next((i for i, line in enumerate(lines) if target in line), None)
+              if hit is None:
+                  out.append('NOT FOUND')
+                  continue
+              for line in lines[hit:hit+260]:
+                  if line != lines[hit] and re.match(r'^[0-9a-fA-F]+\s+_[A-Za-z0-9_$]+:$', line.strip()):
+                      break
+                  out.append(line)
+          Path('airlift-host-artifact/reverse/targeted-disasm.txt').write_text('\n'.join(out) + '\n')
+          print('\n'.join(out))
+          PY
+          echo '===== TARGET EXPORTS ====='
+          grep -E 'ATHostMessageLinkSendMessage|ATCFMessage(Create|Verify)|ATHostConnection(SendHostInfo|SendSyncRequest|SendMetadataSyncFinished|SendAssetCompleted|ReadMessage)' airlift-host-artifact/reverse/exports.txt || true
+
       - name: Upload pinned host build
         uses: actions/upload-artifact@v4
         with:
