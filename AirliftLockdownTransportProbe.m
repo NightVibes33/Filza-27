@@ -6,21 +6,24 @@
 #import "idevice.h"
 #import "MCMFilzaIntegration.h"
 
-// Fourth-stage Airlift diagnostic.
+// Fifth-stage Airlift diagnostic.
 //
 // Goal: prove (or disprove) that Filza can use its existing iOS 27 RP pairing
 // material to act as a host for the phone's own lockdown service
 // "com.apple.atc". This probe creates a completely separate RP tunnel, asks
-// lockdownd to start com.apple.atc, opens the returned TCP port, sends ZERO
-// bytes, frees that exact raw stream wrapper through idevice_stream_free(),
-// and then tears the entire temporary tunnel down.
+// lockdownd to start com.apple.atc, opens the returned TCP port, and—only when
+// lockdownd marks the service as plaintext—performs one bounded RECEIVE from
+// the exact ReadWriteOpaque returned by adapter_connect(). It sends ZERO bytes.
 //
-// It does NOT send AssetManifest/FileComplete/AirTraffic messages and does not
-// invoke ATAirlock or any Airlift filesystem primitive.
+// It does NOT send HostInfo, SyncRequest, AssetManifest, FileComplete, or any
+// other AirTraffic message. It does not invoke ATAirlock or an Airlift
+// filesystem primitive.
 
 static NSString *const FZAirliftATCService = @"com.apple.atc";
 static NSString *const FZAirliftPairingGroup = @"group.com.edualexxis.MusicManager";
 static const uint16_t FZAirliftRPPairingPort = 49152;
+static const size_t FZAirliftInitialReadCapacity = 4096;
+static const size_t FZAirliftInitialHexPreviewCapacity = 256;
 
 static NSDictionary *FZAirliftConsumeIdeviceError(IdeviceFfiError *error)
 {
@@ -39,6 +42,17 @@ static NSDictionary *FZAirliftConsumeIdeviceError(IdeviceFfiError *error)
         @"Subcode": @(subcode),
         @"Message": message
     };
+}
+
+static NSString *FZAirliftHexPreview(const uint8_t *bytes, size_t length)
+{
+    if (!bytes || length == 0) return @"";
+    size_t previewLength = MIN(length, FZAirliftInitialHexPreviewCapacity);
+    NSMutableString *hex = [NSMutableString stringWithCapacity:previewLength * 2];
+    for (size_t index = 0; index < previewLength; index++) {
+        [hex appendFormat:@"%02x", bytes[index]];
+    }
+    return hex;
 }
 
 static NSURL *FZAirliftRPPairingFileURL(void)
@@ -95,7 +109,7 @@ static void FZAirliftWriteATCProgress(NSString *stage, NSDictionary *transportSt
     if (!output) return;
 
     NSDictionary *report = @{
-        @"SchemaVersion": @4,
+        @"SchemaVersion": @5,
         @"GeneratedAt": [NSDate date],
         @"Process": NSProcessInfo.processInfo.processName ?: @"",
         @"PID": @(getpid()),
@@ -103,7 +117,7 @@ static void FZAirliftWriteATCProgress(NSString *stage, NSDictionary *transportSt
         @"State": @"Running",
         @"LastReachedStage": stage ?: @"unknown",
         @"ATCLockdownTransport": transportState ?: @{},
-        @"SafetyBoundary": @"Progress-only transport diagnostic. No AirTraffic payload bytes are sent. No AssetManifest, FileComplete, ATAirlock, AFC, or filesystem mutation is attempted except writing this diagnostics plist."
+        @"SafetyBoundary": @"Passive transport diagnostic. PayloadBytesSent is always zero. The only service-I/O operation after connect is one bounded receive when lockdownd reports plaintext. No HostInfo, SyncRequest, AssetManifest, FileComplete, ATAirlock, AFC, or Airlift filesystem mutation is attempted."
     };
 
     BOOL wrote = [report writeToURL:output atomically:YES];
@@ -123,6 +137,11 @@ static NSDictionary *FZAirliftProbeATCLockdownTransport(void)
         @"ReturnedPort": @0,
         @"ReturnedSSL": @NO,
         @"PortConnected": @NO,
+        @"InitialReadAttempted": @NO,
+        @"InitialReadSucceeded": @NO,
+        @"InitialReadByteCount": @0,
+        @"InitialReadCapacity": @(FZAirliftInitialReadCapacity),
+        @"InitialReadTimeoutSeconds": @5,
         @"PayloadBytesSent": @0,
         @"ReadWriteOpaqueWrapperFreed": @NO,
         @"AdapterStackClosed": @NO,
@@ -213,8 +232,6 @@ static NSDictionary *FZAirliftProbeATCLockdownTransport(void)
     result[@"ReturnedPort"] = @(port);
     result[@"ReturnedSSL"] = @(ssl);
 
-    // This is deliberately only a TCP-open reachability test. Do not send a
-    // protocol preface, plist, AssetManifest, FileComplete, or any payload.
     FZAirliftWriteATCProgress(@"port-connect", result);
     error = adapter_connect(adapter, port, &stream);
     if (error || !stream) {
@@ -227,8 +244,45 @@ static NSDictionary *FZAirliftProbeATCLockdownTransport(void)
 
     result[@"PortConnected"] = @YES;
     result[@"PortConnect"] = @{ @"Success": @YES };
+
+    // Do not interpret TLS ciphertext as an AirTraffic frame. If lockdownd
+    // marks this service SSL, stop at transport reachability until an exact
+    // same-device SSL wrapping path is implemented and verified.
+    if (ssl) {
+        result[@"InitialReadSkippedReason"] = @"lockdownd marked com.apple.atc as SSL; raw read intentionally skipped";
+        result[@"Interpretation"] = @"Self-hosted com.apple.atc transport is reachable, but lockdownd requires SSL. No service bytes were read or sent.";
+    } else {
+        uint8_t initialBytes[FZAirliftInitialReadCapacity];
+        memset(initialBytes, 0, sizeof(initialBytes));
+        size_t initialLength = 0;
+
+        result[@"InitialReadAttempted"] = @YES;
+        FZAirliftWriteATCProgress(@"atc-initial-read", result);
+        error = idevice_stream_read_bounded(
+            stream,
+            initialBytes,
+            &initialLength,
+            sizeof(initialBytes));
+
+        if (error) {
+            result[@"InitialRead"] = FZAirliftConsumeIdeviceError(error);
+            result[@"InitialReadByteCount"] = @0;
+            result[@"Interpretation"] = @"Self-hosted com.apple.atc transport is reachable, but no plaintext initial service frame was captured within the bounded read. Zero payload bytes were sent.";
+        } else {
+            result[@"InitialRead"] = @{ @"Success": @YES };
+            result[@"InitialReadSucceeded"] = @YES;
+            result[@"InitialReadByteCount"] = @(initialLength);
+            result[@"InitialReadHexPreview"] = FZAirliftHexPreview(initialBytes, initialLength);
+            result[@"InitialReadHexPreviewByteCount"] = @(MIN(initialLength, FZAirliftInitialHexPreviewCapacity));
+            if (initialLength > 0) {
+                result[@"Interpretation"] = @"Self-hosted com.apple.atc transport is reachable and emitted plaintext bytes without Filza transmitting a service payload. Framing/message identity is intentionally not inferred from raw bytes yet.";
+            } else {
+                result[@"Interpretation"] = @"Self-hosted com.apple.atc transport is reachable and the bounded plaintext read completed with zero bytes. Zero payload bytes were sent.";
+            }
+        }
+    }
+
     result[@"PayloadBytesSent"] = @0;
-    result[@"Interpretation"] = @"Filza successfully used a disposable iOS 27 RP tunnel to ask lockdownd to start com.apple.atc and open the returned service port. This proves self-hosted ATC transport reachability only; no AirTraffic protocol message or Airlift filesystem primitive was invoked.";
 
 cleanup:
     FZAirliftWriteATCProgress(@"cleanup", result);
@@ -290,7 +344,7 @@ static void FZAirliftWriteATCTransportProbe(void)
 
     NSDictionary *transport = FZAirliftProbeATCLockdownTransport();
     NSDictionary *report = @{
-        @"SchemaVersion": @4,
+        @"SchemaVersion": @5,
         @"GeneratedAt": [NSDate date],
         @"Process": NSProcessInfo.processInfo.processName ?: @"",
         @"PID": @(getpid()),
@@ -298,7 +352,7 @@ static void FZAirliftWriteATCTransportProbe(void)
         @"State": @"Completed",
         @"LastReachedStage": @"completed",
         @"ATCLockdownTransport": transport,
-        @"SafetyBoundary": @"Connect-and-teardown transport diagnostic only. PayloadBytesSent is always zero. No AssetManifest, FileComplete, ATAirlock, AFC, or filesystem mutation is attempted except writing this diagnostics plist inside Filza's visible Airlift diagnostics directory. The ReadWriteOpaque returned by adapter_connect is freed only with idevice_stream_free, then the entire disposable RP adapter is closed and freed."
+        @"SafetyBoundary": @"Passive connect/read/teardown diagnostic only. PayloadBytesSent is always zero. At most one 4096-byte plaintext read is attempted with a five-second bound, and it is skipped when lockdownd marks the service SSL. No HostInfo, SyncRequest, AssetManifest, FileComplete, ATAirlock, AFC, or Airlift filesystem mutation is attempted except writing this diagnostics plist inside Filza's visible Airlift diagnostics directory."
     };
 
     BOOL wrote = [report writeToURL:output atomically:YES];
