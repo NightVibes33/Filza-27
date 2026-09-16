@@ -20,3 +20,4 @@ jobs:
           grep -q 'AirliftCanaryExploit.m' Makefile
           grep -q 'FZACSnapshotBooksState' AirliftBooksState.m
           grep -q 'FZACRestoreBooksState' AirliftBooksState.m
+          git diff --check
