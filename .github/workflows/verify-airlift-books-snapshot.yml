@@ -19,3 +19,5 @@ jobs:
           grep -q 'FZACSnapshotBooksState' AirliftBooksState.m
           grep -q 'FZACRestoreBooksState' AirliftBooksState.m
           grep -q 'restoreRoot' AirliftCanaryExploit.m
+          test -s AirliftBooksState.h
+          test -s AirliftBooksState.m
