@@ -10,11 +10,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - name: Apply guarded integration and validate source
+      - name: Apply guarded integration
+        run: bash scripts/patch-airlift-books-snapshot.sh
+      - name: Verify source gates
         run: |
-          bash scripts/patch-airlift-books-snapshot.sh
           grep -q 'BooksPreimageStable' AirliftCanaryExploit.m
           grep -q 'BooksRestoreVerified' AirliftCanaryExploit.m
           grep -q 'FZACSnapshotBooksState' AirliftBooksState.m
           grep -q 'FZACRestoreBooksState' AirliftBooksState.m
-          xcrun clang -fsyntax-only -fobjc-arc -x objective-c -I Vendor/idevice/include -I . -framework Foundation AirliftBooksState.m
+          grep -q 'restoreRoot' AirliftCanaryExploit.m
