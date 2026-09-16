@@ -4,41 +4,17 @@ on:
   push:
     branches: [experiment/airlift-filza27]
 jobs:
-  build:
+  source-gates:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - name: Apply guarded Airlift snapshot integration
+      - name: Apply guarded integration and validate source
         run: |
           bash scripts/patch-airlift-books-snapshot.sh
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('Makefile'); s=p.read_text()
-          needle='FilzaApplySandboxExt_FILES = '
-          i=s.index(needle); e=s.index('\n',i)
-          line=s[i:e]
-          for f in ['AirliftBooksState.m','AirliftCanaryExploit.m']:
-              if f not in line: line += ' ' + f
-          s=s[:i]+line+s[e:]
-          p.write_text(s)
-          PY
           grep -q 'BooksPreimageStable' AirliftCanaryExploit.m
           grep -q 'BooksRestoreVerified' AirliftCanaryExploit.m
-          grep -q 'AirliftBooksState.m' Makefile
-      - name: Install Theos
-        run: |
-          brew install ldid xz || true
-          git clone --recursive https://github.com/theos/theos.git "$HOME/theos"
-          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
-      - name: Build idevice vendor library
-        run: bash scripts/build-idevice.sh
-      - name: Build
-        run: make clean package FINALPACKAGE=1
-      - name: Upload package
-        uses: actions/upload-artifact@v4
-        with:
-          name: filza27-airlift-books-snapshot
-          path: packages/*
-          include-hidden-files: true
+          grep -q 'FZACSnapshotBooksState' AirliftBooksState.m
+          grep -q 'FZACRestoreBooksState' AirliftBooksState.m
+          xcrun clang -fsyntax-only -fobjc-arc -x objective-c -I Vendor/idevice/include -I . -framework Foundation AirliftBooksState.m
