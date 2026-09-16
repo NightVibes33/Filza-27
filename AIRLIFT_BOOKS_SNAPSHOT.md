@@ -1,7 +1,7 @@
 # Airlift Books preimage fix
 
-This experimental branch ports upstream Airlift commit `c75b3ea5`'s state model. Existing AFC-visible Books sync files are snapshotted into the app's temporary container, checked for a stable preimage before staging, restored after the canary, and compared byte-for-byte afterward. The experiment does not intentionally discard pre-existing Books state.
+Ports upstream Airlift `c75b3ea5`'s safer state model to the Filza-27 experiment. Existing AFC-visible Books sync files are snapshotted into the app temporary container, checked for a stable preimage, restored after the canary, and compared byte-for-byte. Pre-existing Books state is not intentionally discarded.
 
-Run `scripts/apply-airlift-experiment.sh` before packaging this branch. The script applies a fail-closed transform to `AirliftCanaryExploit.m` and adds `AirliftBooksState.m` plus `AirliftCanaryExploit.m` to the Theos source list. `main` is untouched.
+`scripts/apply-airlift-experiment.sh` applies the guarded transform and adds the Airlift canary/state implementation to the experimental Theos source list. `main` is untouched.
 
-Expected device report keys: `BooksSnapshot`, `BooksPreimageStable`, `BooksRestore`, `BooksRestoreVerified`. Exploit confirmation still requires `AirTrafficSucceeded`, `ExactBytesRecovered`, `BooksRestoreVerified`, and `CleanupComplete` to all be true. CI/source-gate success alone is not device-side exploit proof.
+Device report gates: `BooksSnapshot`, `BooksPreimageStable`, `BooksRestore`, `BooksRestoreVerified`. Full canary confirmation still requires `AirTrafficSucceeded`, `ExactBytesRecovered`, `BooksRestoreVerified`, and `CleanupComplete` all true. CI success alone is not exploit proof.
