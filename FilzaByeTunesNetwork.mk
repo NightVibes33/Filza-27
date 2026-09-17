@@ -1,75 +1,23 @@
-# ByeTunes network/provider compatibility fragment.
-#
-# The v2.4 app remains the primary ByeTunes source tree. All Sources importing,
-# the song editor, and v2.4 metadata selection are intentionally untouched.
-# Only the YouTube provider regains the exact vendored YouTubeKit implementation
-# that shipped in NightVibes33/ByeTunes before the v2.4 migration.
-
-# A fresh checkout does not contain the generated pre-v2.4 YouTubeKit tree.
-# Bootstrap it while make is still parsing this fragment, before Theos validates
-# the Swift input paths. The later build hook still verifies/restages the exact
-# pinned tree before compilation.
-include FilzaYouTubeKitBootstrap.mk
+# ByeTunes 2.5 integration fragment.
+# Keep upstream ByeTunes provider/download behavior intact; Filza-specific
+# embedding, pairing, 3105, Mond, and support integration remain below.
 
 # 3105 1.1.1 stages its updated sandbox_escape.m at the repository root, while
-# that upstream translation unit keeps the original quoted kexploit header names
-# (kexploit_opa334.h, krw.h, kutils.h, offsets.h, xpaci.h). Expose the existing
-# pinned kexploit directory rather than rewriting upstream include directives.
+# that upstream translation unit keeps the original quoted kexploit header names.
 FilzaApplySandboxExt_CFLAGS += -I$(PWD)/kexploit
 
-BYETUNES_YTK_ROOT := ThirdParty/byetunes-youtubekit/Generated
-BYETUNES_YTK_SWIFT_FILES := \
-    $(BYETUNES_YTK_ROOT)/Cipher.swift \
-    $(BYETUNES_YTK_ROOT)/Errors.swift \
-    $(BYETUNES_YTK_ROOT)/Extensions/AsyncCompatibility.swift \
-    $(BYETUNES_YTK_ROOT)/Extensions/Concurrency.swift \
-    $(BYETUNES_YTK_ROOT)/Extensions/Foundation.swift \
-    $(BYETUNES_YTK_ROOT)/Extensions/Lazy.swift \
-    $(BYETUNES_YTK_ROOT)/Extensions/Logging.swift \
-    $(BYETUNES_YTK_ROOT)/Extensions/RegularExpression.swift \
-    $(BYETUNES_YTK_ROOT)/Extensions/Retry.swift \
-    $(BYETUNES_YTK_ROOT)/Extensions/URLSessionDelegates.swift \
-    $(BYETUNES_YTK_ROOT)/Extensions/WebSocket.swift \
-    $(BYETUNES_YTK_ROOT)/Extraction.swift \
-    $(BYETUNES_YTK_ROOT)/InnerTube.swift \
-    $(BYETUNES_YTK_ROOT)/Models/Codecs.swift \
-    $(BYETUNES_YTK_ROOT)/Models/FileExtension.swift \
-    $(BYETUNES_YTK_ROOT)/Models/ITag.swift \
-    $(BYETUNES_YTK_ROOT)/Models/Livestream.swift \
-    $(BYETUNES_YTK_ROOT)/Models/Method.swift \
-    $(BYETUNES_YTK_ROOT)/Models/Stream.swift \
-    $(BYETUNES_YTK_ROOT)/Models/StreamQuery.swift \
-    $(BYETUNES_YTK_ROOT)/Models/YouTubeMetadata.swift \
-    $(BYETUNES_YTK_ROOT)/Parser.swift \
-    $(BYETUNES_YTK_ROOT)/Remote/AppIdentity.swift \
-    $(BYETUNES_YTK_ROOT)/Remote/Chunking.swift \
-    $(BYETUNES_YTK_ROOT)/Remote/Models/RemoteStream.swift \
-    $(BYETUNES_YTK_ROOT)/Remote/RemoteYouTubeClient.swift \
-    $(BYETUNES_YTK_ROOT)/SignatureSolver.swift \
-    $(BYETUNES_YTK_ROOT)/YouTube.swift
-
-FilzaApplySandboxExt_SWIFT_FILES += $(BYETUNES_YTK_SWIFT_FILES)
-
-# XPF's common/PatchFinder code calls the arm64-specific ChOma helpers. Keep
-# the existing upstream implementation linked as its own translation unit.
+# XPF's common/PatchFinder code calls the arm64-specific ChOma helpers.
 FilzaApplySandboxExt_FILES += XPF/external/ChOma/src/PatchFinder_arm64.c
 
-# Upstream Mond resolves these private Sandbox SPI calls from
-# libsystem_sandbox.dylib with dlopen/dlsym. The combined Theos Swift target
-# emits C ABI link references for the same names, so expose a thin forwarding
-# ABI bridge without changing the staged Mond source or behavior.
+# Upstream Mond resolves these private Sandbox SPI calls dynamically. Keep the
+# existing forwarding ABI bridge used by the combined target.
 FilzaApplySandboxExt_FILES += MondSandboxSPICompat.c
 
-# Replace Filza's legacy activation/payment presentation with a voluntary
-# Buy Me a Coffee support sheet. The hook is intentionally UI-only: it does not
-# alter Filza feature gating, filesystem access, or activation state.
+# Replace Filza's legacy activation/payment presentation with voluntary support UI.
 FilzaApplySandboxExt_FILES += FilzaSupportPrompt.m
 
 before-FilzaApplySandboxExt-all::
-	# Add an Apps Manager long-press action that repackages the installed .app
-	# bundle as a standard Payload/<name>.app IPA and opens the system export UI.
-	# The bundle is archived exactly as installed; this does not decrypt FairPlay,
-	# strip DRM, alter entitlements, or resign the app.
+	# Add Apps Manager IPA repackaging/export integration.
 	@bash scripts/patch-3105-ipa-export.sh
 	@test -f scripts/patch-3105-ipa-export.sh || (echo "Missing 3105 IPA export patch" >&2; exit 1)
 	@grep -Fq 'Label("Repackage as IPA"' ThirdParty/3105/Sources/AppDataBrowserView.swift
@@ -80,10 +28,7 @@ before-FilzaApplySandboxExt-all::
 	@test -f ThirdParty/3105/Sources/FilzaAppIPAExporter.swift
 	@test -f Filza3105IPAExportBridge.m
 
-	# Restore the requested View / Sort menu while preserving the original row UI.
-	# Default remains the exact existing 3105 list/order. The broader Apple
-	# LaunchServices probe starts only when a research view is explicitly selected.
-	# No discovery badges or source labels are rendered in the app rows.
+	# Preserve the existing View / Sort menu and default 3105 row behavior.
 	@bash scripts/patch-3105-app-manager-view-sort.sh
 	@test -f scripts/patch-3105-app-manager-view-sort.sh || (echo "Missing 3105 app view/sort patch" >&2; exit 1)
 	@grep -Fq 'FILZA_3105_APP_VIEW_SORT_V2' ThirdParty/3105/Sources/AppDataBrowserView.swift
@@ -97,10 +42,7 @@ before-FilzaApplySandboxExt-all::
 	@! grep -Fq 'discoverySummary(for: app)' ThirdParty/3105/Sources/AppDataBrowserView.swift
 	@grep -Fq 'Label("Repackage as IPA"' ThirdParty/3105/Sources/AppDataBrowserView.swift
 
-	# Keep upstream 3105's original Settings sheet presentation. The pairing file
-	# chooser itself uses SwiftUI fileImporter with UTType.item so the Files UI is
-	# presented by the current Settings view instead of stacking another custom
-	# SwiftUI sheet or changing 3105's navigation hierarchy.
+	# Keep upstream 3105 Settings presentation and Filza pairing importer integration.
 	@bash scripts/patch-3105-pairing-importer.sh
 	@test -f scripts/patch-3105-pairing-importer.sh || (echo "Missing 3105 pairing importer patch" >&2; exit 1)
 	@grep -Fq '.sheet(isPresented: $$showSettings) { ThreeOneOSFiveSettingsView() }' ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
@@ -108,18 +50,14 @@ before-FilzaApplySandboxExt-all::
 	@grep -Fq 'handlePairingImport(_ result: Result<[URL], Error>)' ThirdParty/3105/Sources/FilzaSharedPairingSupport.swift
 	@! grep -Fq '.sheet(isPresented: $$showingPairingImporter)' ThirdParty/3105/Sources/FilzaSharedPairingSupport.swift
 
-	# stage-3105-v1.sh runs in the main Makefile hook before this included
-	# fragment. Replace only the generated Filza icon glue with the optimized
-	# persistent-client implementation after the immutable 3105 stage completes.
+	# Preserve optimized persistent-client 3105 icon glue.
 	@bash scripts/patch-3105-icon-performance.sh
 	@test -f scripts/patch-3105-icon-performance.sh || (echo "Missing 3105 icon performance patch" >&2; exit 1)
 	@grep -Fq 'FilzaSharedPairingSupport.enhancedIcon' ThirdParty/3105/Sources/AppDataBrowserView.swift
 	@grep -Fq 'FILZA_SBS_ICON_WORKERS 3' ThirdParty/3105/Sources/AppIconHelper.m
 	@grep -Fq 'FilzaEnsureRSDIconClientLocked' ThirdParty/3105/Sources/AppIconHelper.m
 
-	# The main Makefile stages the pinned Mond source before this included fragment.
-	# Prove the 2.2 functional graph is complete, stage app-target resources, then
-	# adapt only the generated embedded copy.
+	# Preserve current embedded Mond integration.
 	@bash scripts/verify-mond-source-completeness.sh
 	@bash scripts/stage-mond-embedded-resources.sh
 	@bash scripts/patch-mond-embedded-parity.sh
@@ -141,12 +79,10 @@ before-FilzaApplySandboxExt-all::
 	@grep -Fq 'Buy me a coffee' FilzaSupportPrompt.m
 	@grep -Fq 'Activate Filza' FilzaSupportPrompt.m
 
-	@bash scripts/stage-byetunes-youtubekit.sh
-	@bash scripts/patch-byetunes-youtubekit-primary.sh
+	# ByeTunes 2.5 owns its current provider/download stack. Do not stage or patch
+	# the retired pre-v2.4 YouTubeKit implementation. Keep only the independent
+	# compiler adaptation if this combined target still requires it.
 	@bash scripts/patch-byetunes-manage-backups-typecheck.sh
-	@test -f "$(BYETUNES_YTK_ROOT)/YouTube.swift" || (echo "Missing pinned pre-v2.4 YouTubeKit" >&2; exit 1)
-	@grep -Fq 'let youtube = YouTube(videoID: videoID)' ByeTunesMetadataCompat.swift
-	@grep -Fq '[YouTubeProvider] YouTubeKit metadata matched videoID=' ByeTunesMetadataCompat.swift
 	@grep -Fq 'FILZA_MANAGE_BACKUPS_TYPECHECK_SPLIT' ByeTunes/MusicManager/ManageBackupsView.swift
 
 	@test -f "ByeTunes/MusicManager/MetadataBackgroundURLSession.swift" || (echo "Missing upstream ByeTunes metadata transport" >&2; exit 1)
