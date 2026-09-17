@@ -24,6 +24,13 @@ jobs:
           git clone --recursive https://github.com/theos/theos.git "$HOME/theos"
           echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
 
+      - name: Build idevice dependency
+        run: |
+          set -euxo pipefail
+          bash scripts/build-idevice.sh
+          test -s Vendor/idevice/lib/libidevice_ffi.a
+          test -s Vendor/idevice/include/idevice.h
+
       - name: Build existing Filza integration
         run: |
           set -euxo pipefail
