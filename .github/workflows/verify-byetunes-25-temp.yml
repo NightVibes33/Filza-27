@@ -11,7 +11,14 @@ permissions:
 jobs:
   build:
     runs-on: macos-26-intel
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
     steps:
+      - name: Xcode 26.2 setup
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.2'
+
       - name: Checkout exact branch state
         uses: actions/checkout@v4
         with:
@@ -27,9 +34,29 @@ jobs:
       - name: Build idevice dependency
         run: |
           set -euxo pipefail
-          bash scripts/build-idevice.sh
+          bash scripts/build-idevice.sh "$GITHUB_WORKSPACE/Vendor/idevice"
           test -s Vendor/idevice/lib/libidevice_ffi.a
           test -s Vendor/idevice/include/idevice.h
+
+      - name: Build SSH verifier stack
+        run: |
+          set -euxo pipefail
+          bash scripts/build-ssh-stack.sh "$GITHUB_WORKSPACE/Vendor/ssh"
+          test -s Vendor/ssh/lib/libssh.a
+          test -s Vendor/ssh/lib/libmbedtls.a
+          test -s Vendor/ssh/lib/libmbedx509.a
+          test -s Vendor/ssh/lib/libmbedcrypto.a
+          test -s Vendor/ssh/include/libssh/libssh.h
+
+      - name: Build wolfSSH server stack
+        run: |
+          set -euxo pipefail
+          bash scripts/build-wolfssh-stack.sh "$GITHUB_WORKSPACE/Vendor/wolfssh"
+          test -s Vendor/wolfssh/lib/libwolfssh.a
+          test -s Vendor/wolfssh/lib/libwolfssl.a
+          test -s Vendor/wolfssh/include/wolfssh/ssh.h
+          test -s Vendor/wolfssh/include/wolfssh/wolfsftp.h
+          test -s Vendor/wolfssh/include/wolfssl/wolfcrypt/ecc.h
 
       - name: Build existing Filza integration
         run: |
