@@ -1,0 +1,42 @@
+name: Verify ByeTunes 2.5 temp branch
+
+on:
+  push:
+    branches:
+      - upstream/byetunes-2.5-preserve-pairing-test
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26-intel
+    steps:
+      - name: Checkout exact branch state
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Theos
+        run: |
+          set -euxo pipefail
+          brew install ldid make
+          git clone --recursive https://github.com/theos/theos.git "$HOME/theos"
+          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
+
+      - name: Build existing Filza integration unchanged
+        run: |
+          set -euxo pipefail
+          export THEOS="$HOME/theos"
+          export PATH="$(brew --prefix make)/libexec/gnubin:$PATH"
+          gmake clean package FINALPACKAGE=1
+
+      - name: Upload build products
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Filza-27-ByeTunes-2.5-temp
+          path: packages/
+          if-no-files-found: error
+          include-hidden-files: false
+          compression-level: 0
