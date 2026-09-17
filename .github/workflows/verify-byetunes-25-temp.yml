@@ -24,7 +24,12 @@ jobs:
           git clone --recursive https://github.com/theos/theos.git "$HOME/theos"
           echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
 
-      - name: Build existing Filza integration unchanged
+      - name: Apply ByeTunes 2.5 pairing compatibility
+        run: |
+          set -euxo pipefail
+          bash scripts/compat-byetunes25-pairing-import.sh
+
+      - name: Build existing Filza integration
         run: |
           set -euxo pipefail
           export THEOS="$HOME/theos"
