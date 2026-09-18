@@ -37,10 +37,9 @@ append_swift_tree() {
 # actually linked into FilzaApplySandboxExt. The standalone ByeTunes @main and
 # splash owners remain excluded because Filza owns UIApplication lifecycle.
 #
-# Mond 2.1 and the pinned pre-v2.4 YouTubeKit are staged by the normal Theos
-# pre-build hooks. The metadata pass runs after the successful arm64 build, so
-# those generated trees must be present and must participate in this frontend
-# invocation just as they do in the real module build.
+# Mond and 3105 are staged by the normal Theos pre-build hooks. ByeTunes 2.5
+# no longer links the retired pre-v2.4 YouTubeKit compatibility tree, so the
+# AppIntents extraction graph must match the actual 2.5 module and omit it.
 {
   for file in \
     ByeTunesEmbeddedHost.swift \
@@ -62,7 +61,6 @@ append_swift_tree() {
   done
 
   realpath_source ByeTunes/MusicManagerActivityShared/DownloadLiveActivityAttributes.swift
-  append_swift_tree ThirdParty/byetunes-youtubekit/Generated
 } > "$SOURCE_LIST"
 
 test -s "$SOURCE_LIST"
@@ -74,7 +72,7 @@ grep -Fq '/mond-current/Generated/PartyUI/Containers_TerminalPlatter.swift' "$SO
 grep -Fq '/mond-current/Generated/ZIPFoundation/Archive.swift' "$SOURCE_LIST"
 grep -Fq '/MusicManagerIntents.swift' "$SOURCE_LIST"
 grep -Fq '/DownloadLiveActivityAttributes.swift' "$SOURCE_LIST"
-grep -Fq '/byetunes-youtubekit/Generated/YouTube.swift' "$SOURCE_LIST"
+! grep -Fq '/byetunes-youtubekit/' "$SOURCE_LIST"
 ! grep -Fq '/MondGestaltView.swift' "$SOURCE_LIST"
 ! grep -Fq '/MusicManagerApp.swift' "$SOURCE_LIST"
 ! grep -Fq '/SplashView.swift' "$SOURCE_LIST"

@@ -66,7 +66,7 @@ def remove_braced_function(text: str, signature: str, label: str) -> str:
     raise SystemExit(f"{label}: closing brace not found")
 
 
-# DeviceManager: preserve upstream v2.4 initialization and auto reconnect.
+# DeviceManager: preserve upstream initialization and auto reconnect.
 # Only skip idevice_init_logger because ByeTunes is embedded in Filza's process.
 ds = device.read_text()
 old_init = '''    private init() {
@@ -114,12 +114,30 @@ new_init = '''    private init() {
     }
 '''
 ds = replace_once(ds, old_init, new_init, "DeviceManager init")
-ds = replace_once(
-    ds,
-    '''        try FileManager.default.copyItem(at: url, to: expectedPairingFile)\n\n        refreshExpectedPairingFileState()\n''',
-    '''        try FileManager.default.copyItem(at: url, to: expectedPairingFile)\n        Logger.shared.log("[DeviceManager] Filza embed: imported pairing file persisted at \\(expectedPairingFile.path)")\n\n        refreshExpectedPairingFileState()\n''',
-    "pairing import instrumentation",
-)
+
+# ByeTunes 2.4 wrote directly to expectedPairingFile. ByeTunes 2.5 switched to
+# an atomic temp-file validation + replace/move flow. Preserve that upstream 2.5
+# behavior and add the same Filza persistence instrumentation after the final
+# destination is committed.
+log_line = '        Logger.shared.log("[DeviceManager] Filza embed: imported pairing file persisted at \\(expectedPairingFile.path)")\n'
+legacy_anchor = '''        try FileManager.default.copyItem(at: url, to: expectedPairingFile)\n\n        refreshExpectedPairingFileState()\n'''
+legacy_replacement = '''        try FileManager.default.copyItem(at: url, to: expectedPairingFile)\n        Logger.shared.log("[DeviceManager] Filza embed: imported pairing file persisted at \\(expectedPairingFile.path)")\n\n        refreshExpectedPairingFileState()\n'''
+v25_anchor = '''        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: expectedPairingFile.path)\n\n        refreshExpectedPairingFileState()\n'''
+v25_replacement = '''        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: expectedPairingFile.path)\n        Logger.shared.log("[DeviceManager] Filza embed: imported pairing file persisted at \\(expectedPairingFile.path)")\n\n        refreshExpectedPairingFileState()\n'''
+
+if log_line not in ds:
+    legacy_count = ds.count(legacy_anchor)
+    v25_count = ds.count(v25_anchor)
+    if legacy_count == 1 and v25_count == 0:
+        ds = ds.replace(legacy_anchor, legacy_replacement, 1)
+    elif v25_count == 1 and legacy_count == 0:
+        ds = ds.replace(v25_anchor, v25_replacement, 1)
+    else:
+        raise SystemExit(
+            f"pairing import instrumentation: expected exactly one supported anchor; "
+            f"legacy={legacy_count}, v2.5={v25_count}"
+        )
+
 device.write_text(ds)
 
 
