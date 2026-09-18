@@ -104,10 +104,6 @@ jobs:
           cp .theos/byetunes-resources/AppIconImage.png "$APP/AppIconImage.png"
           cp .theos/byetunes-resources/ByeTunes-Info.plist "$APP/ByeTunes-Info.plist"
           cp .theos/byetunes-resources/Config.plist "$APP/Config.plist"
-          for resource in meriyah.umd.js astring.umd.js yt_ejs_helper.js; do
-            test -s ".theos/byetunes-resources/$resource"
-            cp ".theos/byetunes-resources/$resource" "$APP/$resource"
-          done
           rm -rf "$APP/MondEmbedded.bundle" "$APP/Filza3105.bundle"
           cp -R ThirdParty/mond-current/Resources/MondEmbedded.bundle "$APP/MondEmbedded.bundle"
           cp -R ThirdParty/3105/Resources/Filza3105.bundle "$APP/Filza3105.bundle"
