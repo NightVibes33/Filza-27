@@ -31,6 +31,27 @@ jobs:
           git clone --recursive https://github.com/theos/theos.git "$HOME/theos"
           echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
 
+      - name: Enforce ByeTunes 2.5 upstream downloader parity
+        run: |
+          set -euxo pipefail
+          UPSTREAM_SHA=c66b1923a537c957d3b90620824ff3eb19593b5d
+          git clone -q https://github.com/EduAlexxis/ByeTunes.git /tmp/byetunes-gold
+          git -C /tmp/byetunes-gold checkout -q "$UPSTREAM_SHA"
+          # Downloader-critical code must be exact upstream 2.5. Filza embedding/pairing
+          # adaptations are deliberately outside this allowlist.
+          for f in \
+            MusicManager/DownloadView.swift \
+            MusicManager/Config.swift \
+            MusicManager/BackgroundAudioDownloadManager.swift \
+            MusicManager/MetadataBackgroundURLSession.swift; do
+            cmp -s "/tmp/byetunes-gold/$f" "ByeTunes/$f" || {
+              echo "::error::ByeTunes parity failure: $f differs from upstream $UPSTREAM_SHA"
+              diff -u "/tmp/byetunes-gold/$f" "ByeTunes/$f" || true
+              exit 1
+            }
+          done
+          echo "Downloader-critical ByeTunes sources exactly match upstream $UPSTREAM_SHA"
+
       - name: Build idevice dependency
         run: |
           set -euxo pipefail
