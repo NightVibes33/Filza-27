@@ -58,19 +58,99 @@ jobs:
           test -s Vendor/wolfssh/include/wolfssh/wolfsftp.h
           test -s Vendor/wolfssh/include/wolfssl/wolfcrypt/ecc.h
 
-      - name: Build existing Filza integration
+      - name: Build Filza integration dylib
         run: |
           set -euxo pipefail
           export THEOS="$HOME/theos"
           export PATH="$(brew --prefix make)/libexec/gnubin:$PATH"
-          gmake clean package FINALPACKAGE=1
+          gmake clean
+          gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:17.0
+          test -s .theos/obj/FilzaApplySandboxExt.dylib
+          test "$(lipo -archs .theos/obj/FilzaApplySandboxExt.dylib)" = "arm64"
 
-      - name: Upload build products
-        if: success()
+      - name: Generate runtime resources
+        run: |
+          set -euxo pipefail
+          bash scripts/generate-appintents-metadata.sh .theos/byetunes-appintents
+          bash scripts/stage-byetunes-resources.sh .theos/byetunes-resources
+          test -s .theos/byetunes-resources/AppIconImage.png
+          test -s .theos/byetunes-resources/Config.plist
+          test -s ThirdParty/mond-current/Resources/MondEmbedded.bundle/Info.plist
+          test -s ThirdParty/3105/Resources/Filza3105.bundle/UpstreamAppInfo.plist
+
+      - name: Download verified base Filza IPA
+        run: |
+          set -euxo pipefail
+          curl -fL --retry 3 --retry-delay 2 "https://github.com/0xjohnnydev/FilzaSlop/releases/download/v1.0.2/FilzaSlop-v1.0.2-unsigned.ipa" -o .theos/FilzaSlop-base-unsigned.ipa
+          echo "b11ce30a2db6f6bc77773ed30bdb855d7c847830891b14d21230f2d893d5f223  .theos/FilzaSlop-base-unsigned.ipa" | shasum -a 256 -c -
+
+      - name: Package ByeTunes 2.5 unsigned IPA
+        run: |
+          set -euxo pipefail
+          STAGE="$(mktemp -d /tmp/filza-byetunes25-ipa.XXXXXX)"
+          trap 'rm -rf "$STAGE"' EXIT
+          unzip -q .theos/FilzaSlop-base-unsigned.ipa -d "$STAGE"
+          APP="$(find "$STAGE/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          test -n "$APP"
+          test "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Info.plist")" = "com.apple.mobile.MobileHouseArrest"
+          EXECUTABLE="$(plutil -extract CFBundleExecutable raw -o - "$APP/Info.plist")"
+          test -s "$APP/$EXECUTABLE"
+
+          mkdir -p "$APP/Frameworks"
+          cp .theos/obj/FilzaApplySandboxExt.dylib "$APP/Frameworks/FilzaApplySandboxExt.dylib"
+          rm -f "$APP/Frameworks/FilzaMondModern.dylib"
+          codesign --remove-signature "$APP/Frameworks/FilzaApplySandboxExt.dylib" >/dev/null 2>&1 || true
+
+          cp .theos/byetunes-resources/AppIconImage.png "$APP/AppIconImage.png"
+          cp .theos/byetunes-resources/ByeTunes-Info.plist "$APP/ByeTunes-Info.plist"
+          cp .theos/byetunes-resources/Config.plist "$APP/Config.plist"
+          for resource in meriyah.umd.js astring.umd.js yt_ejs_helper.js; do
+            test -s ".theos/byetunes-resources/$resource"
+            cp ".theos/byetunes-resources/$resource" "$APP/$resource"
+          done
+          rm -rf "$APP/MondEmbedded.bundle" "$APP/Filza3105.bundle"
+          cp -R ThirdParty/mond-current/Resources/MondEmbedded.bundle "$APP/MondEmbedded.bundle"
+          cp -R ThirdParty/3105/Resources/Filza3105.bundle "$APP/Filza3105.bundle"
+          if test -d .theos/byetunes-appintents/Metadata.appintents; then
+            rm -rf "$APP/Metadata.appintents"
+            cp -R .theos/byetunes-appintents/Metadata.appintents "$APP/Metadata.appintents"
+          fi
+
+          plutil -replace MinimumOSVersion -string "17.0" "$APP/Info.plist"
+          plutil -replace CFBundleVersion -string "$GITHUB_RUN_NUMBER" "$APP/Info.plist"
+          plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
+          plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
+          plutil -replace NSSupportsLiveActivities -bool YES "$APP/Info.plist"
+          plutil -replace NSSupportsLiveActivitiesFrequentUpdates -bool YES "$APP/Info.plist"
+          plutil -remove UIBackgroundModes "$APP/Info.plist" 2>/dev/null || true
+          plutil -insert UIBackgroundModes -json '["audio"]' "$APP/Info.plist"
+          plutil -replace NSLocalNetworkUsageDescription -string "Filza 27 uses your local network when you enable its WebDAV or SSH/SFTP server." "$APP/Info.plist"
+          plutil -replace NSBonjourServices -json '["_http._tcp","_ssh._tcp"]' "$APP/Info.plist"
+          bash scripts/merge-3105-app-metadata.sh "$APP/Info.plist"
+          plutil -remove CFBundleURLTypes "$APP/Info.plist" 2>/dev/null || true
+
+          test -s "$APP/Frameworks/FilzaApplySandboxExt.dylib"
+          test -s "$APP/MondEmbedded.bundle/Info.plist"
+          test -s "$APP/Filza3105.bundle/UpstreamAppInfo.plist"
+          test -s "$APP/Config.plist"
+          otool -L "$APP/$EXECUTABLE" | grep -F 'FilzaApplySandboxExt.dylib'
+
+          mkdir -p "$GITHUB_WORKSPACE/ipa-output"
+          SHORT_SHA="$(git rev-parse --short=7 HEAD)"
+          OUTPUT="$GITHUB_WORKSPACE/ipa-output/Filza-27-ByeTunes-2.5-$SHORT_SHA-unsigned.ipa"
+          (cd "$STAGE" && zip -qry "$OUTPUT" Payload)
+          test -s "$OUTPUT"
+          unzip -tq "$OUTPUT"
+          unzip -l "$OUTPUT" | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
+          unzip -l "$OUTPUT" | grep -F 'Filza3105.bundle/UpstreamAppInfo.plist'
+          shasum -a 256 "$OUTPUT" | tee "$GITHUB_WORKSPACE/ipa-output/SHA256.txt"
+
+      - name: Upload IPA only
         uses: actions/upload-artifact@v4
         with:
-          name: Filza-27-ByeTunes-2.5-temp
-          path: packages/
+          name: Filza-27-ByeTunes-2.5-unsigned-IPA
+          path: ipa-output/
           if-no-files-found: error
           include-hidden-files: false
           compression-level: 0
+          retention-days: 14
