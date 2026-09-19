@@ -231,8 +231,16 @@ pub unsafe extern "C" fn idevice_stream_rsd_checkin(
     stream: *mut ReadWriteOpaque,
 ) -> *mut IdeviceFfiError {
     if stream.is_null() { return ffi_err("invalid stream"); }
-    let Some(inner) = unsafe { &mut *stream }.inner.as_mut() else { return ffi_err("stream already consumed"); };
-    match run_sync_local(async {\n        let mut dev = idevice::Idevice::new(inner.take().expect("checked"), "Filza-Airlift");\n        let result = dev.rsd_checkin().await;\n        *inner = Some(dev.socket);\n        result\n    }) {
+    let holder = unsafe { &mut *stream };
+    let Some(socket) = holder.inner.take() else { return ffi_err("stream already consumed"); };
+    let (result, socket) = run_sync_local(async {
+        let mut dev = idevice::Idevice::new(socket, "Filza-Airlift");
+        let result = dev.rsd_checkin().await;
+        let socket = dev.get_socket();
+        (result, socket)
+    });
+    holder.inner = socket;
+    match result {
         Ok(()) => std::ptr::null_mut(), Err(e) => ffi_err(e),
     }
 }
