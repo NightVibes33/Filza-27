@@ -182,3 +182,58 @@ int32_t al_filza_fs_read(const char *pairing_path,
                          char **out_error);
 void al_filza_fs_bytes_free(uint8_t *data, size_t len);
 EOF
+
+
+# FILZA_AIRCARD_STREAM_COMPAT: keep the legacy Filza Airlift probes on AirCard's single idevice runtime.
+cat >> "$DEST/rust-core/vendor/idevice-ffi/src/lib.rs" <<'EOF'
+
+// Filza compatibility ABI for the older on-device Airlift probes. These wrappers
+// operate on this crate's ReadWriteOpaque so no second idevice staticlib is needed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn idevice_stream_write_all(
+    stream: *mut ReadWriteOpaque, data: *const u8, len: usize,
+) -> *mut IdeviceFfiError {
+    if stream.is_null() || (data.is_null() && len != 0) { return ffi_err("invalid stream/write buffer"); }
+    let Some(inner) = unsafe { &mut *stream }.inner.as_mut() else { return ffi_err("stream already consumed"); };
+    let bytes = if len == 0 { &[][..] } else { unsafe { std::slice::from_raw_parts(data, len) } };
+    match run_sync_local(async { tokio::io::AsyncWriteExt::write_all(inner.as_mut(), bytes).await }) {
+        Ok(()) => std::ptr::null_mut(), Err(e) => ffi_err(e),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn idevice_stream_read_exact(
+    stream: *mut ReadWriteOpaque, data: *mut u8, len: usize,
+) -> *mut IdeviceFfiError {
+    if stream.is_null() || (data.is_null() && len != 0) { return ffi_err("invalid stream/read buffer"); }
+    let Some(inner) = unsafe { &mut *stream }.inner.as_mut() else { return ffi_err("stream already consumed"); };
+    let bytes = if len == 0 { &mut [][..] } else { unsafe { std::slice::from_raw_parts_mut(data, len) } };
+    match run_sync_local(async { tokio::io::AsyncReadExt::read_exact(inner.as_mut(), bytes).await }) {
+        Ok(_) => std::ptr::null_mut(), Err(e) => ffi_err(e),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn idevice_stream_read_bounded(
+    stream: *mut ReadWriteOpaque, data: *mut u8, out_len: *mut usize, cap: usize,
+) -> *mut IdeviceFfiError {
+    if stream.is_null() || out_len.is_null() || (data.is_null() && cap != 0) { return ffi_err("invalid bounded read buffer"); }
+    unsafe { *out_len = 0; }
+    let Some(inner) = unsafe { &mut *stream }.inner.as_mut() else { return ffi_err("stream already consumed"); };
+    let bytes = if cap == 0 { &mut [][..] } else { unsafe { std::slice::from_raw_parts_mut(data, cap) } };
+    match run_sync_local(async { tokio::io::AsyncReadExt::read(inner.as_mut(), bytes).await }) {
+        Ok(n) => { unsafe { *out_len = n; } std::ptr::null_mut() }, Err(e) => ffi_err(e),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn idevice_stream_rsd_checkin(
+    stream: *mut ReadWriteOpaque,
+) -> *mut IdeviceFfiError {
+    if stream.is_null() { return ffi_err("invalid stream"); }
+    let Some(inner) = unsafe { &mut *stream }.inner.as_mut() else { return ffi_err("stream already consumed"); };
+    match run_sync_local(async { idevice::rsd::RsdHandshake::rsd_checkin(inner.as_mut()).await }) {
+        Ok(()) => std::ptr::null_mut(), Err(e) => ffi_err(e),
+    }
+}
+EOF
