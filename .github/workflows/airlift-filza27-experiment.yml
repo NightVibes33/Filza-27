@@ -220,6 +220,27 @@ jobs:
           grep -aFq 'direct normal-path AFC fallback installed' .theos/obj/FilzaApplySandboxExt.dylib
           grep -aFq 'al_filza_fs_list' .theos/obj/FilzaApplySandboxExt.dylib
 
+      - name: Package Filza AirCard IPA
+        run: |
+          set -euxo pipefail
+          export PATH="/opt/procursus/bin:$PATH"
+          gmake package FINALPACKAGE=1 TARGET=iphone:clang:latest:17.0
+          IPA="$(find packages -type f -name '*.ipa' -print | sort | tail -n 1)"
+          test -n "$IPA"
+          test -s "$IPA"
+          mkdir -p artifacts
+          cp "$IPA" artifacts/Filza-27-AirCard-Airlift-unsigned.ipa
+          unzip -t artifacts/Filza-27-AirCard-Airlift-unsigned.ipa
+          unzip -l artifacts/Filza-27-AirCard-Airlift-unsigned.ipa | grep -F 'Payload/'
+
+      - name: Upload Filza AirCard IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Filza-27-AirCard-Airlift-unsigned-${{ github.sha }}
+          path: artifacts/Filza-27-AirCard-Airlift-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Upload Filza experiment build log
         if: always()
         uses: actions/upload-artifact@v4
