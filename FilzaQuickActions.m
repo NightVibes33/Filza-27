@@ -16,8 +16,8 @@ static NSString *const FQMusicType = @"com.nightvibes33.filzaslop.music-library"
 static NSString *const FQGestaltType = @"com.nightvibes33.filzaslop.gestalt-manager";
 static NSString *const FQPatchesType = @"com.nightvibes33.filzaslop.patches";
 static NSString *const FQAirCardType = @"com.nightvibes33.filzaslop.aircard";
-static NSString *const FQAirCardType = @"com.nightvibes33.filzaslop.aircard";
-static NSString *const FQAirCardType = @"com.nightvibes33.filzaslop.aircard";
+
+
 
 static IMP gFQPreviousShortcutHandler = NULL;
 static IMP gFQPreviousSetShortcutItems = NULL;
