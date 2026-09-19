@@ -1,4 +1,4 @@
-name: Build Filza 27 + AirCard unsigned IPA
+name: Verify ByeTunes All Sources + YouTube + SSH IPA + AirCard
 
 on:
   push:
@@ -143,7 +143,7 @@ jobs:
           curl -fL --retry 10 --retry-all-errors --retry-delay 3 --connect-timeout 30 "$BASE_IPA_URL" -o .theos/FilzaSlop-base-unsigned.ipa
           echo "$BASE_IPA_SHA256  .theos/FilzaSlop-base-unsigned.ipa" | shasum -a 256 -c -
 
-      - name: Assemble complete unsigned IPA without rebuilding
+      - name: Package modern unsigned IPA
         shell: bash
         run: |
           set -euxo pipefail
@@ -152,6 +152,7 @@ jobs:
           unzip -q .theos/FilzaSlop-base-unsigned.ipa -d "$STAGE"
           APP="$(find "$STAGE/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
           test -n "$APP"
+          EXECUTABLE="$(plutil -extract CFBundleExecutable raw -o - "$APP/Info.plist")"
           mkdir -p "$APP/Frameworks"
           cp .theos/obj/FilzaApplySandboxExt.dylib "$APP/Frameworks/FilzaApplySandboxExt.dylib"
           codesign --remove-signature "$APP/Frameworks/FilzaApplySandboxExt.dylib" >/dev/null 2>&1 || true
@@ -184,8 +185,7 @@ jobs:
           test -s "$APP/Filza3105.bundle/UpstreamAppInfo.plist"
           test -s "$APP/Config.plist"
 
-          mkdir -p ipa-output
-          OUTPUT="$GITHUB_WORKSPACE/ipa-output/Filza-27-AirCard-${GITHUB_SHA::7}-unsigned.ipa"
+          OUTPUT="$GITHUB_WORKSPACE/.theos/Filza-27-modern-${GITHUB_SHA::7}-unsigned.ipa"
           (cd "$STAGE" && zip -qry "$OUTPUT" Payload)
           test -s "$OUTPUT"
           unzip -tq "$OUTPUT"
@@ -193,17 +193,19 @@ jobs:
           unzip -l "$OUTPUT" | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
           unzip -l "$OUTPUT" | grep -F 'MondEmbedded.bundle/Info.plist'
           unzip -l "$OUTPUT" | grep -F 'Filza3105.bundle/UpstreamAppInfo.plist'
-          shasum -a 256 "$OUTPUT" | tee ipa-output/SHA256.txt
+          shasum -a 256 "$OUTPUT" | tee .theos/IPA-SHA256.txt
 
-      - name: Upload complete unsigned IPA
+      - name: Upload modern unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Filza-27-AirCard-complete-unsigned-arm64
-          path: ipa-output/
+          name: Filza-27-modern-unsigned-arm64
+          path: |
+            .theos/Filza-27-modern-*-unsigned.ipa
+            .theos/IPA-SHA256.txt
+            .theos/obj/FilzaApplySandboxExt.dylib
           if-no-files-found: error
-          include-hidden-files: false
-          compression-level: 0
-          retention-days: 90
+          include-hidden-files: true
+          retention-days: 14
 
       - name: Upload build log
         if: always()
