@@ -138,10 +138,6 @@ FilzaApplySandboxExt_INSTALL_TARGET_PROCESSES = Filza
 before-FilzaApplySandboxExt-all::
 	@bash scripts/stage-aircard.sh
 	@bash scripts/build-aircard-ffi.sh "$(AIRCARD_ROOT)" "$(AIRCARD_FFI)"
-	@bash scripts/stage-aircard.sh
-	@bash scripts/build-aircard-ffi.sh "$(AIRCARD_ROOT)" "$(AIRCARD_FFI)"
-	@bash scripts/stage-aircard.sh
-	@bash scripts/build-aircard-ffi.sh "$(AIRCARD_ROOT)" "$(AIRCARD_FFI)"
 	@bash scripts/stage-mond-current.sh
 	@bash scripts/stage-mond-22-overlay.sh
 	@bash scripts/stage-3105-v1.sh
@@ -154,12 +150,9 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/patch-byetunes-download-provider-parity.sh
 	@bash scripts/patch-byetunes-device-library-save.sh
 	@test -s "$(AIRCARD_FFI)/lib/libairlift_ffi.a" || (echo "Missing AirCard AirliftFFI static library" >&2; exit 1)
-	@test -f "$(AIRCARD_IOS)/ContentView.swift" || (echo "Missing pinned full AirCard UI" >&2; exit 1)
+	@test -f "$(AIRCARD_IOS)/AirCardContentView.swift" || (echo "Missing staged pinned full AirCard UI" >&2; exit 1)
 	@test -f "FilzaAirCardHost.swift" || (echo "Missing AirCard embedded host" >&2; exit 1)
 	@test -f "FilzaAirCardBridge.m" || (echo "Missing AirCard presentation bridge" >&2; exit 1)
-	@test -s "$(AIRCARD_FFI)/lib/libairlift_ffi.a" || (echo "Missing AirCard AirliftFFI static library" >&2; exit 1)
-	@test -f "$(AIRCARD_IOS)/ContentView.swift" || (echo "Missing pinned full AirCard UI" >&2; exit 1)
-	@test -f "FilzaAirCardHost.swift" || (echo "Missing AirCard embedded host" >&2; exit 1)
 	@test -s "$(IDEVICE_STATIC)" || (echo "Missing $(IDEVICE_STATIC). Run: bash scripts/build-idevice.sh" >&2; exit 1)
 	@test -d "$(BYETUNES_ROOT)" || (echo "Missing ByeTunes submodule. Run: git submodule update --init --recursive" >&2; exit 1)
 	@test -f "$(BYETUNES_ROOT)/ContentView.swift" || (echo "Incomplete ByeTunes submodule" >&2; exit 1)
