@@ -19,7 +19,7 @@ private enum AirCardEmbeddedRuntime {
 private func ALGetGrappaToken(_ a: UInt32,_ b: UInt32,_ c: UInt32,_ d: UnsafeMutablePointer<UInt8>?,_ e: Int,_ f: UnsafeMutablePointer<Int>?,_ g: UnsafeMutablePointer<CChar>?,_ h: Int)->Int32
 private struct AirCardEmbeddedRoot: View {
     @StateObject private var vm = AppViewModel()
-    var body: some View { ContentView().environmentObject(vm).task { _ = await LocalNetworkAuthorization().request(timeout: 2.5) } }
+    var body: some View { AirCardContentView().environmentObject(vm).task { _ = await LocalNetworkAuthorization().request(timeout: 2.5) } }
 }
 @MainActor @objc(AirCardEmbeddedHostFactory)
 public final class AirCardEmbeddedHostFactory: NSObject {
