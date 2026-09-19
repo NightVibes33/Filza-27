@@ -14,6 +14,7 @@ concurrency:
 
 env:
   AIRLIFT_COMMIT: bcd220412fd71b66c2a1459f1a49e255a08aea01
+  AIRCARD_COMMIT: 5026bf323df4f81a1b45cd107a68da164a7fd299
 
 jobs:
   airlift-host:
@@ -125,6 +126,8 @@ jobs:
           grep -F 'com.apple.atc.xpc' AirliftOnDeviceProbe.inc
           grep -F 'com.apple.atc.xpc.service' AirliftOnDeviceProbe.inc
           grep -F 'ATServiceProxy' AirliftOnDeviceProbe.inc
+          grep -F "$AIRCARD_COMMIT" scripts/stage-aircard.sh
+          grep -F 'FilzaAirCardPresentFromController' FilzaQuickActions.m
           test "$(tr -d '\n' < ThirdParty/Airlift/PINNED_REVISION)" = "$AIRLIFT_COMMIT"
 
       - name: Install Procursus build tools
@@ -195,6 +198,8 @@ jobs:
           test -s Vendor/ssh/lib/libssh.a
           test -s Vendor/wolfssh/lib/libwolfssh.a
           test -s Vendor/wolfssh/lib/libwolfssl.a
+          test -f scripts/stage-aircard.sh
+          test -f scripts/build-aircard-ffi.sh
           mkdir -p .theos
           gmake clean >/dev/null 2>&1 || true
           set -o pipefail
@@ -202,6 +207,8 @@ jobs:
           test -s .theos/obj/FilzaApplySandboxExt.dylib
           grep -aFq 'com.apple.atc.xpc.service' .theos/obj/FilzaApplySandboxExt.dylib
           grep -aFq 'ATServiceProxy' .theos/obj/FilzaApplySandboxExt.dylib
+          grep -aFq 'AirCardEmbeddedHostFactory' .theos/obj/FilzaApplySandboxExt.dylib
+          grep -aFq 'com.nightvibes33.filzaslop.aircard' .theos/obj/FilzaApplySandboxExt.dylib
 
       - name: Upload Filza experiment build log
         if: always()
