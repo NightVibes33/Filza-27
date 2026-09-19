@@ -12,6 +12,9 @@ printf '%s\n' "$PIN" > "$DEST/PINNED_REVISION"
 
 # Swift emits one module for the Filza tweak; avoid basename collision with ByeTunes ContentView.swift.
 mv "$DEST/ios-app/ContentView.swift" "$DEST/ios-app/AirCardContentView.swift"
+# Filza already embeds ByeTunes ContentView in the same Swift module. Rename the AirCard type too.
+python3 -c 'from pathlib import Path; p=Path("'"$DEST"'/ios-app/AirCardContentView.swift"); s=p.read_text(); p.write_text(s.replace("struct ContentView: View", "struct AirCardContentView: View"))'
+
 
 
 # FILZA_AIRCARD_FS_FFI: expose AirCard's existing paired AFC transport to Filza.
