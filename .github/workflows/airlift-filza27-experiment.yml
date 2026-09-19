@@ -128,6 +128,8 @@ jobs:
           grep -F 'ATServiceProxy' AirliftOnDeviceProbe.inc
           grep -F "$AIRCARD_COMMIT" scripts/stage-aircard.sh
           grep -F 'FilzaAirCardPresentFromController' FilzaQuickActions.m
+          grep -F 'al_filza_fs_list' scripts/stage-aircard.sh
+          grep -F 'FilzaAirCardFSProvider.m' Makefile
           test "$(tr -d '\n' < ThirdParty/Airlift/PINNED_REVISION)" = "$AIRLIFT_COMMIT"
 
       - name: Install Procursus build tools
@@ -209,6 +211,8 @@ jobs:
           grep -aFq 'ATServiceProxy' .theos/obj/FilzaApplySandboxExt.dylib
           grep -aFq 'AirCardEmbeddedHostFactory' .theos/obj/FilzaApplySandboxExt.dylib
           grep -aFq 'com.nightvibes33.filzaslop.aircard' .theos/obj/FilzaApplySandboxExt.dylib
+          grep -aFq 'AirCard Reach Manifest.json' .theos/obj/FilzaApplySandboxExt.dylib
+          grep -aFq 'al_filza_fs_list' .theos/obj/FilzaApplySandboxExt.dylib
 
       - name: Upload Filza experiment build log
         if: always()
