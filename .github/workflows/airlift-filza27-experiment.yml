@@ -2,7 +2,7 @@ name: Verify Filza Airlift experiment
 
 on:
   push:
-    branches: [ experiment/airlift-filza27, experiment/airlift-aircard-pairing ]
+    branches: [ experiment/airlift-filza27, experiment/airlift-aircard-pairing, experiment/aircard-main-sync ]
   workflow_dispatch:
 
 permissions:
