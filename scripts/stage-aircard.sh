@@ -232,7 +232,7 @@ pub unsafe extern "C" fn idevice_stream_rsd_checkin(
 ) -> *mut IdeviceFfiError {
     if stream.is_null() { return ffi_err("invalid stream"); }
     let Some(inner) = unsafe { &mut *stream }.inner.as_mut() else { return ffi_err("stream already consumed"); };
-    match run_sync_local(async { idevice::rsd::RsdHandshake::rsd_checkin(inner.as_mut()).await }) {
+    match run_sync_local(async {\n        let mut dev = idevice::Idevice::new(inner.take().expect("checked"), "Filza-Airlift");\n        let result = dev.rsd_checkin().await;\n        *inner = Some(dev.socket);\n        result\n    }) {
         Ok(()) => std::ptr::null_mut(), Err(e) => ffi_err(e),
     }
 }
