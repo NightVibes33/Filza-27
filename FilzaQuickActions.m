@@ -7,11 +7,13 @@
 #import "Filza3105Bridge.h"
 #import "FilzaDiagnostics.h"
 #import "FilzaMondBridge.h"
+#import "FilzaAirCardBridge.h"
 
 static NSString *const FQAppsType = @"com.nightvibes33.filzaslop.apps-manager";
 static NSString *const FQMusicType = @"com.nightvibes33.filzaslop.music-library";
 static NSString *const FQGestaltType = @"com.nightvibes33.filzaslop.gestalt-manager";
 static NSString *const FQPatchesType = @"com.nightvibes33.filzaslop.patches";
+static NSString *const FQAirCardType = @"com.nightvibes33.filzaslop.aircard";
 
 static IMP gFQPreviousShortcutHandler = NULL;
 static IMP gFQPreviousSetShortcutItems = NULL;
@@ -24,6 +26,7 @@ static NSString *FQCanonicalShortcutType(NSString *type)
     if ([type isEqualToString:@"music-library"]) return FQMusicType;
     if ([type isEqualToString:@"gestalt-manager"]) return FQGestaltType;
     if ([type isEqualToString:@"patches"]) return FQPatchesType;
+    if ([type isEqualToString:@"aircard"]) return FQAirCardType;
     return type ?: @"";
 }
 
@@ -33,7 +36,8 @@ static BOOL FQIsStaticShortcutType(NSString *type)
     return [canonical isEqualToString:FQAppsType] ||
            [canonical isEqualToString:FQMusicType] ||
            [canonical isEqualToString:FQGestaltType] ||
-           [canonical isEqualToString:FQPatchesType];
+           [canonical isEqualToString:FQPatchesType] ||
+           [canonical isEqualToString:FQAirCardType];
 }
 
 static UIViewController *FQActiveController(void)
@@ -134,6 +138,10 @@ static void FQOpenWithRetry(NSString *type, NSUInteger attempts)
             opened = YES;
         }
     }
+    else if ([type isEqualToString:FQAirCardType]) {
+        opened = FilzaAirCardPresentFromController(FQActiveController());
+        if (opened) FilzaDiagnosticsAppend(@"QuickAction", @"opened complete AirCard");
+    }
     else if ([type isEqualToString:FQPatchesType]) {
         opened = Filza3105PresentPatchesFromController(FQActiveController());
         if (opened)
@@ -191,7 +199,7 @@ static void FQInstallShortcutHandler(void)
 
     gFQShortcutHookInstalled = YES;
     FilzaDiagnosticsAppend(@"QuickAction",
-        [NSString stringWithFormat:@"four-action delegate hook installed on %@", NSStringFromClass(cls)]);
+        [NSString stringWithFormat:@"five-action delegate hook installed on %@", NSStringFromClass(cls)]);
 }
 
 static void FQSetShortcutItems(id self, SEL _cmd, NSArray<UIApplicationShortcutItem *> *items)
