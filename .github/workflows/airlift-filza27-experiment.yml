@@ -1,125 +1,46 @@
-name: Verify Filza Airlift experiment
+name: Build Filza 27 + AirCard unsigned IPA
 
 on:
   push:
-    branches: [ experiment/airlift-filza27, experiment/airlift-aircard-pairing, experiment/aircard-main-sync ]
+    branches: [ experiment/aircard-main-sync ]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: filza-airlift-${{ github.ref }}
+  group: filza-aircard-ipa-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  AIRLIFT_COMMIT: bcd220412fd71b66c2a1459f1a49e255a08aea01
   AIRCARD_COMMIT: 5026bf323df4f81a1b45cd107a68da164a7fd299
+  THEOS_COMMIT: 5280bd038207e14f8bd76f5417aa2fe641c03228
+  IDEVICE_COMMIT: 37ee77cf713f483551f3cf33ea8b2087a40058ca
+  LIBSSH_COMMIT: 07430deb9b97b751ec5ea5a7fc307f40bf042e0a
+  MBEDTLS_COMMIT: 068ff080b369adfac81509f9b57b2afabaf82dc5
+  WOLFSSH_COMMIT: e7c8dc2c2c54e5f0f2986be592e2243725a4dd33
+  WOLFSSL_COMMIT: 9ab8a4b19debdade06b10d30cf70167de8f9b915
+  BASE_IPA_SHA256: b11ce30a2db6f6bc77773ed30bdb855d7c847830891b14d21230f2d893d5f223
+  BASE_IPA_URL: https://github.com/0xjohnnydev/FilzaSlop/releases/download/v1.0.2/FilzaSlop-v1.0.2-unsigned.ipa
 
 jobs:
-  airlift-host:
-    runs-on: macos-26-intel
-    steps:
-      - name: Checkout Filza experiment
-        uses: actions/checkout@v4
-
-      - name: Verify pinned Airlift revision
-        run: |
-          set -euxo pipefail
-          test "$(tr -d '\n' < ThirdParty/Airlift/PINNED_REVISION)" = "$AIRLIFT_COMMIT"
-
-      - name: Build exact upstream Airlift host helpers
-        run: |
-          set -euxo pipefail
-          git clone --filter=blob:none https://github.com/0xjohnnydev/airlift.git "$RUNNER_TEMP/airlift"
-          git -C "$RUNNER_TEMP/airlift" checkout --detach "$AIRLIFT_COMMIT"
-          test "$(git -C "$RUNNER_TEMP/airlift" rev-parse HEAD)" = "$AIRLIFT_COMMIT"
-          make -C "$RUNNER_TEMP/airlift"
-          test -x "$RUNNER_TEMP/airlift/build/device_helper"
-          test -x "$RUNNER_TEMP/airlift/build/airtraffic_host"
-          otool -L "$RUNNER_TEMP/airlift/build/device_helper"
-          otool -L "$RUNNER_TEMP/airlift/build/airtraffic_host"
-          mkdir -p airlift-host-artifact
-          cp "$RUNNER_TEMP/airlift/build/device_helper" airlift-host-artifact/
-          cp "$RUNNER_TEMP/airlift/build/airtraffic_host" airlift-host-artifact/
-          cp "$RUNNER_TEMP/airlift/airlift.py" airlift-host-artifact/
-          cp ThirdParty/Airlift/PINNED_REVISION airlift-host-artifact/
-          shasum -a 256 airlift-host-artifact/* > airlift-host-artifact/SHA256.txt
-
-      - name: Inspect Apple AirTrafficHost wire helpers
-        run: |
-          set -euxo pipefail
-          FRAMEWORK=/System/Library/PrivateFrameworks/AirTrafficHost.framework/AirTrafficHost
-          test -f "$FRAMEWORK"
-          mkdir -p airlift-host-artifact/reverse
-          nm -nm "$FRAMEWORK" > airlift-host-artifact/reverse/nm.txt || true
-          nm -gU "$FRAMEWORK" > airlift-host-artifact/reverse/exports.txt || true
-          otool -tvV "$FRAMEWORK" > airlift-host-artifact/reverse/disasm.txt
-          strings -a "$FRAMEWORK" > airlift-host-artifact/reverse/strings.txt
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          p = Path('airlift-host-artifact/reverse/disasm.txt')
-          lines = p.read_text(errors='replace').splitlines()
-          targets = [
-              '_ATHostMessageLinkSendMessage:',
-              '_ATCFMessageCreate:',
-              '_ATCFMessageVerify:',
-              '_ATHostConnectionSendHostInfo:',
-              '_ATHostConnectionSendSyncRequest:',
-              '_ATHostConnectionSendMetadataSyncFinished:',
-              '_ATHostConnectionSendAssetCompleted:',
-              '_ATHostConnectionReadMessage:',
-          ]
-          out = []
-          for target in targets:
-              out.append(f'===== {target} =====')
-              hit = next((i for i, line in enumerate(lines) if target in line), None)
-              if hit is None:
-                  out.append('NOT FOUND')
-                  continue
-              for line in lines[hit:hit+260]:
-                  if line != lines[hit] and re.match(r'^[0-9a-fA-F]+\s+_[A-Za-z0-9_$]+:$', line.strip()):
-                      break
-                  out.append(line)
-          Path('airlift-host-artifact/reverse/targeted-disasm.txt').write_text('\n'.join(out) + '\n')
-          print('\n'.join(out))
-          PY
-          echo '===== TARGET EXPORTS ====='
-          grep -E 'ATHostMessageLinkSendMessage|ATCFMessage(Create|Verify)|ATHostConnection(SendHostInfo|SendSyncRequest|SendMetadataSyncFinished|SendAssetCompleted|ReadMessage)' airlift-host-artifact/reverse/exports.txt || true
-
-      - name: Upload pinned host build
-        uses: actions/upload-artifact@v4
-        with:
-          name: Airlift-host-${{ github.sha }}
-          path: airlift-host-artifact/
-          if-no-files-found: error
-          compression-level: 0
-
-  filza-build:
+  arm64-ipa:
     runs-on: macos-26-intel
     env:
       THEOS: ${{ github.workspace }}/theos
       DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
-      THEOS_COMMIT: 5280bd038207e14f8bd76f5417aa2fe641c03228
-      IDEVICE_COMMIT: 37ee77cf713f483551f3cf33ea8b2087a40058ca
-      LIBSSH_COMMIT: 07430deb9b97b751ec5ea5a7fc307f40bf042e0a
-      MBEDTLS_COMMIT: 068ff080b369adfac81509f9b57b2afabaf82dc5
-      WOLFSSH_COMMIT: e7c8dc2c2c54e5f0f2986be592e2243725a4dd33
-      WOLFSSL_COMMIT: 9ab8a4b19debdade06b10d30cf70167de8f9b915
     steps:
       - name: Xcode 26.2 setup
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '26.2'
 
-      - name: Checkout complete source tree
+      - name: Checkout complete combined source tree
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Verify experiment wiring
+      - name: Verify main + AirCard integration wiring
         run: |
           set -euxo pipefail
           grep -F "$AIRCARD_COMMIT" scripts/stage-aircard.sh
@@ -130,10 +51,6 @@ jobs:
           grep -F 'al_filza_fs_list' scripts/stage-aircard.sh
           grep -F 'al_filza_fs_read' scripts/stage-aircard.sh
           grep -F 'AirCard owns the Airlift/idevice runtime' RuntimeStability.m
-          ! grep -F '#import "AirliftOnDeviceProbe.inc"' RuntimeStability.m
-          ! grep -F '#import "AirliftLockdownTransportProbe.m"' RuntimeStability.m
-          ! grep -F '#import "AirliftRSDShimConnectProbe.m"' RuntimeStability.m
-          ! grep -F '#import "AirliftCanaryExploit.m"' RuntimeStability.m
           ! grep -F 'FILZA_AIRCARD_STREAM_COMPAT' scripts/stage-aircard.sh
 
       - name: Install Procursus build tools
@@ -166,9 +83,7 @@ jobs:
 
       - name: Build pinned idevice FFI
         if: steps.idevice-cache.outputs.cache-hit != 'true'
-        run: |
-          set -euxo pipefail
-          bash scripts/build-idevice.sh "$GITHUB_WORKSPACE/Vendor/idevice"
+        run: bash scripts/build-idevice.sh "$GITHUB_WORKSPACE/Vendor/idevice"
 
       - name: Restore pinned SSH stack cache
         id: ssh-cache
@@ -179,9 +94,7 @@ jobs:
 
       - name: Build pinned SSH stack
         if: steps.ssh-cache.outputs.cache-hit != 'true'
-        run: |
-          set -euxo pipefail
-          bash scripts/build-ssh-stack.sh "$GITHUB_WORKSPACE/Vendor/ssh"
+        run: bash scripts/build-ssh-stack.sh "$GITHUB_WORKSPACE/Vendor/ssh"
 
       - name: Restore pinned wolfSSH server cache
         id: wolfssh-cache
@@ -192,11 +105,10 @@ jobs:
 
       - name: Build pinned wolfSSH server stack
         if: steps.wolfssh-cache.outputs.cache-hit != 'true'
-        run: |
-          set -euxo pipefail
-          bash scripts/build-wolfssh-stack.sh "$GITHUB_WORKSPACE/Vendor/wolfssh"
+        run: bash scripts/build-wolfssh-stack.sh "$GITHUB_WORKSPACE/Vendor/wolfssh"
 
-      - name: Build Filza with Airlift on-device probe
+      - name: Build complete Filza + AirCard target once
+        shell: bash
         run: |
           set -euxo pipefail
           export PATH="/opt/procursus/bin:$PATH"
@@ -204,50 +116,100 @@ jobs:
           test -s Vendor/ssh/lib/libssh.a
           test -s Vendor/wolfssh/lib/libwolfssh.a
           test -s Vendor/wolfssh/lib/libwolfssl.a
-          test -f scripts/stage-aircard.sh
-          test -f scripts/build-aircard-ffi.sh
-          # Retry transient GitHub/codeload DNS failures from build-time staging downloads.
-          export CURL_RETRY_ARGS='--retry 10 --retry-all-errors --retry-delay 3 --connect-timeout 30'
           mkdir -p .theos
           gmake clean >/dev/null 2>&1 || true
           set -o pipefail
-          gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:17.0 2>&1 | tee .theos/airlift-build.log
-          test -s .theos/obj/FilzaApplySandboxExt.dylib
-          # Legacy ATServiceProxy probe strings are intentionally absent: pinned AirCard
-          # now owns the Airlift transport/runtime.
-          ! grep -aFq 'com.apple.atc.xpc.service' .theos/obj/FilzaApplySandboxExt.dylib
-          ! grep -aFq 'ATServiceProxy' .theos/obj/FilzaApplySandboxExt.dylib
-          grep -aFq 'AirCardEmbeddedHostFactory' .theos/obj/FilzaApplySandboxExt.dylib
-          grep -aFq 'com.nightvibes33.filzaslop.aircard' .theos/obj/FilzaApplySandboxExt.dylib
-          grep -aFq 'direct normal-path AFC fallback installed' .theos/obj/FilzaApplySandboxExt.dylib
-          grep -aFq 'al_filza_fs_list' .theos/obj/FilzaApplySandboxExt.dylib
+          gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:17.0 2>&1 | tee .theos/aircard-build.log
+          DYLIB=.theos/obj/FilzaApplySandboxExt.dylib
+          test -s "$DYLIB"
+          test "$(lipo -archs "$DYLIB")" = arm64
+          grep -aFq 'AirCardEmbeddedHostFactory' "$DYLIB"
+          grep -aFq 'com.nightvibes33.filzaslop.aircard' "$DYLIB"
+          grep -aFq 'direct normal-path AFC fallback installed' "$DYLIB"
+          grep -aFq 'al_filza_fs_list' "$DYLIB"
+          grep -aFq 'al_filza_fs_read' "$DYLIB"
 
-      - name: Package Filza AirCard IPA
+      - name: Generate runtime resources
+        shell: bash
         run: |
           set -euxo pipefail
-          export PATH="/opt/procursus/bin:$PATH"
-          gmake package FINALPACKAGE=1 TARGET=iphone:clang:latest:17.0
-          IPA="$(find packages -type f -name '*.ipa' -print | sort | tail -n 1)"
-          test -n "$IPA"
-          test -s "$IPA"
-          mkdir -p artifacts
-          cp "$IPA" artifacts/Filza-27-AirCard-Airlift-unsigned.ipa
-          unzip -t artifacts/Filza-27-AirCard-Airlift-unsigned.ipa
-          unzip -l artifacts/Filza-27-AirCard-Airlift-unsigned.ipa | grep -F 'Payload/'
+          bash scripts/generate-appintents-metadata.sh .theos/byetunes-appintents
+          bash scripts/stage-byetunes-resources.sh .theos/byetunes-resources
 
-      - name: Upload Filza AirCard IPA
+      - name: Download verified unsigned Filza base
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -fL --retry 10 --retry-all-errors --retry-delay 3 --connect-timeout 30 "$BASE_IPA_URL" -o .theos/FilzaSlop-base-unsigned.ipa
+          echo "$BASE_IPA_SHA256  .theos/FilzaSlop-base-unsigned.ipa" | shasum -a 256 -c -
+
+      - name: Assemble complete unsigned IPA without rebuilding
+        shell: bash
+        run: |
+          set -euxo pipefail
+          STAGE="$(mktemp -d /tmp/filza-aircard-ipa.XXXXXX)"
+          trap 'rm -rf "$STAGE"' EXIT
+          unzip -q .theos/FilzaSlop-base-unsigned.ipa -d "$STAGE"
+          APP="$(find "$STAGE/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          test -n "$APP"
+          mkdir -p "$APP/Frameworks"
+          cp .theos/obj/FilzaApplySandboxExt.dylib "$APP/Frameworks/FilzaApplySandboxExt.dylib"
+          codesign --remove-signature "$APP/Frameworks/FilzaApplySandboxExt.dylib" >/dev/null 2>&1 || true
+
+          cp .theos/byetunes-resources/AppIconImage.png "$APP/AppIconImage.png"
+          cp .theos/byetunes-resources/ByeTunes-Info.plist "$APP/ByeTunes-Info.plist"
+          cp .theos/byetunes-resources/Config.plist "$APP/Config.plist"
+          cp .theos/byetunes-resources/meriyah.umd.js "$APP/meriyah.umd.js"
+          cp .theos/byetunes-resources/astring.umd.js "$APP/astring.umd.js"
+          cp .theos/byetunes-resources/yt_ejs_helper.js "$APP/yt_ejs_helper.js"
+
+          rm -rf "$APP/MondEmbedded.bundle" "$APP/Filza3105.bundle"
+          cp -R ThirdParty/mond-current/Resources/MondEmbedded.bundle "$APP/MondEmbedded.bundle"
+          cp -R ThirdParty/3105/Resources/Filza3105.bundle "$APP/Filza3105.bundle"
+
+          plutil -replace MinimumOSVersion -string "17.0" "$APP/Info.plist"
+          plutil -replace CFBundleVersion -string "${GITHUB_RUN_NUMBER}" "$APP/Info.plist"
+          plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
+          plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
+          plutil -replace NSLocalNetworkUsageDescription -string "Filza 27 uses your local network for AirCard pairing, WebDAV, and SSH/SFTP services." "$APP/Info.plist"
+          plutil -replace NSBonjourServices -json '["_http._tcp","_ssh._tcp"]' "$APP/Info.plist"
+          bash scripts/merge-3105-app-metadata.sh "$APP/Info.plist"
+
+          DYLIB="$APP/Frameworks/FilzaApplySandboxExt.dylib"
+          test -s "$DYLIB"
+          grep -aFq 'AirCardEmbeddedHostFactory' "$DYLIB"
+          grep -aFq 'com.nightvibes33.filzaslop.aircard' "$DYLIB"
+          grep -aFq 'al_filza_fs_list' "$DYLIB"
+          test -s "$APP/MondEmbedded.bundle/Info.plist"
+          test -s "$APP/Filza3105.bundle/UpstreamAppInfo.plist"
+          test -s "$APP/Config.plist"
+
+          mkdir -p ipa-output
+          OUTPUT="$GITHUB_WORKSPACE/ipa-output/Filza-27-AirCard-${GITHUB_SHA::7}-unsigned.ipa"
+          (cd "$STAGE" && zip -qry "$OUTPUT" Payload)
+          test -s "$OUTPUT"
+          unzip -tq "$OUTPUT"
+          unzip -l "$OUTPUT" | grep -F 'Payload/'
+          unzip -l "$OUTPUT" | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
+          unzip -l "$OUTPUT" | grep -F 'MondEmbedded.bundle/Info.plist'
+          unzip -l "$OUTPUT" | grep -F 'Filza3105.bundle/UpstreamAppInfo.plist'
+          shasum -a 256 "$OUTPUT" | tee ipa-output/SHA256.txt
+
+      - name: Upload complete unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Filza-27-AirCard-Airlift-unsigned-${{ github.sha }}
-          path: artifacts/Filza-27-AirCard-Airlift-unsigned.ipa
+          name: Filza-27-AirCard-complete-unsigned-arm64
+          path: ipa-output/
           if-no-files-found: error
+          include-hidden-files: false
+          compression-level: 0
           retention-days: 90
 
-      - name: Upload Filza experiment build log
+      - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Filza-Airlift-build-log-${{ github.run_id }}
-          path: .theos/airlift-build.log
+          name: Filza-AirCard-build-log-${{ github.run_id }}
+          path: .theos/aircard-build.log
           if-no-files-found: warn
           retention-days: 14
