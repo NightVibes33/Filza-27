@@ -211,8 +211,10 @@ jobs:
           set -o pipefail
           gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:17.0 2>&1 | tee .theos/airlift-build.log
           test -s .theos/obj/FilzaApplySandboxExt.dylib
-          grep -aFq 'com.apple.atc.xpc.service' .theos/obj/FilzaApplySandboxExt.dylib
-          grep -aFq 'ATServiceProxy' .theos/obj/FilzaApplySandboxExt.dylib
+          # Legacy ATServiceProxy probe strings are intentionally absent: pinned AirCard
+          # now owns the Airlift transport/runtime.
+          ! grep -aFq 'com.apple.atc.xpc.service' .theos/obj/FilzaApplySandboxExt.dylib
+          ! grep -aFq 'ATServiceProxy' .theos/obj/FilzaApplySandboxExt.dylib
           grep -aFq 'AirCardEmbeddedHostFactory' .theos/obj/FilzaApplySandboxExt.dylib
           grep -aFq 'com.nightvibes33.filzaslop.aircard' .theos/obj/FilzaApplySandboxExt.dylib
           grep -aFq 'direct normal-path AFC fallback installed' .theos/obj/FilzaApplySandboxExt.dylib
