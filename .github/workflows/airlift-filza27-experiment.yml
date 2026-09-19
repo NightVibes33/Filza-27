@@ -122,15 +122,19 @@ jobs:
       - name: Verify experiment wiring
         run: |
           set -euxo pipefail
-          grep -F '#import "AirliftOnDeviceProbe.inc"' RuntimeStability.m
-          grep -F 'com.apple.atc.xpc' AirliftOnDeviceProbe.inc
-          grep -F 'com.apple.atc.xpc.service' AirliftOnDeviceProbe.inc
-          grep -F 'ATServiceProxy' AirliftOnDeviceProbe.inc
           grep -F "$AIRCARD_COMMIT" scripts/stage-aircard.sh
           grep -F 'FilzaAirCardPresentFromController' FilzaQuickActions.m
-          grep -F 'al_filza_fs_list' scripts/stage-aircard.sh
+          grep -F 'FilzaAirCardBridge.m' Makefile
+          grep -F 'FilzaAirCardHost.swift' Makefile
           grep -F 'FilzaAirCardDirectBackend.m' Makefile
-          test "$(tr -d '\n' < ThirdParty/Airlift/PINNED_REVISION)" = "$AIRLIFT_COMMIT"
+          grep -F 'al_filza_fs_list' scripts/stage-aircard.sh
+          grep -F 'al_filza_fs_read' scripts/stage-aircard.sh
+          grep -F 'AirCard owns the Airlift/idevice runtime' RuntimeStability.m
+          ! grep -F '#import "AirliftOnDeviceProbe.inc"' RuntimeStability.m
+          ! grep -F '#import "AirliftLockdownTransportProbe.m"' RuntimeStability.m
+          ! grep -F '#import "AirliftRSDShimConnectProbe.m"' RuntimeStability.m
+          ! grep -F '#import "AirliftCanaryExploit.m"' RuntimeStability.m
+          ! grep -F 'FILZA_AIRCARD_STREAM_COMPAT' scripts/stage-aircard.sh
 
       - name: Install Procursus build tools
         uses: dhinakg/procursus-action@main
