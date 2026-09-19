@@ -206,6 +206,8 @@ jobs:
           test -s Vendor/wolfssh/lib/libwolfssl.a
           test -f scripts/stage-aircard.sh
           test -f scripts/build-aircard-ffi.sh
+          # Retry transient GitHub/codeload DNS failures from build-time staging downloads.
+          export CURL_RETRY_ARGS='--retry 10 --retry-all-errors --retry-delay 3 --connect-timeout 30'
           mkdir -p .theos
           gmake clean >/dev/null 2>&1 || true
           set -o pipefail
