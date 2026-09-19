@@ -193,8 +193,8 @@ cat >> "$DEST/rust-core/vendor/idevice-ffi/src/lib.rs" <<'EOF'
 pub unsafe extern "C" fn idevice_stream_write_all(
     stream: *mut ReadWriteOpaque, data: *const u8, len: usize,
 ) -> *mut IdeviceFfiError {
-    if stream.is_null() || (data.is_null() && len != 0) { return ffi_err!("invalid stream/write buffer"); }
-    let Some(inner) = unsafe { &mut *stream }.inner.as_mut() else { return ffi_err!("stream already consumed"); };
+    if stream.is_null() || (data.is_null() && len != 0) { return ffi_err!(idevice::IdeviceError::FfiInvalidArg); }
+    let Some(inner) = unsafe { &mut *stream }.inner.as_mut() else { return ffi_err!(idevice::IdeviceError::FfiInvalidArg); };
     let bytes = if len == 0 { &[][..] } else { unsafe { std::slice::from_raw_parts(data, len) } };
     match run_sync_local(async { tokio::io::AsyncWriteExt::write_all(inner.as_mut(), bytes).await }) {
         Ok(()) => std::ptr::null_mut(), Err(e) => ffi_err!(e),
@@ -205,8 +205,8 @@ pub unsafe extern "C" fn idevice_stream_write_all(
 pub unsafe extern "C" fn idevice_stream_read_exact(
     stream: *mut ReadWriteOpaque, data: *mut u8, len: usize,
 ) -> *mut IdeviceFfiError {
-    if stream.is_null() || (data.is_null() && len != 0) { return ffi_err!("invalid stream/read buffer"); }
-    let Some(inner) = unsafe { &mut *stream }.inner.as_mut() else { return ffi_err!("stream already consumed"); };
+    if stream.is_null() || (data.is_null() && len != 0) { return ffi_err!(idevice::IdeviceError::FfiInvalidArg); }
+    let Some(inner) = unsafe { &mut *stream }.inner.as_mut() else { return ffi_err!(idevice::IdeviceError::FfiInvalidArg); };
     let bytes = if len == 0 { &mut [][..] } else { unsafe { std::slice::from_raw_parts_mut(data, len) } };
     match run_sync_local(async { tokio::io::AsyncReadExt::read_exact(inner.as_mut(), bytes).await }) {
         Ok(_) => std::ptr::null_mut(), Err(e) => ffi_err!(e),
@@ -217,9 +217,9 @@ pub unsafe extern "C" fn idevice_stream_read_exact(
 pub unsafe extern "C" fn idevice_stream_read_bounded(
     stream: *mut ReadWriteOpaque, data: *mut u8, out_len: *mut usize, cap: usize,
 ) -> *mut IdeviceFfiError {
-    if stream.is_null() || out_len.is_null() || (data.is_null() && cap != 0) { return ffi_err!("invalid bounded read buffer"); }
+    if stream.is_null() || out_len.is_null() || (data.is_null() && cap != 0) { return ffi_err!(idevice::IdeviceError::FfiInvalidArg); }
     unsafe { *out_len = 0; }
-    let Some(inner) = unsafe { &mut *stream }.inner.as_mut() else { return ffi_err!("stream already consumed"); };
+    let Some(inner) = unsafe { &mut *stream }.inner.as_mut() else { return ffi_err!(idevice::IdeviceError::FfiInvalidArg); };
     let bytes = if cap == 0 { &mut [][..] } else { unsafe { std::slice::from_raw_parts_mut(data, cap) } };
     match run_sync_local(async { tokio::io::AsyncReadExt::read(inner.as_mut(), bytes).await }) {
         Ok(n) => { unsafe { *out_len = n; } std::ptr::null_mut() }, Err(e) => ffi_err!(e),
@@ -230,9 +230,9 @@ pub unsafe extern "C" fn idevice_stream_read_bounded(
 pub unsafe extern "C" fn idevice_stream_rsd_checkin(
     stream: *mut ReadWriteOpaque,
 ) -> *mut IdeviceFfiError {
-    if stream.is_null() { return ffi_err!("invalid stream"); }
+    if stream.is_null() { return ffi_err!(idevice::IdeviceError::FfiInvalidArg); }
     let holder = unsafe { &mut *stream };
-    let Some(socket) = holder.inner.take() else { return ffi_err!("stream already consumed"); };
+    let Some(socket) = holder.inner.take() else { return ffi_err!(idevice::IdeviceError::FfiInvalidArg); };
     let (result, socket) = run_sync_local(async {
         let mut dev = idevice::Idevice::new(socket, "Filza-Airlift");
         let result = dev.rsd_checkin().await;
