@@ -21,12 +21,16 @@ AIRCARD_FFI := $(AIRCARD_ROOT)/AirliftFFI
 AIRCARD_ROOT := ThirdParty/AirCard
 AIRCARD_IOS := $(AIRCARD_ROOT)/ios-app
 AIRCARD_FFI := $(AIRCARD_ROOT)/AirliftFFI
+AIRCARD_ROOT := ThirdParty/AirCard
+AIRCARD_IOS := $(AIRCARD_ROOT)/ios-app
+AIRCARD_FFI := $(AIRCARD_ROOT)/AirliftFFI
 
-FilzaApplySandboxExt_FILES = Tweak.m FilzaAirCardBridge.m FilzaAirCardBridge.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataRetryFix.m AppIconResourceProxyFix.m VirtualBackendFix.m SystemPathDiagnostics.m BadQuerySystemProbe.m GestaltManager.m FilzaMondBridge.m FilzaMainToolbarGestalt.m Filza3105Bridge.m Filza3105IPAExportBridge.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ByeTunesFullAppLauncher.m FilzaDiagnostics.m FilzaQuickActions.m WebDAVRuntimeFix.m WebDAVToggleStateFix.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m CVE43724RieCompatibility.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
+FilzaApplySandboxExt_FILES = Tweak.m FilzaAirCardBridge.m FilzaAirCardBridge.m FilzaAirCardBridge.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataRetryFix.m AppIconResourceProxyFix.m VirtualBackendFix.m SystemPathDiagnostics.m BadQuerySystemProbe.m GestaltManager.m FilzaMondBridge.m FilzaMainToolbarGestalt.m Filza3105Bridge.m Filza3105IPAExportBridge.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ByeTunesFullAppLauncher.m FilzaDiagnostics.m FilzaQuickActions.m WebDAVRuntimeFix.m WebDAVToggleStateFix.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m CVE43724RieCompatibility.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
 FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/AppIconHelper.m
 FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/wallpaper_zip.c
 FilzaApplySandboxExt_FILES += $(BAD_QUERY_ROOT)/bad_query/bad_query.c
 FilzaApplySandboxExt_FILES += $(MOND_GEN)/mond_bad_query.c
+FilzaApplySandboxExt_FILES += $(AIRCARD_IOS)/GrappaHelper.m
 FilzaApplySandboxExt_FILES += $(AIRCARD_IOS)/GrappaHelper.m
 FilzaApplySandboxExt_FILES += $(AIRCARD_IOS)/GrappaHelper.m
 
@@ -106,7 +110,7 @@ AIRCARD_SWIFT_FILES := $(AIRCARD_IOS)/AppViewModel.swift $(AIRCARD_IOS)/ContentV
 FilzaApplySandboxExt_SWIFT_FILES = FilzaAirCardHost.swift $(AIRCARD_SWIFT_FILES) ByeTunesEmbeddedHost.swift ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift FilzaMondCurrentHost.swift Filza3105Host.swift $(MOND_SWIFT_FILES) $(MOND_PARTYUI_SWIFT_FILES) $(MOND_ZIP_SWIFT_FILES) $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
 
 FilzaApplySandboxExt_CFLAGS = -I$(PWD)/compat -I$(PWD) -I$(PWD)/XPF/src -I$(PWD)/XPF/external/ChOma/include -I$(IDEVICE_VENDOR)/include -I$(PWD)/$(BAD_QUERY_ROOT)/bad_query -I$(PWD)/$(THREEONE_ROOT)/Sources -I$(PWD)/$(MOND_GEN) \
-    -I$(PWD)/$(AIRCARD_IOS) -I$(PWD)/$(AIRCARD_FFI)/include     -I$(PWD)/$(AIRCARD_IOS) -I$(PWD)/$(AIRCARD_FFI)/include     -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Core -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Requests -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Responses -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebDAVServer \
+    -I$(PWD)/$(AIRCARD_IOS) -I$(PWD)/$(AIRCARD_FFI)/include     -I$(PWD)/$(AIRCARD_IOS) -I$(PWD)/$(AIRCARD_FFI)/include     -I$(PWD)/$(AIRCARD_IOS) -I$(PWD)/$(AIRCARD_FFI)/include -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Core -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Requests -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Responses -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebDAVServer \
     -I$(shell xcrun --sdk iphoneos --show-sdk-path 2>/dev/null)/usr/include/libxml2 \
     -fobjc-arc -include errno.h -include math.h \
     -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable \
@@ -118,8 +122,9 @@ FilzaApplySandboxExt_OBJCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 FilzaApplySandboxExt_OBJCCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 # Build-only compiler allowance for ByeTunes' existing large SwiftUI expressions.
 # This does not patch or alter Mond/ByeTunes runtime source or behavior.
-FilzaApplySandboxExt_SWIFTFLAGS += -swift-version 5 -default-isolation MainActor -Xfrontend -solver-expression-time-threshold=300 -Xcc -I$(IDEVICE_VENDOR)/include -Xcc -I$(PWD)/$(MOND_GEN) -Xcc -I$(PWD)/$(AIRCARD_FFI)/include -Xcc -I$(PWD)/$(AIRCARD_FFI)/include
+FilzaApplySandboxExt_SWIFTFLAGS += -swift-version 5 -default-isolation MainActor -Xfrontend -solver-expression-time-threshold=300 -Xcc -I$(IDEVICE_VENDOR)/include -Xcc -I$(PWD)/$(MOND_GEN) -Xcc -I$(PWD)/$(AIRCARD_FFI)/include -Xcc -I$(PWD)/$(AIRCARD_FFI)/include -Xcc -I$(PWD)/$(AIRCARD_FFI)/include
 FilzaApplySandboxExt_LDFLAGS += $(IDEVICE_STATIC)
+FilzaApplySandboxExt_LDFLAGS += $(AIRCARD_FFI)/lib/libairlift_ffi.a -lc++
 FilzaApplySandboxExt_LDFLAGS += $(AIRCARD_FFI)/lib/libairlift_ffi.a -lc++
 FilzaApplySandboxExt_LDFLAGS += $(AIRCARD_FFI)/lib/libairlift_ffi.a -lc++
 
@@ -131,6 +136,8 @@ FilzaApplySandboxExt_INSTALL_TARGET_PROCESSES = Filza
 # Every transformation is explicit and ordered. No script may invoke another
 # unrelated patch as a hidden side effect.
 before-FilzaApplySandboxExt-all::
+	@bash scripts/stage-aircard.sh
+	@bash scripts/build-aircard-ffi.sh "$(AIRCARD_ROOT)" "$(AIRCARD_FFI)"
 	@bash scripts/stage-aircard.sh
 	@bash scripts/build-aircard-ffi.sh "$(AIRCARD_ROOT)" "$(AIRCARD_FFI)"
 	@bash scripts/stage-aircard.sh
