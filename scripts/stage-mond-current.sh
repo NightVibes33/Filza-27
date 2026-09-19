@@ -13,7 +13,7 @@ trap 'rm -rf "$TMP"' EXIT
 
 fetch_archive() {
   local owner="$1" repo="$2" commit="$3" out="$4"
-  curl -fL --retry 3 --retry-delay 2 \
+  curl -fL --retry 10 --retry-all-errors --retry-delay 3 --connect-timeout 30 \
     "https://codeload.github.com/${owner}/${repo}/tar.gz/${commit}" -o "$out"
 }
 
