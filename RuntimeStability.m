@@ -63,10 +63,4 @@ __attribute__((constructor)) static void RSRuntimeStabilityInit(void) {
     });
 }
 
-// Airlift is compiled into this already-built translation unit so the
-// experiment does not disturb Filza-27's large Theos source graph.
-#import "AirliftOnDeviceProbe.inc"
-#import "AirliftEndpointAdmissionProbe.inc"
-#import "AirliftLockdownTransportProbe.m"
-#import "AirliftRSDShimConnectProbe.m"
-#import "AirliftCanaryExploit.m"
+// AirCard owns the Airlift/idevice runtime on this branch. Legacy Airlift\n// transport/canary translation units are intentionally not compiled here;\n// their private stream ABI conflicted with pinned upstream AirCard.\n
