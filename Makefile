@@ -115,7 +115,9 @@ FilzaApplySandboxExt_OBJCCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 # Build-only compiler allowance for ByeTunes' existing large SwiftUI expressions.
 # This does not patch or alter Mond/ByeTunes runtime source or behavior.
 FilzaApplySandboxExt_SWIFTFLAGS += -swift-version 5 -default-isolation MainActor -Xfrontend -solver-expression-time-threshold=300 -Xcc -I$(IDEVICE_VENDOR)/include -Xcc -I$(PWD)/$(MOND_GEN) -Xcc -I$(PWD)/$(AIRCARD_FFI)/include
-FilzaApplySandboxExt_LDFLAGS += $(IDEVICE_STATIC)
+# AirCard's libairlift_ffi statically contains its pinned idevice-ffi dependency.
+# Do not also link Vendor/idevice here: doing so duplicates the Rust runtime and
+# idevice/plist C ABI symbols. AirCard supplies the idevice symbols for this target.
 FilzaApplySandboxExt_LDFLAGS += $(AIRCARD_FFI)/lib/libairlift_ffi.a -lc++
 
 FilzaApplySandboxExt_FRAMEWORKS = UIKit Foundation SwiftUI Combine AVFoundation AVKit CoreMedia AudioToolbox CryptoKit Security UniformTypeIdentifiers PhotosUI JavaScriptCore AppIntents ActivityKit SafariServices CFNetwork MobileCoreServices WebKit QuickLook ImageIO
@@ -143,7 +145,6 @@ before-FilzaApplySandboxExt-all::
 	@test -f "$(AIRCARD_IOS)/AirCardContentView.swift" || (echo "Missing staged pinned full AirCard UI" >&2; exit 1)
 	@test -f "FilzaAirCardHost.swift" || (echo "Missing AirCard embedded host" >&2; exit 1)
 	@test -f "FilzaAirCardBridge.m" || (echo "Missing AirCard presentation bridge" >&2; exit 1)
-	@test -s "$(IDEVICE_STATIC)" || (echo "Missing $(IDEVICE_STATIC). Run: bash scripts/build-idevice.sh" >&2; exit 1)
 	@test -d "$(BYETUNES_ROOT)" || (echo "Missing ByeTunes submodule. Run: git submodule update --init --recursive" >&2; exit 1)
 	@test -f "$(BYETUNES_ROOT)/ContentView.swift" || (echo "Incomplete ByeTunes submodule" >&2; exit 1)
 	@test -f "$(BYETUNES_ROOT)/BackgroundAudioDownloadManager.swift" || (echo "Incomplete ByeTunes 2.4 sources" >&2; exit 1)
