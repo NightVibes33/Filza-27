@@ -8,8 +8,6 @@
 #import "FilzaDiagnostics.h"
 #import "FilzaMondBridge.h"
 #import "FilzaAirCardBridge.h"
-#import "FilzaAirCardBridge.h"
-#import "FilzaAirCardBridge.h"
 
 static NSString *const FQAppsType = @"com.nightvibes33.filzaslop.apps-manager";
 static NSString *const FQMusicType = @"com.nightvibes33.filzaslop.music-library";
@@ -30,8 +28,6 @@ static NSString *FQCanonicalShortcutType(NSString *type)
     if ([type isEqualToString:@"music-library"]) return FQMusicType;
     if ([type isEqualToString:@"gestalt-manager"]) return FQGestaltType;
     if ([type isEqualToString:@"patches"]) return FQPatchesType;
-    if ([type isEqualToString:@"aircard"]) return FQAirCardType;
-    if ([type isEqualToString:@"aircard"]) return FQAirCardType;
     if ([type isEqualToString:@"aircard"]) return FQAirCardType;
     return type ?: @"";
 }
@@ -143,14 +139,6 @@ static void FQOpenWithRetry(NSString *type, NSUInteger attempts)
             FilzaDiagnosticsAppend(@"QuickAction", @"opened complete Gestalt Editor");
             opened = YES;
         }
-    }
-    else if ([type isEqualToString:FQAirCardType]) {
-        opened = FilzaAirCardPresentFromController(FQActiveController());
-        if (opened) FilzaDiagnosticsAppend(@"QuickAction", @"opened complete AirCard");
-    }
-    else if ([type isEqualToString:FQAirCardType]) {
-        opened = FilzaAirCardPresentFromController(FQActiveController());
-        if (opened) FilzaDiagnosticsAppend(@"QuickAction", @"opened complete AirCard");
     }
     else if ([type isEqualToString:FQAirCardType]) {
         opened = FilzaAirCardPresentFromController(FQActiveController());
