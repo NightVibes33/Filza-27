@@ -192,18 +192,26 @@ jobs:
           test -s "$APP/Config.plist"
 
           # Artifact-level navigation contract: four entries, no split 3105 Apps/Patches routes.
-          test "$(plutil -extract UIApplicationShortcutItems raw -o - "$APP/Info.plist" | grep -c UIApplicationShortcutItemType)" -eq 4
-          SHORTCUT_XML="$(plutil -extract UIApplicationShortcutItems xml1 -o - "$APP/Info.plist")"
-          printf '%s' "$SHORTCUT_XML" | grep -Fq 'com.nightvibes33.filzaslop.3105'
-          printf '%s' "$SHORTCUT_XML" | grep -Fq 'com.nightvibes33.filzaslop.music-library'
-          printf '%s' "$SHORTCUT_XML" | grep -Fq 'com.nightvibes33.filzaslop.gestalt-manager'
-          printf '%s' "$SHORTCUT_XML" | grep -Fq 'com.nightvibes33.filzaslop.aircard'
-          ! printf '%s' "$SHORTCUT_XML" | grep -Fq 'com.nightvibes33.filzaslop.apps-manager'
-          ! printf '%s' "$SHORTCUT_XML" | grep -Fq 'com.nightvibes33.filzaslop.patches'
-          grep -aFq 'Filza3105HostFactory' "$DYLIB"
-          grep -aFq 'ByeTunesEmbeddedHost' "$DYLIB"
-          grep -aFq 'FilzaMond' "$DYLIB"
-          grep -aFq 'AirCardEmbeddedHostFactory' "$DYLIB"
+          python3 - "$APP/Info.plist" <<'PY'
+          import plistlib, sys
+          with open(sys.argv[1], 'rb') as fh:
+              info = plistlib.load(fh)
+          items = info.get('UIApplicationShortcutItems', [])
+          expected = [
+              'com.nightvibes33.filzaslop.3105',
+              'com.nightvibes33.filzaslop.music-library',
+              'com.nightvibes33.filzaslop.gestalt-manager',
+              'com.nightvibes33.filzaslop.aircard',
+          ]
+          actual = [item.get('UIApplicationShortcutItemType') for item in items]
+          assert actual == expected, f'wrong shortcut contract: {actual!r}'
+          assert 'com.nightvibes33.filzaslop.apps-manager' not in actual
+          assert 'com.nightvibes33.filzaslop.patches' not in actual
+          PY
+          nm -gU "$DYLIB" | grep -Fq '_Filza3105PresentHomeFromController'
+          nm -gU "$DYLIB" | grep -Fq '_FilzaByeTunesPresentFromController'
+          nm -gU "$DYLIB" | grep -Fq '_FilzaMondPresentFromController'
+          nm -gU "$DYLIB" | grep -Fq '_FilzaAirCardPresentFromController'
           grep -aFq 'canonical 3105/Music/Gestalt/AirCard launchers installed' "$DYLIB"
 
           OUTPUT="$GITHUB_WORKSPACE/.theos/Filza-27-modern-${GITHUB_SHA::7}-unsigned.ipa"
