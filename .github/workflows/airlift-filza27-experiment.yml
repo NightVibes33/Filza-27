@@ -44,7 +44,8 @@ jobs:
         run: |
           set -euxo pipefail
           grep -F "$AIRCARD_COMMIT" scripts/stage-aircard.sh
-          grep -F 'FilzaAirCardPresentFromController' FilzaQuickActions.m
+          grep -F 'FilzaFeatureAirCard' FilzaQuickActions.m
+          grep -F 'FilzaAirCardPresentFromController' FilzaFeatureRouter.m
           grep -F 'FilzaAirCardBridge.m' Makefile
           grep -F 'FilzaAirCardHost.swift' Makefile
           grep -F 'FilzaAirCardDirectBackend.m' Makefile
