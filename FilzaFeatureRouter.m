@@ -6,18 +6,18 @@
 #import "FilzaAirCardBridge.h"
 #import "FilzaDiagnostics.h"
 
-NSString *const FilzaFeature3105 = @"com.nightvibes33.filzaslop.3105";
+NSString *const FilzaFeatureAppsManager = @"com.nightvibes33.filzaslop.apps-manager";
 NSString *const FilzaFeatureMusic = @"com.nightvibes33.filzaslop.music-library";
 NSString *const FilzaFeatureGestalt = @"com.nightvibes33.filzaslop.gestalt-manager";
 NSString *const FilzaFeatureAirCard = @"com.nightvibes33.filzaslop.aircard";
 
 NSArray<NSString *> *FilzaCanonicalFeatureIdentifiers(void) {
-    return @[FilzaFeature3105, FilzaFeatureMusic, FilzaFeatureGestalt, FilzaFeatureAirCard];
+    return @[FilzaFeatureAppsManager, FilzaFeatureMusic, FilzaFeatureGestalt, FilzaFeatureAirCard];
 }
 
 BOOL FilzaPresentFeature(NSString *feature, UIViewController *source) {
     BOOL opened = NO;
-    if ([feature isEqualToString:FilzaFeature3105])
+    if ([feature isEqualToString:FilzaFeatureAppsManager])
         opened = Filza3105PresentHomeFromController(source);
     else if ([feature isEqualToString:FilzaFeatureMusic])
         opened = FilzaByeTunesPresentFromController(source);
