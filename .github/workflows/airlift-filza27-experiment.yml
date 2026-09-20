@@ -176,7 +176,7 @@ jobs:
           # One routing table, two surfaces: exactly four canonical integrations.
           plutil -remove UIApplicationShortcutItems "$APP/Info.plist" 2>/dev/null || true
           plutil -insert UIApplicationShortcutItems -json '[
-            {"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.3105","UIApplicationShortcutItemTitle":"3105","UIApplicationShortcutItemIconType":"UIApplicationShortcutIconTypeFavorite"},
+            {"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"App Manager","UIApplicationShortcutItemIconType":"UIApplicationShortcutIconTypeFavorite"},
             {"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music","UIApplicationShortcutItemIconType":"UIApplicationShortcutIconTypeAudio"},
             {"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt","UIApplicationShortcutItemIconType":"UIApplicationShortcutIconTypeTask"},
             {"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.aircard","UIApplicationShortcutItemTitle":"AirCard","UIApplicationShortcutItemIconType":"UIApplicationShortcutIconTypeShare"}
@@ -198,21 +198,20 @@ jobs:
               info = plistlib.load(fh)
           items = info.get('UIApplicationShortcutItems', [])
           expected = [
-              'com.nightvibes33.filzaslop.3105',
+              'com.nightvibes33.filzaslop.apps-manager',
               'com.nightvibes33.filzaslop.music-library',
               'com.nightvibes33.filzaslop.gestalt-manager',
               'com.nightvibes33.filzaslop.aircard',
           ]
           actual = [item.get('UIApplicationShortcutItemType') for item in items]
           assert actual == expected, f'wrong shortcut contract: {actual!r}'
-          assert 'com.nightvibes33.filzaslop.apps-manager' not in actual
-          assert 'com.nightvibes33.filzaslop.patches' not in actual
+                    assert 'com.nightvibes33.filzaslop.patches' not in actual
           PY
           nm -gU "$DYLIB" | grep -Fq '_Filza3105PresentHomeFromController'
           nm -gU "$DYLIB" | grep -Fq '_FilzaByeTunesPresentFromController'
           nm -gU "$DYLIB" | grep -Fq '_FilzaMondPresentFromController'
           nm -gU "$DYLIB" | grep -Fq '_FilzaAirCardPresentFromController'
-          grep -aFq 'canonical 3105/Music/Gestalt/AirCard launchers installed' "$DYLIB"
+          grep -aFq 'canonical Apps Manager/Music/Gestalt/AirCard launchers installed' "$DYLIB"
 
           OUTPUT="$GITHUB_WORKSPACE/.theos/Filza-27-modern-${GITHUB_SHA::7}-unsigned.ipa"
           (cd "$STAGE" && zip -qry "$OUTPUT" Payload)
