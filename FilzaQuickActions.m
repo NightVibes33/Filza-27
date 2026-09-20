@@ -11,7 +11,7 @@ static BOOL gSetterInstalled = NO;
 static NSString *FQCanonical(NSString *type) {
     if ([type isEqualToString:@"3105"] || [type isEqualToString:@"apps-manager"] ||
         [type isEqualToString:@"com.nightvibes33.filzaslop.apps-manager"])
-        return FilzaFeature3105;
+        return FilzaFeatureAppsManager;
     if ([type isEqualToString:@"music-library"]) return FilzaFeatureMusic;
     if ([type isEqualToString:@"gestalt-manager"]) return FilzaFeatureGestalt;
     if ([type isEqualToString:@"aircard"]) return FilzaFeatureAirCard;
