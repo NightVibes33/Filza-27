@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$ROOT/ThirdParty/AirCard"
-PIN="5026bf323df4f81a1b45cd107a68da164a7fd299"
+PIN="740cfd9e7f00be77887638a3e65edbdb19ff1867"
 rm -rf "$DEST"
 git clone --filter=blob:none https://github.com/Mak5er/AirCard-iOS.git "$DEST"
 git -C "$DEST" checkout --detach "$PIN"
