@@ -2,6 +2,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+FOUNDATION_EXPORT BOOL Filza3105PresentHomeFromController(
+    UIViewController * _Nullable source);
 FOUNDATION_EXPORT BOOL Filza3105PresentAppsFromController(
     UIViewController * _Nullable source);
 FOUNDATION_EXPORT BOOL Filza3105PresentPatchesFromController(
