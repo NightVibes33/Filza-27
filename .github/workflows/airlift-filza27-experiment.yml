@@ -206,7 +206,7 @@ jobs:
           ]
           actual = [item.get('UIApplicationShortcutItemType') for item in items]
           assert actual == expected, f'wrong shortcut contract: {actual!r}'
-                    assert 'com.nightvibes33.filzaslop.patches' not in actual
+          assert 'com.nightvibes33.filzaslop.patches' not in actual
           PY
           nm -gU "$DYLIB" | grep -Fq '_Filza3105PresentHomeFromController'
           nm -gU "$DYLIB" | grep -Fq '_FilzaByeTunesPresentFromController'
