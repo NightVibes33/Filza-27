@@ -208,10 +208,11 @@ jobs:
           assert actual == expected, f'wrong shortcut contract: {actual!r}'
           assert 'com.nightvibes33.filzaslop.patches' not in actual
           PY
-          nm -gU "$DYLIB" | grep -Fq '_Filza3105PresentHomeFromController'
-          nm -gU "$DYLIB" | grep -Fq '_FilzaByeTunesPresentFromController'
-          nm -gU "$DYLIB" | grep -Fq '_FilzaMondPresentFromController'
-          nm -gU "$DYLIB" | grep -Fq '_FilzaAirCardPresentFromController'
+          nm -gU "$DYLIB" > "$STAGE/filza-symbols.txt"
+          grep -Fq '_Filza3105PresentHomeFromController' "$STAGE/filza-symbols.txt"
+          grep -Fq '_FilzaByeTunesPresentFromController' "$STAGE/filza-symbols.txt"
+          grep -Fq '_FilzaMondPresentFromController' "$STAGE/filza-symbols.txt"
+          grep -Fq '_FilzaAirCardPresentFromController' "$STAGE/filza-symbols.txt"
           grep -aFq 'canonical Apps Manager/Music/Gestalt/AirCard launchers installed' "$DYLIB"
 
           OUTPUT="$GITHUB_WORKSPACE/.theos/Filza-27-modern-${GITHUB_SHA::7}-unsigned.ipa"
