@@ -192,6 +192,12 @@ static void F3105InstallOpenURLHook(void)
         @"installed 3105 1.1.1 document/custom-URL import bridge on Filza app delegate");
 }
 
+BOOL Filza3105PresentHomeFromController(UIViewController *source)
+{
+    return F3105Present(source, NSSelectorFromString(@"makeHomeController"),
+                        @"3105");
+}
+
 BOOL Filza3105PresentAppsFromController(UIViewController *source)
 {
     return F3105Present(source, NSSelectorFromString(@"makeAppsManagerController"),
