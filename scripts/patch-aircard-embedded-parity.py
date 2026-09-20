@@ -90,4 +90,90 @@ replacement = """            .sheet(isPresented: $showCredits) {
 """
 assert needle in s
 s = s.replace(needle, replacement, 1)
+# Individual-key image picking is nested inside AirCard's Form. In the standalone
+# app that presentation usually survives, but inside Filza's page-sheet host the
+# confirmationDialog -> PhotosPicker/UIDocumentPicker transition can dismiss the
+# embedded host or trip UIKit presentation assertions. Poster Slice does not use
+# this same nested presentation path. Present the individual-key pickers from a
+# stable background anchor instead of the Section itself.
+old = """        .photosPicker(
+            isPresented: $isKeyPhotosPickerPresented,
+            selection: $selectedKey,
+            maxSelectionCount: 1,
+            matching: .images
+        )
+        .onChange(of: selectedKey) { _, items in
+            guard let item = items.first,
+                  let digit = selectedDigitForPicker else {
+                if items.isEmpty { selectedDigitForPicker = nil }
+                return
+            }
+            let currentDigit = digit
+            Task {
+                if let image = await item.loadUIImage(maxDimension: 1024) {
+                    await MainActor.run { vm.setIndividualKey(digit: currentDigit, image: image) }
+                }
+                await MainActor.run {
+                    selectedKey = []
+                    selectedDigitForPicker = nil
+                }
+            }
+        }
+        .sheet(isPresented: $isKeyDocumentPickerPresented) {
+            DocumentPickerView(allowedContentTypes: [
+                .image, .png, .jpeg, .heic,
+                UTType(filenameExtension: "webp") ?? .image,
+                UTType(filenameExtension: "tiff") ?? .image
+            ]) { url in
+                guard let digit = selectedDigitForPicker else { return }
+                if let data = try? Data(contentsOf: url),
+                   let image = ImageEngine.safeImageFromData(data, maxDimension: 1024) {
+                    vm.setIndividualKey(digit: digit, image: image)
+                }
+                selectedDigitForPicker = nil
+            }
+        }
+"""
+new = """        .background {
+            Color.clear
+                .photosPicker(
+                    isPresented: $isKeyPhotosPickerPresented,
+                    selection: $selectedKey,
+                    maxSelectionCount: 1,
+                    matching: .images
+                )
+                .sheet(isPresented: $isKeyDocumentPickerPresented) {
+                    DocumentPickerView(allowedContentTypes: [
+                        .image, .png, .jpeg, .heic,
+                        UTType(filenameExtension: "webp") ?? .image,
+                        UTType(filenameExtension: "tiff") ?? .image
+                    ]) { url in
+                        guard let digit = selectedDigitForPicker else { return }
+                        if let data = try? Data(contentsOf: url),
+                           let image = ImageEngine.safeImageFromData(data, maxDimension: 1024) {
+                            vm.setIndividualKey(digit: digit, image: image)
+                        }
+                        selectedDigitForPicker = nil
+                    }
+                }
+        }
+        .onChange(of: selectedKey) { _, items in
+            guard let item = items.first,
+                  let digit = selectedDigitForPicker else {
+                if items.isEmpty { selectedDigitForPicker = nil }
+                return
+            }
+            let currentDigit = digit
+            Task { @MainActor in
+                if let image = await item.loadUIImage(maxDimension: 1024) {
+                    vm.setIndividualKey(digit: currentDigit, image: image)
+                }
+                selectedKey = []
+                selectedDigitForPicker = nil
+            }
+        }
+"""
+assert old in s, "AirCard individual-key picker surface changed upstream"
+s = s.replace(old, new, 1)
+
 p.write_text(s)
