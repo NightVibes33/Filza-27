@@ -51,6 +51,8 @@ jobs:
           grep -F 'FilzaAirCardDirectBackend.m' Makefile
           grep -F 'TendiesEngine.swift' Makefile
           grep -F 'RespringHelper.swift' Makefile
+          grep -F 'patch-aircard-embedded-parity.py' Makefile
+          grep -F 'Choose Pairing File from Files…' scripts/patch-aircard-embedded-parity.py
           grep -F 'FilzaEmbeddedPanelPresentation.configure(c)' FilzaAirCardHost.swift
           grep -F 'al_filza_fs_list' scripts/stage-aircard.sh
           grep -F 'al_filza_fs_read' scripts/stage-aircard.sh
