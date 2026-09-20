@@ -129,6 +129,7 @@ FilzaApplySandboxExt_INSTALL_TARGET_PROCESSES = Filza
 # unrelated patch as a hidden side effect.
 before-FilzaApplySandboxExt-all::
 	@bash scripts/stage-aircard.sh
+	@python3 scripts/patch-aircard-embedded-parity.py
 	@bash scripts/build-aircard-ffi.sh "$(AIRCARD_ROOT)" "$(AIRCARD_FFI)"
 	@bash scripts/stage-mond-current.sh
 	@bash scripts/stage-mond-22-overlay.sh
@@ -143,6 +144,7 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/patch-byetunes-device-library-save.sh
 	@test -s "$(AIRCARD_FFI)/lib/libairlift_ffi.a" || (echo "Missing AirCard AirliftFFI static library" >&2; exit 1)
 	@test -f "$(AIRCARD_IOS)/AirCardContentView.swift" || (echo "Missing staged pinned full AirCard UI" >&2; exit 1)
+	@grep -Fq 'Choose Pairing File from Files…' "$(AIRCARD_IOS)/AirCardContentView.swift" || (echo "Missing restored AirCard pairing-file import UI" >&2; exit 1)
 	@test -f "FilzaAirCardHost.swift" || (echo "Missing AirCard embedded host" >&2; exit 1)
 	@test -f "FilzaAirCardBridge.m" || (echo "Missing AirCard presentation bridge" >&2; exit 1)
 	@test -d "$(BYETUNES_ROOT)" || (echo "Missing ByeTunes submodule. Run: git submodule update --init --recursive" >&2; exit 1)
