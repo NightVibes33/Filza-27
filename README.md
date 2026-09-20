@@ -1,6 +1,6 @@
 # FilzaSlop / Filza-27
 
-A jailed, sideloadable Filza fork combining Filza with app/container management, ByeTunes, Mond 2.2, WebDAV, SSH/SFTP, and the 3105 patch workspace.
+A jailed, sideloadable Filza fork combining Filza with app/container management, ByeTunes, Mond 2.2, WebDAV, SSH/SFTP, the 3105 patch workspace, and an experimental embedded AirCard/Airlift integration.
 
 [![Filza ByeTunes Upstream Release](https://img.shields.io/badge/release-ByeTunes%20Upstream-brightgreen)](https://github.com/NightVibes33/Filza-27/releases/tag/Filza-27-byetunes-upstream)
 
@@ -35,7 +35,8 @@ A jailed, sideloadable Filza fork combining Filza with app/container management,
 | WebDAV server | ⚠️ Runtime unverified | App-hosted listener builds successfully, but device behavior is currently unverified and likely broken |
 | SSH/SFTP server | ⚠️ Runtime unverified | wolfSSH/SFTP builds successfully, but real device connections and background behavior are currently unverified and likely broken |
 | Home Screen quick actions | ✅ Build verified | The packaged `apps-manager` shortcut normalizes to the embedded 3105 route; in-app Apps Manager uses the same 3105 presenter |
-| Shared third-party panel | ✅ | 3105, Mond, presented ByeTunes; Filza browser UI unchanged |
+| AirCard / Airlift | 🧪 Experimental | Embedded AirCard v1.3 UI/core with on-device pairing, pairing-file import, Wallet/Passcode/Tendies surfaces, and Filza shared-panel presentation; device-runtime behavior is still being validated |
+| Shared third-party panel | ✅ | 3105, Mond, presented ByeTunes, and AirCard; Filza browser UI unchanged |
 | Full jailbreak / writable system volume | ❌ Not claimed | Outside this project's proven capabilities |
 
 ## Compatibility
@@ -152,7 +153,7 @@ The displayed private address is reachable only on the local network (and can al
 
 `ThirdParty/3105/Sources/FilzaEmbeddedPanel.swift` is the canonical host shell for presented third-party tools. It provides the persistent Close action, material header/divider, page-sheet presentation, large detent, grabber, and consistent dismissal behavior.
 
-3105, Mond, and the normal presented ByeTunes route consume that component while keeping their own internal views and features. This does not modify Filza's file-browser UI.
+3105, Mond, the normal presented ByeTunes route, and AirCard consume that component while keeping their own internal views and features. This does not modify Filza's file-browser UI.
 
 ## Logs
 
@@ -170,8 +171,24 @@ The current public build is the [\`Filza-27-byetunes-upstream\` release](https:/
 
 The remaining CI workflows cover full-build diagnostics and the 3105/shared embedded UI source contract. Historical ByeTunes verifier, iOS 16, simulator-probe, and duplicate release workflows have been removed.
 
+## AirCard / Airlift experiment
+
+The `experiment/aircard-main-sync` branch carries the current AirCard integration without changing `main`. It pins AirCard v1.3 at `740cfd9e7f00be77887638a3e65edbdb19ff1867`, builds the Airlift Rust FFI into Filza, and presents AirCard through the same shared third-party panel used by the other embedded tools.
+
+The embedded Pairing surface supports AirCard's on-device pairing flow and restores pairing-file import/selection for `.plist`, `.mobiledevicepairing`, and `.mobilepair` files. The Wallet Cards, Passcode Themes, Poster Slice, Wallpapers/Tendies, and NeoSpring-era v1.3 sources are included.
+
+AirCard's paired AFC transport is also exposed to Filza for capability-scoped filesystem work. This is not proof of arbitrary root filesystem access. AirTraffic success, arbitrary system read/write, kernel read/write, and a jailbreak remain separate capabilities and are not inferred from a successful build or AFC connection.
+
+### Current AirCard device-test status
+
+- Pairing-file import was restored after AirCard v1.3 removed that picker from its current UI while retaining the underlying import implementation.
+- Poster Slice image import has been reported working in the embedded Filza host.
+- **Individual Keys image import currently has a device-runtime crash/dismissal bug under investigation.** This is not marked fixed until a rebuilt IPA passes a real-device test.
+- Green GitHub Actions results prove compilation/linking/packaging only; they do not prove the AirTraffic exploit or every embedded SwiftUI/photo-picker path works at runtime.
+
 ## Current limitations
 
+- AirCard Individual Keys image import currently has a device-runtime crash/dismissal issue under investigation; Poster Slice image import has been reported working.
 - WebDAV and SSH/SFTP device-runtime behavior is currently unverified and likely broken despite green compilation and packaging checks.
 - A green Actions build proves compilation, linking, deployment target, packaging, and artifact structure; it cannot prove every private API behaves identically on every device/build.
 - PosterBoard/Tendies application requires writable access to the required PosterBoard data location.
@@ -192,6 +209,8 @@ Filza-27 combines work from multiple open-source projects. Their upstream licens
 - [YangJiiii/3105](https://github.com/YangJiiii/3105)
 - [NightVibes33/3105](https://github.com/NightVibes33/3105)
 - [EduAlexxis/ByeTunes](https://github.com/EduAlexxis/ByeTunes)
+- [Mak5er/AirCard-iOS](https://github.com/Mak5er/AirCard-iOS)
+- [0xjohnnydev/airlift](https://github.com/0xjohnnydev/airlift)
 - [swisspol/GCDWebServer](https://github.com/swisspol/GCDWebServer)
 - [libssh](https://www.libssh.org/)
 - XPF and ChOma contributors
