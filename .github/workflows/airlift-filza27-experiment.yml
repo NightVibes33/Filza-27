@@ -160,9 +160,6 @@ jobs:
           cp .theos/byetunes-resources/AppIconImage.png "$APP/AppIconImage.png"
           cp .theos/byetunes-resources/ByeTunes-Info.plist "$APP/ByeTunes-Info.plist"
           cp .theos/byetunes-resources/Config.plist "$APP/Config.plist"
-          cp .theos/byetunes-resources/meriyah.umd.js "$APP/meriyah.umd.js"
-          cp .theos/byetunes-resources/astring.umd.js "$APP/astring.umd.js"
-          cp .theos/byetunes-resources/yt_ejs_helper.js "$APP/yt_ejs_helper.js"
 
           rm -rf "$APP/MondEmbedded.bundle" "$APP/Filza3105.bundle"
           cp -R ThirdParty/mond-current/Resources/MondEmbedded.bundle "$APP/MondEmbedded.bundle"
