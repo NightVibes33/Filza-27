@@ -98,7 +98,7 @@ MOND_ZIP_SWIFT_FILES := \
     $(MOND_GEN)/ZIPFoundation/FileManager+ZIPDeprecated.swift \
     $(MOND_GEN)/ZIPFoundation/URL+ZIP.swift
 
-AIRCARD_SWIFT_FILES := $(AIRCARD_IOS)/AppViewModel.swift $(AIRCARD_IOS)/AirCardContentView.swift $(AIRCARD_IOS)/Models.swift $(AIRCARD_IOS)/NetworkStatus.swift $(AIRCARD_IOS)/PairingController.swift $(AIRCARD_IOS)/Utilities.swift
+AIRCARD_SWIFT_FILES := $(AIRCARD_IOS)/AppViewModel.swift $(AIRCARD_IOS)/AirCardContentView.swift $(AIRCARD_IOS)/Models.swift $(AIRCARD_IOS)/NetworkStatus.swift $(AIRCARD_IOS)/PairingController.swift $(AIRCARD_IOS)/Utilities.swift $(AIRCARD_IOS)/RespringHelper.swift $(AIRCARD_IOS)/TendiesEngine.swift $(AIRCARD_IOS)/TendiesModel.swift $(AIRCARD_IOS)/TendiesView.swift
 FilzaApplySandboxExt_SWIFT_FILES = FilzaAirCardHost.swift $(AIRCARD_SWIFT_FILES) ByeTunesEmbeddedHost.swift ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift FilzaMondCurrentHost.swift Filza3105Host.swift $(MOND_SWIFT_FILES) $(MOND_PARTYUI_SWIFT_FILES) $(MOND_ZIP_SWIFT_FILES) $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
 
 FilzaApplySandboxExt_CFLAGS = -I$(PWD)/compat -I$(PWD) -I$(PWD)/XPF/src -I$(PWD)/XPF/external/ChOma/include -I$(IDEVICE_VENDOR)/include -I$(PWD)/$(BAD_QUERY_ROOT)/bad_query -I$(PWD)/$(THREEONE_ROOT)/Sources -I$(PWD)/$(MOND_GEN) \
