@@ -173,6 +173,15 @@ jobs:
           plutil -replace NSBonjourServices -json '["_http._tcp","_ssh._tcp"]' "$APP/Info.plist"
           bash scripts/merge-3105-app-metadata.sh "$APP/Info.plist"
 
+          # One routing table, two surfaces: exactly four canonical integrations.
+          plutil -remove UIApplicationShortcutItems "$APP/Info.plist" 2>/dev/null || true
+          plutil -insert UIApplicationShortcutItems -json '[
+            {"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.3105","UIApplicationShortcutItemTitle":"3105","UIApplicationShortcutItemIconType":"UIApplicationShortcutIconTypeFavorite"},
+            {"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music","UIApplicationShortcutItemIconType":"UIApplicationShortcutIconTypeAudio"},
+            {"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt","UIApplicationShortcutItemIconType":"UIApplicationShortcutIconTypeTask"},
+            {"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.aircard","UIApplicationShortcutItemTitle":"AirCard","UIApplicationShortcutItemIconType":"UIApplicationShortcutIconTypeShare"}
+          ]' "$APP/Info.plist"
+
           DYLIB="$APP/Frameworks/FilzaApplySandboxExt.dylib"
           test -s "$DYLIB"
           grep -aFq 'AirCardEmbeddedHostFactory' "$DYLIB"
@@ -181,6 +190,21 @@ jobs:
           test -s "$APP/MondEmbedded.bundle/Info.plist"
           test -s "$APP/Filza3105.bundle/UpstreamAppInfo.plist"
           test -s "$APP/Config.plist"
+
+          # Artifact-level navigation contract: four entries, no split 3105 Apps/Patches routes.
+          test "$(plutil -extract UIApplicationShortcutItems raw -o - "$APP/Info.plist" | grep -c UIApplicationShortcutItemType)" -eq 4
+          SHORTCUT_XML="$(plutil -extract UIApplicationShortcutItems xml1 -o - "$APP/Info.plist")"
+          printf '%s' "$SHORTCUT_XML" | grep -Fq 'com.nightvibes33.filzaslop.3105'
+          printf '%s' "$SHORTCUT_XML" | grep -Fq 'com.nightvibes33.filzaslop.music-library'
+          printf '%s' "$SHORTCUT_XML" | grep -Fq 'com.nightvibes33.filzaslop.gestalt-manager'
+          printf '%s' "$SHORTCUT_XML" | grep -Fq 'com.nightvibes33.filzaslop.aircard'
+          ! printf '%s' "$SHORTCUT_XML" | grep -Fq 'com.nightvibes33.filzaslop.apps-manager'
+          ! printf '%s' "$SHORTCUT_XML" | grep -Fq 'com.nightvibes33.filzaslop.patches'
+          grep -aFq 'Filza3105HostFactory' "$DYLIB"
+          grep -aFq 'ByeTunesEmbeddedHost' "$DYLIB"
+          grep -aFq 'FilzaMond' "$DYLIB"
+          grep -aFq 'AirCardEmbeddedHostFactory' "$DYLIB"
+          grep -aFq 'canonical 3105/Music/Gestalt/AirCard launchers installed' "$DYLIB"
 
           OUTPUT="$GITHUB_WORKSPACE/.theos/Filza-27-modern-${GITHUB_SHA::7}-unsigned.ipa"
           (cd "$STAGE" && zip -qry "$OUTPUT" Payload)
