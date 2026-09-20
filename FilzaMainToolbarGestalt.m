@@ -14,7 +14,7 @@ static BOOL gHooks = NO, gSetter = NO, gMutating = NO;
 static NSHashTable *gViews;
 static char kOwner;
 
-static NSString *const FMT3105 = @"com.nightvibes33.filzaslop.toolbar.3105";
+static NSString *const FMTAppsManager = @"com.nightvibes33.filzaslop.toolbar.apps-manager";
 static NSString *const FMTMusic = @"com.nightvibes33.filzaslop.toolbar.music";
 static NSString *const FMTGestalt = @"com.nightvibes33.filzaslop.toolbar.gestalt";
 static NSString *const FMTAirCard = @"com.nightvibes33.filzaslop.toolbar.aircard";
@@ -32,10 +32,10 @@ static BOOL FMTMatches(UIBarButtonItem *i, NSString *action, NSString *word) {
 }
 static BOOL FMTIsIntegration(UIBarButtonItem *i) {
     NSString *x=i.accessibilityIdentifier?:@"";
-    if ([x isEqualToString:FMT3105]||[x isEqualToString:FMTMusic]||[x isEqualToString:FMTGestalt]||[x isEqualToString:FMTAirCard]||
+    if ([x isEqualToString:FMTAppsManager]||[x isEqualToString:FMTMusic]||[x isEqualToString:FMTGestalt]||[x isEqualToString:FMTAirCard]||
         [x isEqualToString:@"com.nightvibes33.filzaslop.toolbar.apps"]||[x isEqualToString:@"com.nightvibes33.filzaslop.toolbar.patches"]) return YES;
     return FMTMatches(i,@"openApps",@"apps")||FMTMatches(i,@"openMusicLib",@"music")||
-           FMTMatches(i,@"fz_open3105Apps",@"apps")||FMTMatches(i,@"fz_open3105Patches",@"patches")||
+           FMTMatches(i,@"fz_openAppsManagerApps",@"apps")||FMTMatches(i,@"fz_openAppsManagerPatches",@"patches")||
            FMTMatches(i,@"fz_openMondGestalt",@"gestalt")||FMTMatches(i,@"fz_openAirCard",@"aircard");
 }
 static UIBarButtonItem *FMTItem(NSString *symbol,NSString *title,NSString *ident,id target,SEL action) {
@@ -48,7 +48,7 @@ static void FMTOpen(id self, NSString *feature) {
     UIViewController *vc=[self isKindOfClass:UIViewController.class]?self:nil;
     FilzaPresentFeature(feature,vc);
 }
-static void Open3105(id s,SEL c){FMTOpen(s,FilzaFeature3105);}
+static void OpenAppsManager(id s,SEL c){FMTOpen(s,FilzaFeatureAppsManager);}
 static void OpenMusic(id s,SEL c){FMTOpen(s,FilzaFeatureMusic);}
 static void OpenGestalt(id s,SEL c){FMTOpen(s,FilzaFeatureGestalt);}
 static void OpenAirCard(id s,SEL c){FMTOpen(s,FilzaFeatureAirCard);}
@@ -60,12 +60,12 @@ static void FMTEnsure(id mainView) {
     [gViews addObject:mainView];
     NSMutableArray *items=[NSMutableArray array];
     for(UIBarButtonItem *i in tb.items?:@[]) if(!FMTIsIntegration(i))[items addObject:i];
-    [items addObject:FMTItem(@"square.grid.2x2",@"3105",FMT3105,mainView,NSSelectorFromString(@"fz_open3105"))];
+    [items addObject:FMTItem(@"square.grid.2x2",@"Apps Manager",FMTAppsManager,mainView,NSSelectorFromString(@"fz_openAppsManager"))];
     [items addObject:FMTItem(@"music.note",@"Music",FMTMusic,mainView,NSSelectorFromString(@"fz_openMusic"))];
     [items addObject:FMTItem(@"slider.horizontal.3",@"Gestalt",FMTGestalt,mainView,NSSelectorFromString(@"fz_openGestalt"))];
     [items addObject:FMTItem(@"network",@"AirCard",FMTAirCard,mainView,NSSelectorFromString(@"fz_openAirCard"))];
     gMutating=YES; [tb setItems:items animated:NO]; gMutating=NO;
-    FilzaDiagnosticsAppend(@"Toolbar",@"canonical 3105/Music/Gestalt/AirCard launchers installed; standalone Patches removed");
+    FilzaDiagnosticsAppend(@"Toolbar",@"canonical Apps Manager/Music/Gestalt/AirCard launchers installed; standalone Patches removed");
 }
 static void FMTSchedule(id v){FMTEnsure(v);__weak id w=v;dispatch_after(dispatch_time(DISPATCH_TIME_NOW,50*NSEC_PER_MSEC),dispatch_get_main_queue(),^{FMTEnsure(w);});dispatch_after(dispatch_time(DISPATCH_TIME_NOW,300*NSEC_PER_MSEC),dispatch_get_main_queue(),^{FMTEnsure(w);});}
 static void Create(id s,SEL c){if(gCreate)((void(*)(id,SEL))gCreate)(s,c);FMTSchedule(s);}
@@ -77,7 +77,7 @@ static IMP Hook(Class cls,SEL s,IMP r){Method m=class_getInstanceMethod(cls,s);i
 static void Install(void){
     if(!gSetter){Method m=class_getInstanceMethod(UIToolbar.class,@selector(setItems:animated:));if(m){gSetItems=method_getImplementation(m);if(gSetItems!=(IMP)SetItems)method_setImplementation(m,(IMP)SetItems);gSetter=YES;}}
     if(gHooks)return;Class cls=NSClassFromString(@"TGMainView");if(!cls)return;
-    class_addMethod(cls,NSSelectorFromString(@"fz_open3105"),(IMP)Open3105,"v@:");
+    class_addMethod(cls,NSSelectorFromString(@"fz_openAppsManager"),(IMP)OpenAppsManager,"v@:");
     class_addMethod(cls,NSSelectorFromString(@"fz_openMusic"),(IMP)OpenMusic,"v@:");
     class_addMethod(cls,NSSelectorFromString(@"fz_openGestalt"),(IMP)OpenGestalt,"v@:");
     class_addMethod(cls,NSSelectorFromString(@"fz_openAirCard"),(IMP)OpenAirCard,"v@:");
