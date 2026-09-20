@@ -197,26 +197,41 @@ AirCard's paired AFC transport is also exposed to Filza for capability-scoped fi
 - No full jailbreak, root shell, SPTM bypass, or system-volume remount is claimed by the packaging work.
 - WebDAV is app-hosted and may be suspended in the background. SSH/SFTP requests audio-mode background execution while enabled, but cannot survive a force-quit or process termination.
 
-## Upstream projects and credits
+## Third-party components, upstreams, and contributors
 
-Filza-27 combines work from multiple open-source projects. Their upstream licenses and notices remain part of the repository.
+Filza-27 is an integration project, not a from-scratch replacement for the projects below. Embedded or adapted components retain their upstream authorship and licensing. Project names here identify provenance; they do **not** imply that an upstream maintainer endorses this fork or its experimental combinations.
 
-- [34306/FilzaJailedDS](https://github.com/34306/FilzaJailedDS)
-- [0xjohnnydev/FilzaSlop](https://github.com/0xjohnnydev/FilzaSlop)
-- [0xjohnnydev/MobileHouseArrest-PoC](https://github.com/0xjohnnydev/MobileHouseArrest-PoC)
-- [forcequitOS/bad_query](https://github.com/forcequitOS/bad_query)
-- [rooootdev/mond](https://github.com/rooootdev/mond)
-- [YangJiiii/3105](https://github.com/YangJiiii/3105)
-- [NightVibes33/3105](https://github.com/NightVibes33/3105)
-- [EduAlexxis/ByeTunes](https://github.com/EduAlexxis/ByeTunes)
-- [Mak5er/AirCard-iOS](https://github.com/Mak5er/AirCard-iOS)
-- [0xjohnnydev/airlift](https://github.com/0xjohnnydev/airlift)
-- [swisspol/GCDWebServer](https://github.com/swisspol/GCDWebServer)
-- [libssh](https://www.libssh.org/)
-- XPF and ChOma contributors
-- CrazyMind90
-- `SerStars/nugget-wallpapers`
-- mightycooldude12
+| Component | Upstream / contributors | Role in Filza-27 |
+| --- | --- | --- |
+| Filza jailed base | [34306/FilzaJailedDS](https://github.com/34306/FilzaJailedDS) | Jailed Filza lineage/base |
+| FilzaSlop | [0xjohnnydev/FilzaSlop](https://github.com/0xjohnnydev/FilzaSlop) | Modern Filza integration baseline and verified base IPA lineage |
+| MobileHouseArrest | [0xjohnnydev/MobileHouseArrest-PoC](https://github.com/0xjohnnydev/MobileHouseArrest-PoC) | Container/HouseArrest research and integration lineage |
+| bad_query | [forcequitOS/bad_query](https://github.com/forcequitOS/bad_query) | Sandbox-extension/access research primitive |
+| Mond | [rooootdev/mond](https://github.com/rooootdev/mond) | Gestalt, CacheExtra, PosterBoard/Tendies, Santander and related UI/runtime |
+| 3105 | [YangJiiii/3105](https://github.com/YangJiiii/3105), [NightVibes33/3105](https://github.com/NightVibes33/3105) | Apps Manager, file operations, patch workspace and IPA export integration |
+| ByeTunes | [EduAlexxis/ByeTunes](https://github.com/EduAlexxis/ByeTunes) | Embedded music-library/download/metadata application |
+| AirCard-iOS | [Mak5er/AirCard-iOS](https://github.com/Mak5er/AirCard-iOS) | Wallet skins, passcode themes, pairing UI and Airlift-facing application layer |
+| Airlift | [0xjohnnydev/airlift](https://github.com/0xjohnnydev/airlift) | AirTraffic research/exploit core used by the AirCard experiment |
+| GCDWebServer | [swisspol/GCDWebServer](https://github.com/swisspol/GCDWebServer) | Embedded HTTP/WebDAV server |
+| libssh | [libssh](https://www.libssh.org/) | SSH/SFTP support |
+| XPF / ChOma | upstream XPF and ChOma contributors | Patchfinding/Mach-O support used by existing research code |
+| Nugget wallpapers | `SerStars/nugget-wallpapers` contributors | Wallpaper assets/integration lineage |
+
+Additional contributor acknowledgements retained from the existing project include **CrazyMind90** and **mightycooldude12**. For authoritative per-file authorship, commit history, copyright notices, and license terms, use each upstream repository and the notices shipped with its source; this README intentionally does not reassign upstream work to Filza-27.
+
+### AirCard v1.3 integration boundary
+
+The temp branch stages the pinned AirCard source and applies only explicit Filza embedding adaptations: removal of AirCard's standalone `@main` lifecycle, Swift symbol namespacing needed to coexist with ByeTunes, shared-panel hosting, restored pairing-file picker exposure, and the Filza AFC bridge. Wallet Cards, Passcode Themes, Poster Slice, Individual Keys, Tendies/Wallpapers, NeoSpring, pairing, and the Airlift-facing model remain AirCard-derived functionality.
+
+The pairing-file picker restoration is an integration compatibility patch: current AirCard v1.3 retains the underlying import/select methods but no longer exposes the older picker UI. It is therefore documented separately rather than presented as an upstream AirCard v1.3 feature.
+
+### Integration ownership
+
+Filza-27-specific work consists of the glue needed to make these otherwise separate projects coexist in one jailed application: shared routing, the four top-level **App Manager / Music / Gestalt / AirCard** launch surfaces, common embedded presentation, build/staging transforms, resource and metadata merging, compatibility adapters, CI verification, and capability-scoped filesystem handoff.
+
+### Licensing and attribution
+
+Third-party source remains subject to its own license. When code is staged, vendored, patched, or compiled into the IPA, the applicable upstream license/copyright requirements still apply. This README is attribution/documentation and is not a substitute for those license files.
 
 ## Research note
 
