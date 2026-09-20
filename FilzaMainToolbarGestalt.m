@@ -1,306 +1,89 @@
 @import UIKit;
-
 #import <objc/message.h>
 #import <objc/runtime.h>
-
-#import "Filza3105Bridge.h"
+#import "FilzaFeatureRouter.h"
 #import "FilzaDiagnostics.h"
-#import "FilzaMondBridge.h"
 
 @interface FMTWeakMainView : NSObject
 @property(nonatomic, weak) id owner;
 @end
+@implementation FMTWeakMainView @end
 
-@implementation FMTWeakMainView
-@end
+static IMP gCreate = NULL, gLoad = NULL, gWill = NULL, gDid = NULL, gSetItems = NULL;
+static BOOL gHooks = NO, gSetter = NO, gMutating = NO;
+static NSHashTable *gViews;
+static char kOwner;
 
-static IMP gFMTOriginalCreateMainToolBar = NULL;
-static IMP gFMTOriginalViewDidLoad = NULL;
-static IMP gFMTOriginalViewWillAppear = NULL;
-static IMP gFMTOriginalViewDidAppear = NULL;
-static IMP gFMTOriginalSetToolbarItems = NULL;
-static BOOL gFMTMainHooksInstalled = NO;
-static BOOL gFMTToolbarSetterInstalled = NO;
-static BOOL gFMTMutatingToolbar = NO;
-static NSHashTable *gFMTKnownMainViews;
+static NSString *const FMT3105 = @"com.nightvibes33.filzaslop.toolbar.3105";
+static NSString *const FMTMusic = @"com.nightvibes33.filzaslop.toolbar.music";
+static NSString *const FMTGestalt = @"com.nightvibes33.filzaslop.toolbar.gestalt";
+static NSString *const FMTAirCard = @"com.nightvibes33.filzaslop.toolbar.aircard";
 
-static char kFMTToolbarOwnerKey;
-static NSString *const FMTGestaltIdentifier =
-    @"com.nightvibes33.filzaslop.toolbar.gestalt";
-static NSString *const FMTPatchesIdentifier =
-    @"com.nightvibes33.filzaslop.toolbar.patches";
-static NSString *const FMTAppsIdentifier =
-    @"com.nightvibes33.filzaslop.toolbar.apps";
-
-static UIToolbar *FMTToolbar(id mainView)
-{
-    SEL selector = NSSelectorFromString(@"toolBar");
-    if (![mainView respondsToSelector:selector]) return nil;
-    id value = ((id (*)(id, SEL))objc_msgSend)(mainView, selector);
-    return [value isKindOfClass:UIToolbar.class] ? value : nil;
+static UIToolbar *FMTToolbar(id v) {
+    SEL s=NSSelectorFromString(@"toolBar");
+    if (![v respondsToSelector:s]) return nil;
+    id x=((id(*)(id,SEL))objc_msgSend)(v,s);
+    return [x isKindOfClass:UIToolbar.class]?x:nil;
 }
-
-static BOOL FMTIsUtilityItem(UIBarButtonItem *item)
-{
-    NSString *identifier = item.accessibilityIdentifier;
-    return [identifier isEqualToString:FMTGestaltIdentifier] ||
-        [identifier isEqualToString:FMTPatchesIdentifier] ||
-        item.action == NSSelectorFromString(@"fz_openMondGestalt") ||
-        item.action == NSSelectorFromString(@"fz_open3105Patches");
+static BOOL FMTMatches(UIBarButtonItem *i, NSString *action, NSString *word) {
+    NSString *a=i.action?NSStringFromSelector(i.action):@"";
+    NSString *t=i.title.lowercaseString?:@"", *l=i.accessibilityLabel.lowercaseString?:@"";
+    return [a isEqualToString:action]||[t containsString:word]||[l containsString:word];
 }
-
-static BOOL FMTItemMatches(UIBarButtonItem *item, NSString *actionName,
-                           NSString *word)
-{
-    NSString *action = item.action ? NSStringFromSelector(item.action) : @"";
-    NSString *title = item.title.lowercaseString ?: @"";
-    NSString *label = item.accessibilityLabel.lowercaseString ?: @"";
-    return [action isEqualToString:actionName] ||
-        [title containsString:word] || [label containsString:word];
+static BOOL FMTIsIntegration(UIBarButtonItem *i) {
+    NSString *x=i.accessibilityIdentifier?:@"";
+    if ([x isEqualToString:FMT3105]||[x isEqualToString:FMTMusic]||[x isEqualToString:FMTGestalt]||[x isEqualToString:FMTAirCard]||
+        [x isEqualToString:@"com.nightvibes33.filzaslop.toolbar.apps"]||[x isEqualToString:@"com.nightvibes33.filzaslop.toolbar.patches"]) return YES;
+    return FMTMatches(i,@"openApps",@"apps")||FMTMatches(i,@"openMusicLib",@"music")||
+           FMTMatches(i,@"fz_open3105Apps",@"apps")||FMTMatches(i,@"fz_open3105Patches",@"patches")||
+           FMTMatches(i,@"fz_openMondGestalt",@"gestalt")||FMTMatches(i,@"fz_openAirCard",@"aircard");
 }
-
-static BOOL FMTIsAppsItem(UIBarButtonItem *item)
-{
-    NSString *identifier = item.accessibilityIdentifier ?: @"";
-    return [identifier isEqualToString:FMTAppsIdentifier] ||
-        FMTItemMatches(item, @"openApps", @"apps") ||
-        FMTItemMatches(item, @"fz_open3105Apps", @"apps");
+static UIBarButtonItem *FMTItem(NSString *symbol,NSString *title,NSString *ident,id target,SEL action) {
+    UIImage *image=[UIImage systemImageNamed:symbol];
+    UIBarButtonItem *i=image?[[UIBarButtonItem alloc]initWithImage:image style:UIBarButtonItemStylePlain target:target action:action]:
+        [[UIBarButtonItem alloc]initWithTitle:title style:UIBarButtonItemStylePlain target:target action:action];
+    i.accessibilityIdentifier=ident; i.accessibilityLabel=title; return i;
 }
-
-static UIBarButtonItem *FMTImageItem(NSString *symbol, NSString *fallbackTitle,
-                                     NSString *identifier, id target, SEL action)
-{
-    UIImage *image = [UIImage systemImageNamed:symbol];
-    UIBarButtonItem *item = image
-        ? [[UIBarButtonItem alloc] initWithImage:image
-            style:UIBarButtonItemStylePlain target:target action:action]
-        : [[UIBarButtonItem alloc] initWithTitle:fallbackTitle
-            style:UIBarButtonItemStylePlain target:target action:action];
-    item.accessibilityIdentifier = identifier;
-    item.accessibilityLabel = fallbackTitle;
-    return item;
+static void FMTOpen(id self, NSString *feature) {
+    UIViewController *vc=[self isKindOfClass:UIViewController.class]?self:nil;
+    FilzaPresentFeature(feature,vc);
 }
+static void Open3105(id s,SEL c){FMTOpen(s,FilzaFeature3105);}
+static void OpenMusic(id s,SEL c){FMTOpen(s,FilzaFeatureMusic);}
+static void OpenGestalt(id s,SEL c){FMTOpen(s,FilzaFeatureGestalt);}
+static void OpenAirCard(id s,SEL c){FMTOpen(s,FilzaFeatureAirCard);}
 
-static void FMTOpenMond(id self, SEL _cmd)
-{
-    UIViewController *controller = [self isKindOfClass:UIViewController.class]
-        ? self : nil;
-    FilzaDiagnosticsAppend(@"Toolbar", @"persistent Gestalt button tapped");
-    FilzaMondPresentFromController(controller);
+static void FMTEnsure(id mainView) {
+    UIToolbar *tb=FMTToolbar(mainView); if(!tb)return;
+    FMTWeakMainView *box=objc_getAssociatedObject(tb,&kOwner);
+    if(!box){box=[FMTWeakMainView new];objc_setAssociatedObject(tb,&kOwner,box,OBJC_ASSOCIATION_RETAIN_NONATOMIC);} box.owner=mainView;
+    [gViews addObject:mainView];
+    NSMutableArray *items=[NSMutableArray array];
+    for(UIBarButtonItem *i in tb.items?:@[]) if(!FMTIsIntegration(i))[items addObject:i];
+    [items addObject:FMTItem(@"square.grid.2x2",@"3105",FMT3105,mainView,NSSelectorFromString(@"fz_open3105"))];
+    [items addObject:FMTItem(@"music.note",@"Music",FMTMusic,mainView,NSSelectorFromString(@"fz_openMusic"))];
+    [items addObject:FMTItem(@"slider.horizontal.3",@"Gestalt",FMTGestalt,mainView,NSSelectorFromString(@"fz_openGestalt"))];
+    [items addObject:FMTItem(@"network",@"AirCard",FMTAirCard,mainView,NSSelectorFromString(@"fz_openAirCard"))];
+    gMutating=YES; [tb setItems:items animated:NO]; gMutating=NO;
+    FilzaDiagnosticsAppend(@"Toolbar",@"canonical 3105/Music/Gestalt/AirCard launchers installed; standalone Patches removed");
 }
-
-static void FMTOpenApps(id self, SEL _cmd)
-{
-    UIViewController *controller = [self isKindOfClass:UIViewController.class]
-        ? self : nil;
-    FilzaDiagnosticsAppend(@"Toolbar", @"persistent Apps button tapped; opening complete 3105 Apps Manager");
-    Filza3105PresentAppsFromController(controller);
+static void FMTSchedule(id v){FMTEnsure(v);__weak id w=v;dispatch_after(dispatch_time(DISPATCH_TIME_NOW,50*NSEC_PER_MSEC),dispatch_get_main_queue(),^{FMTEnsure(w);});dispatch_after(dispatch_time(DISPATCH_TIME_NOW,300*NSEC_PER_MSEC),dispatch_get_main_queue(),^{FMTEnsure(w);});}
+static void Create(id s,SEL c){if(gCreate)((void(*)(id,SEL))gCreate)(s,c);FMTSchedule(s);}
+static void Load(id s,SEL c){if(gLoad)((void(*)(id,SEL))gLoad)(s,c);FMTSchedule(s);}
+static void Will(id s,SEL c,BOOL a){if(gWill)((void(*)(id,SEL,BOOL))gWill)(s,c,a);FMTSchedule(s);}
+static void Did(id s,SEL c,BOOL a){if(gDid)((void(*)(id,SEL,BOOL))gDid)(s,c,a);FMTSchedule(s);}
+static void SetItems(UIToolbar*s,SEL c,NSArray*i,BOOL a){if(gSetItems)((void(*)(id,SEL,id,BOOL))gSetItems)(s,c,i,a);if(gMutating)return;FMTWeakMainView*b=objc_getAssociatedObject(s,&kOwner);if(b.owner)dispatch_async(dispatch_get_main_queue(),^{FMTEnsure(b.owner);});}
+static IMP Hook(Class cls,SEL s,IMP r){Method m=class_getInstanceMethod(cls,s);if(!m)return NULL;IMP o=method_getImplementation(m);const char*t=method_getTypeEncoding(m);if(class_addMethod(cls,s,r,t))return o;m=class_getInstanceMethod(cls,s);o=method_getImplementation(m);if(o!=r)method_setImplementation(m,r);return o;}
+static void Install(void){
+    if(!gSetter){Method m=class_getInstanceMethod(UIToolbar.class,@selector(setItems:animated:));if(m){gSetItems=method_getImplementation(m);if(gSetItems!=(IMP)SetItems)method_setImplementation(m,(IMP)SetItems);gSetter=YES;}}
+    if(gHooks)return;Class cls=NSClassFromString(@"TGMainView");if(!cls)return;
+    class_addMethod(cls,NSSelectorFromString(@"fz_open3105"),(IMP)Open3105,"v@:");
+    class_addMethod(cls,NSSelectorFromString(@"fz_openMusic"),(IMP)OpenMusic,"v@:");
+    class_addMethod(cls,NSSelectorFromString(@"fz_openGestalt"),(IMP)OpenGestalt,"v@:");
+    class_addMethod(cls,NSSelectorFromString(@"fz_openAirCard"),(IMP)OpenAirCard,"v@:");
+    gCreate=Hook(cls,NSSelectorFromString(@"createMainToolBar"),(IMP)Create);gLoad=Hook(cls,@selector(viewDidLoad),(IMP)Load);
+    gWill=Hook(cls,@selector(viewWillAppear:),(IMP)Will);gDid=Hook(cls,@selector(viewDidAppear:),(IMP)Did);
+    gHooks=gCreate||gLoad||gWill||gDid;
 }
-
-static void FMTOpenPatches(id self, SEL _cmd)
-{
-    UIViewController *controller = [self isKindOfClass:UIViewController.class]
-        ? self : nil;
-    FilzaDiagnosticsAppend(@"Toolbar", @"persistent Patches button tapped");
-    Filza3105PresentPatchesFromController(controller);
-}
-
-static void FMTEnsureUtilityItems(id mainView)
-{
-    if (!mainView) return;
-    UIToolbar *toolbar = FMTToolbar(mainView);
-    if (!toolbar) return;
-
-    FMTWeakMainView *ownerBox = objc_getAssociatedObject(toolbar,
-        &kFMTToolbarOwnerKey);
-    if (!ownerBox) {
-        ownerBox = [FMTWeakMainView new];
-        objc_setAssociatedObject(toolbar, &kFMTToolbarOwnerKey, ownerBox,
-                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    }
-    ownerBox.owner = mainView;
-    [gFMTKnownMainViews addObject:mainView];
-
-    NSMutableArray<UIBarButtonItem *> *items = [NSMutableArray array];
-    for (UIBarButtonItem *item in toolbar.items ?: @[])
-        if (!FMTIsUtilityItem(item)) [items addObject:item];
-
-    NSInteger appsIndex = NSNotFound;
-    NSInteger musicIndex = NSNotFound;
-    for (NSInteger index = 0; index < (NSInteger)items.count; index++) {
-        UIBarButtonItem *item = items[(NSUInteger)index];
-        if (FMTIsAppsItem(item)) {
-            appsIndex = index;
-            item.target = mainView;
-            item.action = NSSelectorFromString(@"fz_open3105Apps");
-            item.accessibilityIdentifier = FMTAppsIdentifier;
-            item.accessibilityLabel = @"Apps Manager";
-        }
-        if (FMTItemMatches(item, @"openMusicLib", @"music")) musicIndex = index;
-    }
-
-    UIBarButtonItem *gestalt = FMTImageItem(@"slider.horizontal.3",
-        @"Gestalt Editor", FMTGestaltIdentifier, mainView,
-        NSSelectorFromString(@"fz_openMondGestalt"));
-    UIBarButtonItem *patches = FMTImageItem(@"shippingbox",
-        @"Patches", FMTPatchesIdentifier, mainView,
-        NSSelectorFromString(@"fz_open3105Patches"));
-
-    NSInteger insertion = items.count;
-    if (appsIndex != NSNotFound || musicIndex != NSNotFound) {
-        NSInteger last = MAX(appsIndex == NSNotFound ? -1 : appsIndex,
-                             musicIndex == NSNotFound ? -1 : musicIndex);
-        insertion = MIN((NSInteger)items.count, last + 1);
-    }
-    [items insertObject:gestalt atIndex:(NSUInteger)insertion];
-    [items insertObject:patches atIndex:(NSUInteger)insertion + 1];
-
-    gFMTMutatingToolbar = YES;
-    [toolbar setItems:items animated:NO];
-    gFMTMutatingToolbar = NO;
-    FilzaDiagnosticsAppend(@"Toolbar", [NSString stringWithFormat:
-        @"ensured persistent Apps/Music/Gestalt/Patches bottom toolbar apps=%ld music=%ld",
-        (long)appsIndex, (long)musicIndex]);
-}
-
-static void FMTScheduleEnsure(id mainView)
-{
-    FMTEnsureUtilityItems(mainView);
-    __weak id weakMainView = mainView;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_MSEC),
-                   dispatch_get_main_queue(), ^{
-        FMTEnsureUtilityItems(weakMainView);
-    });
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC),
-                   dispatch_get_main_queue(), ^{
-        FMTEnsureUtilityItems(weakMainView);
-    });
-}
-
-static void FMTCreateMainToolBar(id self, SEL _cmd)
-{
-    if (gFMTOriginalCreateMainToolBar)
-        ((void (*)(id, SEL))gFMTOriginalCreateMainToolBar)(self, _cmd);
-    FMTScheduleEnsure(self);
-}
-
-static void FMTViewDidLoad(id self, SEL _cmd)
-{
-    if (gFMTOriginalViewDidLoad)
-        ((void (*)(id, SEL))gFMTOriginalViewDidLoad)(self, _cmd);
-    FMTScheduleEnsure(self);
-}
-
-static void FMTViewWillAppear(id self, SEL _cmd, BOOL animated)
-{
-    if (gFMTOriginalViewWillAppear)
-        ((void (*)(id, SEL, BOOL))gFMTOriginalViewWillAppear)(self, _cmd, animated);
-    FMTScheduleEnsure(self);
-}
-
-static void FMTViewDidAppear(id self, SEL _cmd, BOOL animated)
-{
-    if (gFMTOriginalViewDidAppear)
-        ((void (*)(id, SEL, BOOL))gFMTOriginalViewDidAppear)(self, _cmd, animated);
-    FMTScheduleEnsure(self);
-}
-
-static void FMTSetToolbarItems(UIToolbar *self, SEL _cmd, NSArray *items,
-                               BOOL animated)
-{
-    if (gFMTOriginalSetToolbarItems)
-        ((void (*)(id, SEL, id, BOOL))gFMTOriginalSetToolbarItems)(
-            self, _cmd, items, animated);
-    if (gFMTMutatingToolbar) return;
-
-    FMTWeakMainView *ownerBox = objc_getAssociatedObject(self,
-        &kFMTToolbarOwnerKey);
-    id owner = ownerBox.owner;
-    if (owner) dispatch_async(dispatch_get_main_queue(), ^{
-        FMTEnsureUtilityItems(owner);
-    });
-}
-
-static IMP FMTHook(Class cls, SEL selector, IMP replacement)
-{
-    Method method = class_getInstanceMethod(cls, selector);
-    if (!method) return NULL;
-    IMP original = method_getImplementation(method);
-    const char *types = method_getTypeEncoding(method);
-    if (class_addMethod(cls, selector, replacement, types)) return original;
-    Method owned = class_getInstanceMethod(cls, selector);
-    original = method_getImplementation(owned);
-    if (original != replacement) method_setImplementation(owned, replacement);
-    return original;
-}
-
-static void FMTInstallToolbarSetter(void)
-{
-    if (gFMTToolbarSetterInstalled) return;
-    Method method = class_getInstanceMethod(UIToolbar.class,
-        @selector(setItems:animated:));
-    if (!method) return;
-    gFMTOriginalSetToolbarItems = method_getImplementation(method);
-    if (gFMTOriginalSetToolbarItems != (IMP)FMTSetToolbarItems)
-        method_setImplementation(method, (IMP)FMTSetToolbarItems);
-    gFMTToolbarSetterInstalled = YES;
-}
-
-static void FMTInstallHooks(void)
-{
-    FMTInstallToolbarSetter();
-    if (gFMTMainHooksInstalled) return;
-    Class cls = NSClassFromString(@"TGMainView");
-    if (!cls) return;
-
-    class_addMethod(cls, NSSelectorFromString(@"fz_openMondGestalt"),
-                    (IMP)FMTOpenMond, "v@:");
-    class_addMethod(cls, NSSelectorFromString(@"fz_open3105Apps"),
-                    (IMP)FMTOpenApps, "v@:");
-    class_addMethod(cls, NSSelectorFromString(@"fz_open3105Patches"),
-                    (IMP)FMTOpenPatches, "v@:");
-    gFMTOriginalCreateMainToolBar = FMTHook(cls,
-        NSSelectorFromString(@"createMainToolBar"), (IMP)FMTCreateMainToolBar);
-    gFMTOriginalViewDidLoad = FMTHook(cls, @selector(viewDidLoad),
-                                      (IMP)FMTViewDidLoad);
-    gFMTOriginalViewWillAppear = FMTHook(cls, @selector(viewWillAppear:),
-                                         (IMP)FMTViewWillAppear);
-    gFMTOriginalViewDidAppear = FMTHook(cls, @selector(viewDidAppear:),
-                                        (IMP)FMTViewDidAppear);
-    gFMTMainHooksInstalled = gFMTOriginalCreateMainToolBar ||
-        gFMTOriginalViewDidLoad || gFMTOriginalViewWillAppear ||
-        gFMTOriginalViewDidAppear;
-
-    if (gFMTMainHooksInstalled)
-        FilzaDiagnosticsAppend(@"Toolbar",
-            @"TGMainView persistent 3105 Apps/Gestalt/Patches toolbar hooks installed");
-}
-
-static void FMTRefreshKnownMainViews(void)
-{
-    FMTInstallHooks();
-    for (id mainView in gFMTKnownMainViews.allObjects)
-        FMTScheduleEnsure(mainView);
-}
-
-__attribute__((constructor)) static void FilzaMainToolbarGestaltInit(void)
-{
-    dispatch_async(dispatch_get_main_queue(), ^{
-        gFMTKnownMainViews = [NSHashTable weakObjectsHashTable];
-        FMTInstallHooks();
-        [[NSNotificationCenter defaultCenter]
-            addObserverForName:UIApplicationDidFinishLaunchingNotification
-            object:nil queue:NSOperationQueue.mainQueue
-            usingBlock:^(__unused NSNotification *note) {
-                FMTRefreshKnownMainViews();
-            }];
-        [[NSNotificationCenter defaultCenter]
-            addObserverForName:UIApplicationDidBecomeActiveNotification
-            object:nil queue:NSOperationQueue.mainQueue
-            usingBlock:^(__unused NSNotification *note) {
-                FMTRefreshKnownMainViews();
-            }];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC),
-                       dispatch_get_main_queue(), ^{ FMTRefreshKnownMainViews(); });
-    });
-}
+static void Refresh(void){Install();for(id v in gViews.allObjects)FMTSchedule(v);}
+__attribute__((constructor)) static void Init(void){dispatch_async(dispatch_get_main_queue(),^{gViews=[NSHashTable weakObjectsHashTable];Install();[NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidFinishLaunchingNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification*n){Refresh();}];[NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification*n){Refresh();}];});}
