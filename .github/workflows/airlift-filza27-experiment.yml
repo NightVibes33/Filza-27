@@ -349,6 +349,7 @@ jobs:
           with open(path, 'rb') as fh:
               info = plistlib.load(fh)
           ats = dict(info.get('NSAppTransportSecurity', {}))
+          ats.pop('NSAllowsArbitraryLoads', None)
           ats['NSAllowsLocalNetworking'] = True
           info['NSAppTransportSecurity'] = ats
           with open(path, 'wb') as fh:
