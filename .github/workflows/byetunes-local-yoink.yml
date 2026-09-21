@@ -11,6 +11,7 @@ on:
       - "scripts/apply-byetunes-local-yoink-patch.py"
       - "scripts/test-byetunes-local-contract.sh"
       - "scripts/stage-byetunes-node-mobile.sh"
+      - "scripts/build-byetunes-embedded-yoink.sh"
       - ".github/workflows/byetunes-local-yoink.yml"
 
 permissions:
@@ -30,7 +31,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
 
       - name: Stage pinned NodeMobile iOS runtime
         run: |
@@ -71,6 +72,12 @@ jobs:
           ! grep -Fq 'X-Request-ID' src/lib/request-logging.ts
           grep -Fq 'paste a spotify, deezer, or apple music link' src/app/api/download/route.ts
           grep -Fq 'paste a spotify, deezer, or apple music link' src/app/api/metadata/route.ts
+
+      - name: Build embedded NodeMobile Yoink bundle
+        run: |
+          bash scripts/build-byetunes-embedded-yoink.sh "$RUNNER_TEMP/byetunes-yoink-bundle"
+          test -s "$RUNNER_TEMP/byetunes-yoink-bundle/server.js"
+          grep -Fq '"youtube": false' "$RUNNER_TEMP/byetunes-yoink-bundle/provenance.json"
 
       - name: Build patched Yoink
         working-directory: ${{ runner.temp }}/yoink
