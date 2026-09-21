@@ -33,11 +33,16 @@ PY
 
 python3 "$PATCHER" "$DEST"
 
-grep -Fq '"spotify" | "apple-music" | "youtube" | "deezer"' "$DEST/src/lib/spotify.ts"
+grep -Fq '"spotify" | "apple-music" | "deezer"' "$DEST/src/lib/spotify.ts"
 grep -Fq 'url.includes("deezer.com") || url.includes("deezer.page.link") || url.includes("link.deezer.com")' "$DEST/src/lib/spotify.ts"
 grep -Fq 'resolveDirectDeezerTrack' "$DEST/src/lib/resolve-track.ts"
 grep -Fq 'paste a spotify, deezer, or apple music link' "$DEST/src/app/api/download/route.ts"
 grep -Fq 'paste a spotify, deezer, or apple music link' "$DEST/src/app/api/metadata/route.ts"
+! grep -Fq 'from "./youtube"' "$DEST/src/lib/resolve-track.ts"
+! grep -Fq 'from "./youtube"' "$DEST/src/lib/audio-sources.ts"
+! grep -Fq 'resolveYouTubeTrack' "$DEST/src/lib/resolve-track.ts"
+! grep -Fq 'tryYouTube' "$DEST/src/lib/audio-sources.ts"
+! grep -Fq '"youtube"' "$DEST/src/lib/spotify.ts"
 
 echo "Prepared patched Yoink at $DEST"
 git -C "$DEST" diff --check
