@@ -35,14 +35,13 @@ jobs:
             dig +short AAAA "$HOST" || true
             echo "=== DNS CNAME ==="
             dig +short CNAME "$HOST" || true
-            echo "=== DNS trace-ish ==="
+            echo "=== nslookup ==="
             nslookup "$HOST" || true
           } > "$OUT/network.txt" 2>&1
 
           {
             echo "=== TLS certificate ==="
-            timeout 15 openssl s_client -connect "$HOST:443" -servername "$HOST" </dev/null 2>/dev/null |
-              openssl x509 -noout -subject -issuer -serial -dates -ext subjectAltName 2>&1 || true
+            timeout 15 openssl s_client -connect "$HOST:443" -servername "$HOST" </dev/null 2>/dev/null | openssl x509 -noout -subject -issuer -serial -dates -ext subjectAltName 2>&1 || true
           } > "$OUT/tls.txt"
 
           paths=(
@@ -69,36 +68,20 @@ jobs:
             headers="$OUT/${safe}.headers.txt"
             body="$OUT/${safe}.body.txt"
 
-            meta=$(curl -sS -L --max-redirs 3               --connect-timeout 10 --max-time 30               --max-filesize 1048576               -A "Filza27-ByeTunes-Public-Surface-Probe/1.0"               -D "$headers" -o "$body"               -w "%{http_code}\t%{content_type}\t%{size_download}\t%{url_effective}"               "$BASE$path" 2>>"$OUT/curl-errors.txt" || true)
-
+            meta=$(curl -sS -L --max-redirs 3 --connect-timeout 10 --max-time 30 --max-filesize 1048576 -A "Filza27-ByeTunes-Public-Surface-Probe/1.0" -D "$headers" -o "$body" -w "%{http_code}\t%{content_type}\t%{size_download}\t%{url_effective}" "$BASE$path" 2>>"$OUT/curl-errors.txt" || true)
             printf "%s\t%s\n" "$path" "$meta" >> "$OUT/summary.tsv"
 
-            # Redact obvious credential-shaped material before artifact upload.
             if [ -f "$body" ]; then
-              python3 - "$body" <<'PY'
-import re, sys
-p=sys.argv[1]
-try:
-    data=open(p,'r',encoding='utf-8',errors='replace').read()
-except Exception:
-    raise SystemExit
-patterns = [
-    (r'(?i)(authorization\s*[:=]\s*)([^\s"\'<>]+)', r'\1[REDACTED]'),
-    (r'(?i)((?:api[_-]?key|secret|token|password|passwd)\s*["\']?\s*[:=]\s*["\']?)([^"\'\s,}]+)', r'\1[REDACTED]'),
-]
-for pat,repl in patterns:
-    data=re.sub(pat,repl,data)
-open(p,'w',encoding='utf-8').write(data)
-PY
+              python3 -c 'import re,sys; p=sys.argv[1]; d=open(p,"r",encoding="utf-8",errors="replace").read(); d=re.sub(r"(?i)(authorization[[:space:]]*[:=][[:space:]]*)[^[:space:]\"<>]+",r"\\1[REDACTED]",d); d=re.sub(r"(?i)((api[_-]?key|secret|token|password|passwd)[[:space:]]*[\"\x27]?[[:space:]]*[:=][[:space:]]*[\"\x27]?)[^\"\x27[:space:],}]+",r"\\1[REDACTED]",d); open(p,"w",encoding="utf-8").write(d)' "$body" || true
             fi
           done
 
           {
             echo "=== OPTIONS /api/download ==="
-            curl -sS -i -X OPTIONS               --connect-timeout 10 --max-time 30               -A "Filza27-ByeTunes-Public-Surface-Probe/1.0"               "$BASE/api/download" || true
+            curl -sS -i -X OPTIONS --connect-timeout 10 --max-time 30 -A "Filza27-ByeTunes-Public-Surface-Probe/1.0" "$BASE/api/download" || true
             echo
             echo "=== HEAD /api/download ==="
-            curl -sS -I               --connect-timeout 10 --max-time 30               -A "Filza27-ByeTunes-Public-Surface-Probe/1.0"               "$BASE/api/download" || true
+            curl -sS -I --connect-timeout 10 --max-time 30 -A "Filza27-ByeTunes-Public-Surface-Probe/1.0" "$BASE/api/download" || true
           } > "$OUT/api-download-methods.txt" 2>&1
 
           echo "===== SUMMARY ====="
