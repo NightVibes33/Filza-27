@@ -1,0 +1,81 @@
+diff --git a/src/lib/spotify.ts b/src/lib/spotify.ts
+--- a/src/lib/spotify.ts
++++ b/src/lib/spotify.ts
+@@
+-export function detectPlatform(url: string): "spotify" | "apple-music" | "youtube" | null {
++export function detectPlatform(url: string): "spotify" | "apple-music" | "youtube" | "deezer" | null {
+   if (url.includes("spotify.com") || url.includes("spotify:")) return "spotify";
+   if (url.includes("music.apple.com")) return "apple-music";
++  if (url.includes("deezer.com") || url.includes("deezer.page.link")) return "deezer";
+   if (url.includes("youtube.com/watch") || url.includes("youtu.be/") || url.includes("music.youtube.com")) return "youtube";
+   return null;
+ }
+diff --git a/src/lib/resolve-track.ts b/src/lib/resolve-track.ts
+--- a/src/lib/resolve-track.ts
++++ b/src/lib/resolve-track.ts
+@@
+ // Main resolvers
+ // ---------------------------------------------------------------------------
+ 
++async function resolveDirectDeezerTrack(url: string): Promise<TrackInfo | null> {
++  let effectiveUrl = url;
++
++  if (url.includes("deezer.page.link") || url.includes("link.deezer.com")) {
++    try {
++      const response = await fetch(url, {
++        method: "HEAD",
++        redirect: "follow",
++        signal: AbortSignal.timeout(10000),
++      });
++      effectiveUrl = response.url || url;
++    } catch {
++      try {
++        const response = await fetch(url, {
++          method: "GET",
++          redirect: "follow",
++          signal: AbortSignal.timeout(10000),
++        });
++        effectiveUrl = response.url || url;
++      } catch {
++        return null;
++      }
++    }
++  }
++
++  const match = effectiveUrl.match(/deezer\.com\/(?:[a-z]{2}\/)?track\/(\d+)/i);
++  if (!match) return null;
++
++  const deezer = await fetchDeezerTrackMetadata(match[1]);
++  if (!deezer) return null;
++
++  return {
++    ...deezer,
++    spotifyUrl: effectiveUrl,
++    label: null,
++    copyright: null,
++    compilation: isCompilationAlbum(deezer.albumArtist),
++  };
++}
++
+ /** Main resolver — detects platform and dispatches to the right chain. */
+ export async function resolveTrack(url: string): Promise<{ track: TrackInfo; platform: string; youtubeVideoId?: string } | null> {
+   const platform = detectPlatform(url);
+@@
+-  if (platform === "apple-music") {
++  if (platform === "deezer") {
++    track = await resolveDirectDeezerTrack(url);
++  } else if (platform === "apple-music") {
+     track = await resolveAppleMusicTrack(url);
+   } else if (platform === "youtube") {
+diff --git a/src/app/api/download/route.ts b/src/app/api/download/route.ts
+--- a/src/app/api/download/route.ts
++++ b/src/app/api/download/route.ts
+@@
+-        { error: "paste a spotify, apple music, or youtube link" },
++        { error: "paste a spotify, deezer, or apple music link" },
+diff --git a/src/app/api/metadata/route.ts b/src/app/api/metadata/route.ts
+--- a/src/app/api/metadata/route.ts
++++ b/src/app/api/metadata/route.ts
+@@
+-        { error: "paste a spotify, apple music, or youtube link" },
++        { error: "paste a spotify, deezer, or apple music link" },
