@@ -77,6 +77,35 @@ jobs:
           done
 
           {
+            echo "=== POST contract: missing URL /api/download ==="
+            curl -sS -i --connect-timeout 10 --max-time 30 \
+              -H 'Content-Type: application/json' \
+              --data '{}' "$BASE/api/download" || true
+            echo
+            echo "=== POST contract: unsupported URL /api/download ==="
+            curl -sS -i --connect-timeout 10 --max-time 30 \
+              -H 'Content-Type: application/json' \
+              --data '{"url":"https://example.com/not-a-track","format":"mp3","genreSource":"itunes","syncedLyrics":false}' \
+              "$BASE/api/download" || true
+            echo
+            echo "=== POST contract: nonexistent Deezer URL /api/download ==="
+            curl -sS -i --connect-timeout 10 --max-time 30 \
+              -H 'Content-Type: application/json' \
+              --data '{"url":"https://www.deezer.com/track/0","format":"mp3","genreSource":"itunes","syncedLyrics":false}' \
+              "$BASE/api/download" || true
+            echo
+            echo "=== POST contract: missing URL /api/metadata ==="
+            curl -sS -i --connect-timeout 10 --max-time 30 \
+              -H 'Content-Type: application/json' \
+              --data '{}' "$BASE/api/metadata" || true
+            echo
+            echo "=== POST contract: nonexistent Deezer URL /api/metadata ==="
+            curl -sS -i --connect-timeout 10 --max-time 30 \
+              -H 'Content-Type: application/json' \
+              --data '{"url":"https://www.deezer.com/track/0"}' "$BASE/api/metadata" || true
+          } > "$OUT/post-contracts.txt" 2>&1
+
+          {
             echo "=== OPTIONS /api/download ==="
             curl -sS -i -X OPTIONS --connect-timeout 10 --max-time 30 -A "Filza27-ByeTunes-Public-Surface-Probe/1.0" "$BASE/api/download" || true
             echo
@@ -92,6 +121,9 @@ jobs:
           echo
           echo "===== TLS ====="
           cat "$OUT/tls.txt"
+          echo
+          echo "===== POST CONTRACTS ====="
+          cat "$OUT/post-contracts.txt"
 
       - name: Upload probe results
         uses: actions/upload-artifact@v4
