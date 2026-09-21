@@ -3,6 +3,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${1:-$ROOT/.theos/byetunes-yoink-bundle}"
+if [[ "$OUT" != /* ]]; then
+  OUT="$ROOT/$OUT"
+fi
 WORK="${RUNNER_TEMP:-$ROOT/.build}/byetunes-embedded-yoink"
 YOINK="$WORK/yoink"
 
