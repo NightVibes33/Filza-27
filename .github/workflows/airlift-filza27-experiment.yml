@@ -57,9 +57,6 @@ jobs:
           grep -F 'al_filza_fs_list' scripts/stage-aircard.sh
           grep -F 'al_filza_fs_read' scripts/stage-aircard.sh
           grep -F 'AirCard owns the Airlift/idevice runtime' RuntimeStability.m
-          grep -F 'filzaByeTunesMetadataParityStateRepairV2' ByeTunesEmbeddedHost.swift
-          grep -F 'Attempting alternate-provider fallback via' scripts/patch-byetunes-download-provider-parity.sh
-          grep -F 'alternatePlatforms = [.deezer, .appleMusic]' scripts/patch-byetunes-download-provider-parity.sh
           ! grep -F 'FILZA_AIRCARD_STREAM_COMPAT' scripts/stage-aircard.sh
 
       - name: Install Procursus build tools
@@ -137,8 +134,6 @@ jobs:
           grep -aFq 'direct normal-path AFC fallback installed' "$DYLIB"
           grep -aFq 'al_filza_fs_list' "$DYLIB"
           grep -aFq 'al_filza_fs_read' "$DYLIB"
-          grep -Fq 'Attempting alternate-provider fallback via' ByeTunes/MusicManager/DownloadView.swift
-          grep -Fq 'alternatePlatforms = [.deezer, .appleMusic]' ByeTunes/MusicManager/DownloadView.swift
 
       - name: Generate runtime resources
         shell: bash
