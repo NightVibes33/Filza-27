@@ -1,4 +1,4 @@
-name: Verify ByeTunes + SSH IPA + AirCard + Embedded Yoink
+name: Verify ByeTunes + SSH IPA + AirCard + Embedded Yoink + Official iSH
 
 on:
   push:
@@ -24,7 +24,108 @@ env:
   BASE_IPA_URL: https://github.com/0xjohnnydev/FilzaSlop/releases/download/v1.0.2/FilzaSlop-v1.0.2-unsigned.ipa
 
 jobs:
+  ish-rootfs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout rootfs recipe
+        uses: actions/checkout@v4
+      - name: Enable x86 emulation for Alpine i386
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: 386
+      - name: Install official iSH fakefs build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld meson ninja-build libarchive-dev libsqlite3-dev
+      - name: Build pinned Alpine i386 + ffmpeg fakefs
+        run: |
+          bash scripts/build-byetunes-ish-rootfs.sh "$GITHUB_WORKSPACE/.theos/ByeTunesISH.bundle"
+          test -d .theos/ByeTunesISH.bundle/rootfs/data
+          test -s .theos/ByeTunesISH.bundle/rootfs/meta.db
+          grep -Eq '^ffmpeg-' .theos/ByeTunesISH.bundle/package-manifest.txt
+          grep -Fq '"youtube": false' .theos/ByeTunesISH.bundle/provenance.json
+      - name: Upload official iSH rootfs
+        uses: actions/upload-artifact@v4
+        with:
+          name: byetunes-official-ish-rootfs
+          path: .theos/ByeTunesISH.bundle/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 7
+
+
+  ish-runtime-smoke:
+    needs: ish-rootfs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout runtime smoke recipe
+        uses: actions/checkout@v4
+
+      - name: Download exact packaged official iSH rootfs
+        uses: actions/download-artifact@v4
+        with:
+          name: byetunes-official-ish-rootfs
+          path: .ci/ByeTunesISH.bundle
+
+      - name: Install official iSH CLI build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld meson ninja-build libarchive-dev libsqlite3-dev
+
+      - name: Build pinned official iSH CLI
+        run: |
+          set -euxo pipefail
+          ISH_COMMIT="$(python3 -c 'import json; print(json.load(open("ByeTunesLocal/iSH/ish.lock"))["commit"])')"
+          git clone --filter=blob:none https://github.com/ish-app/ish.git .ci/ish-cli
+          git -C .ci/ish-cli checkout --detach "$ISH_COMMIT"
+          git -C .ci/ish-cli submodule update --init --recursive
+          meson setup .ci/ish-cli/build .ci/ish-cli --buildtype=release
+          ninja -C .ci/ish-cli/build ish
+          test -x .ci/ish-cli/build/ish
+
+      - name: Boot packaged fakefs and prove FFmpeg track finishing
+        run: |
+          set -euxo pipefail
+          ISH=".ci/ish-cli/build/ish"
+          ROOTFS=".ci/ByeTunesISH.bundle/rootfs"
+
+          test -d "$ROOTFS/data"
+          test -s "$ROOTFS/meta.db"
+
+          "$ISH" -f "$ROOTFS" /usr/bin/ffmpeg -version
+          "$ISH" -f "$ROOTFS" /usr/bin/ffprobe -version
+          "$ISH" -f "$ROOTFS" /usr/bin/curl --version
+
+          "$ISH" -f "$ROOTFS" /bin/busybox mkdir -p /tmp
+          "$ISH" -f "$ROOTFS" /bin/busybox chmod 1777 /tmp
+          "$ISH" -f "$ROOTFS" /bin/busybox dd if=/dev/zero of=/tmp/byetunes-selftest.raw bs=16000 count=1
+
+          "$ISH" -f "$ROOTFS" /usr/bin/ffmpeg             -hide_banner -loglevel error -y             -f s16le -ar 8000 -ac 1 -i /tmp/byetunes-selftest.raw             -c:a libmp3lame -b:a 128k             -metadata "title=ByeTunes Local Self Test"             -metadata "artist=Filza 27"             -metadata "lyrics=[00:00.00]self test"             /tmp/byetunes-selftest.mp3
+
+          "$ISH" -f "$ROOTFS" /usr/bin/ffmpeg             -hide_banner -loglevel error -y             -f s16le -ar 8000 -ac 1 -i /tmp/byetunes-selftest.raw             -c:a flac             -metadata "title=ByeTunes Local Self Test FLAC"             -metadata "artist=Filza 27"             -metadata "lyrics=[00:00.00]self test flac"             /tmp/byetunes-selftest.flac
+
+          "$ISH" -f "$ROOTFS" /usr/bin/ffprobe             -v error             -show_entries "format=format_name,duration:format_tags=title,artist,lyrics"             -of json /tmp/byetunes-selftest.mp3 | tee .ci/ffprobe-mp3.json
+
+          "$ISH" -f "$ROOTFS" /usr/bin/ffprobe             -v error             -show_entries "format=format_name,duration:format_tags=title,artist,lyrics"             -of json /tmp/byetunes-selftest.flac | tee .ci/ffprobe-flac.json
+
+          grep -Fq 'ByeTunes Local Self Test' .ci/ffprobe-mp3.json
+          grep -Fq 'Filza 27' .ci/ffprobe-mp3.json
+          grep -Fq 'self test' .ci/ffprobe-mp3.json
+          grep -Fq 'ByeTunes Local Self Test FLAC' .ci/ffprobe-flac.json
+          grep -Fq 'self test flac' .ci/ffprobe-flac.json
+
+      - name: Upload official iSH finishing smoke evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: byetunes-ish-runtime-smoke
+          path: |
+            .ci/ffprobe-mp3.json
+            .ci/ffprobe-flac.json
+          if-no-files-found: error
+          retention-days: 7
+
   arm64-ipa:
+    needs: [ish-rootfs, ish-runtime-smoke]
     runs-on: macos-26-intel
     env:
       THEOS: ${{ github.workspace }}/theos
@@ -39,6 +140,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - name: Download pinned official iSH rootfs
+        uses: actions/download-artifact@v4
+        with:
+          name: byetunes-official-ish-rootfs
+          path: .ci/ByeTunesISH.bundle
 
       - name: Setup Node 24 for embedded Yoink bundle
         uses: actions/setup-node@v4
@@ -66,8 +173,26 @@ jobs:
           grep -F 'ByeTunesLocal/NodeRuntime/ByeTunesNodeRuntime.mm' Makefile
           grep -F 'stage-byetunes-node-mobile.sh' Makefile
           grep -F 'build-byetunes-embedded-yoink.sh' Makefile
+          grep -F 'stage-official-ish.sh' Makefile
+          grep -F 'ByeTunesLocal/iSH/ByeTunesISHRuntime.m' Makefile
+          grep -F 'ByeTunesISHRuntimeInstall' ByeTunesLocal/NodeRuntime/ByeTunesNodeRuntime.mm
+          grep -F '83348361fe65311f6e87ad2e1cbb0ac38d123f69' ByeTunesLocal/iSH/ish.lock
           grep -F 'ByeTunesNodeRuntimeInstall();' Tweak.m
           grep -F '"youtube": false' ByeTunesLocal/NodeRuntime/node-mobile.lock >/dev/null 2>&1 || true
+
+      - name: Install official iSH build tools
+        shell: bash
+        run: |
+          set -euxo pipefail
+          brew install llvm lld meson ninja
+          LLVM_BIN="$(brew --prefix llvm)/bin"
+          LLD_BIN="$(brew --prefix lld)/bin"
+          test -x "$LLVM_BIN/clang"
+          test -x "$LLD_BIN/ld.lld"
+          echo "$LLD_BIN" >> "$GITHUB_PATH"
+          echo "$LLVM_BIN" >> "$GITHUB_PATH"
+          "$LLVM_BIN/clang" --version
+          "$LLD_BIN/ld.lld" --version
 
       - name: Install Procursus build tools
         uses: dhinakg/procursus-action@main
@@ -134,6 +259,9 @@ jobs:
           test -s Vendor/wolfssh/lib/libwolfssl.a
           mkdir -p .theos
           gmake clean >/dev/null 2>&1 || true
+          rm -rf .theos/byetunes-ish-bundle
+          mkdir -p .theos/byetunes-ish-bundle
+          cp -R .ci/ByeTunesISH.bundle/. .theos/byetunes-ish-bundle/
           set -o pipefail
           gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:17.0 2>&1 | tee .theos/aircard-build.log
           DYLIB=.theos/obj/FilzaApplySandboxExt.dylib
@@ -149,6 +277,13 @@ jobs:
           test -s .theos/byetunes-yoink-bundle/server.js
           test -s .theos/byetunes-yoink-bundle/provenance.json
           grep -Fq '"youtube": false' .theos/byetunes-yoink-bundle/provenance.json
+          test -s Vendor/iSH/lib/libish.a
+          test -s Vendor/iSH/lib/libish_emu.a
+          test -s Vendor/iSH/lib/libfakefs.a
+          test -d .theos/byetunes-ish-bundle/rootfs/data
+          test -s .theos/byetunes-ish-bundle/rootfs/meta.db
+          grep -Eq '^ffmpeg-' .theos/byetunes-ish-bundle/package-manifest.txt
+          grep -aFq 'ByeTunesISH' "$DYLIB"
 
       - name: Generate runtime resources
         shell: bash
@@ -186,6 +321,10 @@ jobs:
           mkdir -p "$APP/ByeTunesYoink.bundle"
           cp -R .theos/byetunes-yoink-bundle/. "$APP/ByeTunesYoink.bundle/"
 
+          rm -rf "$APP/ByeTunesISH.bundle"
+          mkdir -p "$APP/ByeTunesISH.bundle"
+          cp -R .theos/byetunes-ish-bundle/. "$APP/ByeTunesISH.bundle/"
+
           # NodeMobile is normally a static framework. If this pinned release
           # ever changes to a dynamic framework, embed exactly the linked binary.
           if otool -L "$APP/Frameworks/FilzaApplySandboxExt.dylib" | grep -Fq 'NodeMobile.framework/NodeMobile'; then
@@ -202,7 +341,19 @@ jobs:
           plutil -replace CFBundleVersion -string "${GITHUB_RUN_NUMBER}" "$APP/Info.plist"
           plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
           plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
-          plutil -replace NSLocalNetworkUsageDescription -string "Filza 27 uses your local network for AirCard pairing, WebDAV, and SSH/SFTP services." "$APP/Info.plist"
+          plutil -replace NSLocalNetworkUsageDescription -string "Filza 27 uses your local network for AirCard pairing, WebDAV, SSH/SFTP, and the on-device ByeTunes service." "$APP/Info.plist"
+
+          python3 - "$APP/Info.plist" <<'PY'
+          import plistlib, sys
+          path = sys.argv[1]
+          with open(path, 'rb') as fh:
+              info = plistlib.load(fh)
+          ats = dict(info.get('NSAppTransportSecurity', {}))
+          ats['NSAllowsLocalNetworking'] = True
+          info['NSAppTransportSecurity'] = ats
+          with open(path, 'wb') as fh:
+              plistlib.dump(info, fh, sort_keys=False)
+          PY
           plutil -replace NSPhotoLibraryUsageDescription -string "Filza 27 AirCard needs photo access to apply custom card skins and passcode themes." "$APP/Info.plist"
           plutil -replace NSBonjourServices -json '["_http._tcp","_ssh._tcp","_remotepairing-pairable-host._tcp","_aircardprobe._tcp"]' "$APP/Info.plist"
           plutil -remove UIBackgroundModes "$APP/Info.plist" 2>/dev/null || true
@@ -246,8 +397,20 @@ jobs:
           test -s "$APP/Config.plist"
           test -s "$APP/ByeTunesYoink.bundle/server.js"
           test -s "$APP/ByeTunesYoink.bundle/provenance.json"
+          test -d "$APP/ByeTunesISH.bundle/rootfs/data"
+          test -s "$APP/ByeTunesISH.bundle/rootfs/meta.db"
+          test -s "$APP/ByeTunesISH.bundle/ISH-LICENSE.md"
+          grep -Eq '^ffmpeg-' "$APP/ByeTunesISH.bundle/package-manifest.txt"
           grep -Fq '"youtube": false' "$APP/ByeTunesYoink.bundle/provenance.json"
-          test "$(plutil -extract ByeTunesApiUrl raw -o - "$APP/Config.plist")" = "https://api.byetunes.xyz"
+          test "$(plutil -extract ByeTunesApiUrl raw -o - "$APP/Config.plist")" = "http://127.0.0.1:41337"
+          python3 - "$APP/Info.plist" <<'PY'
+          import plistlib, sys
+          with open(sys.argv[1], 'rb') as fh:
+              info = plistlib.load(fh)
+          ats = info.get('NSAppTransportSecurity', {})
+          assert ats.get('NSAllowsLocalNetworking') is True, ats
+          assert ats.get('NSAllowsArbitraryLoads') is not True, ats
+          PY
           grep -aFq 'Tendies' "$DYLIB"
           grep -aFq 'NeoSpring' "$DYLIB"
 
@@ -284,6 +447,8 @@ jobs:
           unzip -l "$OUTPUT" | grep -F 'Filza3105.bundle/UpstreamAppInfo.plist'
           unzip -l "$OUTPUT" | grep -F 'ByeTunesYoink.bundle/server.js'
           unzip -l "$OUTPUT" | grep -F 'ByeTunesYoink.bundle/provenance.json'
+          unzip -l "$OUTPUT" | grep -F 'ByeTunesISH.bundle/rootfs/meta.db'
+          unzip -l "$OUTPUT" | grep -F 'ByeTunesISH.bundle/package-manifest.txt'
           shasum -a 256 "$OUTPUT" | tee .theos/IPA-SHA256.txt
 
       - name: Upload modern unsigned IPA

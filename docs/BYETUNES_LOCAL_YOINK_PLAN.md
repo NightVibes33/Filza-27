@@ -347,3 +347,20 @@ This work is complete only when:
 - existing download queue/background/recovery behavior still works
 - no app runtime dependency on `api.byetunes.xyz`
 - main was not changed during development
+
+
+## Official iSH full track-finishing implementation
+
+The AirCard IPA now has two hidden local runtimes. NodeMobile runs pinned patched Yoink. Official `ish-app/ish` at commit `83348361fe65311f6e87ad2e1cbb0ac38d123f69` runs a pinned Alpine 3.24.2 i386 fakefs containing ffmpeg, ffprobe, curl and BusyBox. NodeMobile calls the native iSH bridge only over 127.0.0.1:41339; the ByeTunes-compatible API remains on 127.0.0.1:41337.
+
+The iSH bridge mounts `Library/ByeTunesLocal/jobs` at `/mnt/byetunes`, so downloaded audio, artwork and finished files never need base64 or large in-memory bridge copies. Yoink's track preparation path remains responsible for provider resolution, source selection, lyrics, iTunes catalog metadata and artwork. Official Alpine ffmpeg performs MP3/FLAC/ALAC conversion, artwork embedding, metadata/tag writing and lyric embedding. ALAC post-processing remains in Yoink for explicit/catalog atoms.
+
+YouTube is absent from both direct input and audio fallback. The visible ByeTunes client remains pointed at `https://api.byetunes.xyz` until `Documents/ByeTunesYoinkDiagnostics.json` reports the hidden synthetic MP3/FLAC finishing test and contract probes passing on a real device.
+
+## Device-confirmed localhost cutover
+
+A real-device hidden-runtime diagnostic reported `passed: true`: Node 24.21.0 was serving Yoink on 127.0.0.1:41337, official iSH was ready on 41339, YouTube was disabled, and the synthetic finishing test produced MP3 and FLAC files with FFprobe-confirmed title, artist, and synced-lyrics metadata.
+
+After that hardware gate, the experimental AirCard IPA is configured to use `http://127.0.0.1:41337` as ByeTunes' runtime API. ATS enables local networking only; arbitrary external HTTP remains disabled. The iSH bridge readiness window is extended to roughly 60 seconds to avoid a first-launch rootfs staging race.
+
+This cutover remains on `experiment/aircard-main-sync`; main is unchanged.

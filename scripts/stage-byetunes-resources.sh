@@ -3,66 +3,34 @@ set -euo pipefail
 
 ROOT="${BYETUNES_ROOT:-ByeTunes/MusicManager}"
 DEST="${1:-.theos/byetunes-resources}"
-BYETUNES_RELEASE_IPA_URL="${BYETUNES_RELEASE_IPA_URL:-https://github.com/EduAlexxis/ByeTunes/releases/download/v2.5/ByeTunes.ipa}"
-BYETUNES_RELEASE_IPA_SHA256="${BYETUNES_RELEASE_IPA_SHA256:-e21fb481fc6a1ba8d5702dc34c33afa522c8b799479e0f0a38ed4c98525a56fa}"
+LOCAL_API_URL="${BYETUNES_LOCAL_API_URL:-http://127.0.0.1:41337}"
 
 rm -rf "$DEST"
 mkdir -p "$DEST"
 
-# SwiftUI Image("AppIconImage") can resolve the loose PNG from the host bundle.
 cp "$ROOT/Assets.xcassets/AppIconImage.imageset/AppIconImage.png" "$DEST/AppIconImage.png"
-
-# Keep the original app plist available to the repackaging workflow so it can
-# merge ByeTunes' document-import and file-sharing declarations into Filza.
 cp "$ROOT/Info.plist" "$DEST/ByeTunes-Info.plist"
 
-# ByeTunes 2.5 owns its current provider implementation upstream. Do not
-# restage the retired pre-v2.4 YouTubeKit compatibility resources here.
-
-# Config.plist is intentionally absent from the source checkout, but upstream
-# Config.swift resolves it from Bundle.main and otherwise falls back to
-# https://127.0.0.1. Recover the exact v2.4 runtime configuration from the
-# pinned official release IPA and validate that it is a non-loopback HTTPS URL.
-TMP="$(mktemp -d /tmp/byetunes-runtime.XXXXXX)"
-trap 'rm -rf "$TMP"' EXIT
-curl -fL --retry 3 --retry-delay 2 "$BYETUNES_RELEASE_IPA_URL" -o "$TMP/ByeTunes-v2.5.ipa"
-echo "$BYETUNES_RELEASE_IPA_SHA256  $TMP/ByeTunes-v2.5.ipa" | shasum -a 256 -c -
-mkdir -p "$TMP/release"
-unzip -q "$TMP/ByeTunes-v2.5.ipa" -d "$TMP/release"
-BYETUNES_APP="$(find "$TMP/release/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
-test -n "$BYETUNES_APP"
-test -s "$BYETUNES_APP/Config.plist"
-plutil -lint "$BYETUNES_APP/Config.plist" >/dev/null
-python3 - "$BYETUNES_APP/Config.plist" <<'PY'
-import ipaddress
+python3 - "$DEST/Config.plist" "$LOCAL_API_URL" <<'PY'
 import plistlib
 import sys
 from urllib.parse import urlparse
-
-with open(sys.argv[1], 'rb') as f:
-    config = plistlib.load(f)
-raw = config.get('ByeTunesApiUrl')
-if not isinstance(raw, str) or not raw.strip():
-    raise SystemExit('official ByeTunes v2.5 Config.plist has no ByeTunesApiUrl')
+path, raw = sys.argv[1], sys.argv[2]
 parsed = urlparse(raw)
-if parsed.scheme != 'https' or not parsed.hostname:
-    raise SystemExit('official ByeTunes v2.5 ByeTunesApiUrl is not a valid HTTPS endpoint')
-host = parsed.hostname.lower()
-if host == 'localhost':
-    raise SystemExit('official ByeTunes API endpoint unexpectedly resolves to localhost')
-try:
-    if ipaddress.ip_address(host).is_loopback:
-        raise SystemExit('official ByeTunes API endpoint unexpectedly resolves to loopback')
-except ValueError:
-    pass
-print('Verified official ByeTunes v2.5 runtime API configuration')
+if parsed.scheme != "http" or parsed.hostname not in ("127.0.0.1", "localhost") or parsed.port != 41337:
+    raise SystemExit(f"refusing non-loopback ByeTunes local API URL: {raw!r}")
+with open(path, "wb") as fh:
+    plistlib.dump({"ByeTunesApiUrl": raw}, fh, sort_keys=False)
+print(f"Staged self-hosted ByeTunes API configuration: {raw}")
 PY
-cp "$BYETUNES_APP/Config.plist" "$DEST/Config.plist"
+
+plutil -lint "$DEST/Config.plist" >/dev/null
+test "$(plutil -extract ByeTunesApiUrl raw -o - "$DEST/Config.plist")" = "$LOCAL_API_URL"
 
 (
   cd "$DEST"
   shasum -a 256 AppIconImage.png ByeTunes-Info.plist Config.plist > SHA256SUMS
 )
 
-echo "Staged complete ByeTunes runtime resources in $DEST"
+echo "Staged complete self-hosted ByeTunes runtime resources in $DEST"
 cat "$DEST/SHA256SUMS"

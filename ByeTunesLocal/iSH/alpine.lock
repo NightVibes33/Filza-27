@@ -1,0 +1,14 @@
+{
+  "version": "3.21.8",
+  "image": "alpine:3.21.8",
+  "architecture": "386",
+  "expectedFFmpeg": "6.1.2-r1",
+  "packages": [
+    "busybox",
+    "ca-certificates",
+    "curl",
+    "ffmpeg"
+  ],
+  "youtube": false,
+  "purpose": "Pinned i386 userspace for official iSH; ffmpeg/ffprobe/curl only"
+}

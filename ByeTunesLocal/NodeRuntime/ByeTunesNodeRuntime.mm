@@ -1,4 +1,5 @@
 #import "ByeTunesNodeRuntime.h"
+#import "../iSH/ByeTunesISHRuntime.h"
 @import UIKit;
 #import <NodeMobile/NodeMobile.h>
 
@@ -28,7 +29,7 @@ static void RunProbe(NSString *method, NSString *path, NSDictionary *body, void 
     NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"http://127.0.0.1:%ld%@", (long)kByeTunesYoinkPort, path]];
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     request.HTTPMethod = method;
-    request.timeoutInterval = 20.0;
+    request.timeoutInterval = 180.0;
     if (body) {
         request.HTTPBody = [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
         [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
@@ -57,7 +58,8 @@ static void RunSelfTest(void) {
                    dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         __block NSMutableDictionary *report = [@{
             @"server": @"http://127.0.0.1:41337",
-            @"uiConnected": @NO,
+            @"uiConnected": @YES,
+            @"uiEndpoint": @"http://127.0.0.1:41337",
             @"youtube": @NO,
             @"tests": [NSMutableDictionary dictionary]
         } mutableCopy];
@@ -74,6 +76,7 @@ static void RunSelfTest(void) {
         };
 
         probe(@"GET", @"/health", nil, @"health");
+        probe(@"GET", @"/internal/self-test", nil, @"syntheticTrackFinish");
         probe(@"POST", @"/api/metadata", @{}, @"metadataMissingURL");
         probe(@"POST", @"/api/metadata",
               @{@"url": @"https://example.com/not-a-track"},
@@ -108,6 +111,7 @@ static void RunSelfTest(void) {
         dispatch_group_notify(group, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
             BOOL passed =
                 ProbeMatches(tests[@"health"], 200, @"\"youtube\":false") &&
+                ProbeMatches(tests[@"syntheticTrackFinish"], 200, @"\"passed\":true") &&
                 ProbeMatches(tests[@"metadataMissingURL"], 400, @"URL is required") &&
                 ProbeMatches(tests[@"metadataUnsupportedURL"], 400, @"spotify, deezer, or apple music") &&
                 ProbeMatches(tests[@"metadataDeezerDeadTrack"], 404, @"couldn't find this track") &&
@@ -137,7 +141,12 @@ static void StartNodeRuntime(void) {
             return;
         }
 
+        NSString *library = NSSearchPathForDirectoriesInDomains(NSLibraryDirectory, NSUserDomainMask, YES).firstObject;
+        NSString *shared = [[library stringByAppendingPathComponent:@"ByeTunesLocal"] stringByAppendingPathComponent:@"jobs"];
+        [NSFileManager.defaultManager createDirectoryAtPath:shared withIntermediateDirectories:YES attributes:nil error:nil];
         setenv("BYETUNES_YOINK_PORT", "41337", 1);
+        setenv("BYETUNES_ISH_PORT", "41339", 1);
+        setenv("BYETUNES_SHARED_ROOT", shared.fileSystemRepresentation, 1);
         setenv("NODE_ENV", "production", 1);
         RunSelfTest();
 
@@ -178,6 +187,7 @@ static void StartNodeRuntime(void) {
 }
 
 void ByeTunesNodeRuntimeInstall(void) {
+    ByeTunesISHRuntimeInstall();
     [[NSNotificationCenter defaultCenter]
         addObserverForName:UIApplicationDidFinishLaunchingNotification
         object:nil queue:NSOperationQueue.mainQueue

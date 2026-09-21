@@ -21,6 +21,10 @@ AIRCARD_FFI := $(AIRCARD_ROOT)/AirliftFFI
 NODEMOBILE_ROOT := Vendor/NodeMobile
 NODEMOBILE_FRAMEWORK := $(NODEMOBILE_ROOT)/NodeMobile.framework
 BYETUNES_YOINK_BUNDLE := .theos/byetunes-yoink-bundle
+BYETUNES_ISH_BUNDLE := .theos/byetunes-ish-bundle
+ISH_ROOT := Vendor/iSH
+ISH_SOURCE := $(ISH_ROOT)/src
+ISH_LIB := $(ISH_ROOT)/lib
 
 FilzaApplySandboxExt_FILES = Tweak.m FilzaAirCardBridge.m FilzaAirCardDirectBackend.m FilzaFeatureRouter.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataRetryFix.m AppIconResourceProxyFix.m VirtualBackendFix.m SystemPathDiagnostics.m BadQuerySystemProbe.m GestaltManager.m FilzaMondBridge.m FilzaMainToolbarGestalt.m Filza3105Bridge.m Filza3105IPAExportBridge.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ByeTunesFullAppLauncher.m FilzaDiagnostics.m FilzaQuickActions.m WebDAVRuntimeFix.m WebDAVToggleStateFix.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m CVE43724RieCompatibility.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
 FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/AppIconHelper.m
@@ -29,6 +33,7 @@ FilzaApplySandboxExt_FILES += $(BAD_QUERY_ROOT)/bad_query/bad_query.c
 FilzaApplySandboxExt_FILES += $(MOND_GEN)/mond_bad_query.c
 FilzaApplySandboxExt_FILES += $(AIRCARD_IOS)/GrappaHelper.m
 FilzaApplySandboxExt_FILES += ByeTunesLocal/NodeRuntime/ByeTunesNodeRuntime.mm
+FilzaApplySandboxExt_FILES += ByeTunesLocal/iSH/ByeTunesISHRuntime.m
 
 GCDWEBSERVER_OBJC_FILES := $(shell find $(GCDWEBSERVER_ROOT)/GCDWebServer $(GCDWEBSERVER_ROOT)/GCDWebDAVServer -type f -name '*.m' -print)
 FilzaApplySandboxExt_FILES += $(GCDWEBSERVER_OBJC_FILES)
@@ -112,7 +117,7 @@ FilzaApplySandboxExt_CFLAGS = -I$(PWD)/compat -I$(PWD) -I$(PWD)/XPF/src -I$(PWD)
     -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable \
     -Wno-incompatible-pointer-types -Wno-incompatible-pointer-types-discards-qualifiers \
     -Wno-deprecated-declarations -Wno-nonportable-include-path -Wno-format
-FilzaApplySandboxExt_CFLAGS += -Wno-arc-performSelector-leaks -F$(PWD)/$(NODEMOBILE_ROOT)
+FilzaApplySandboxExt_CFLAGS += -Wno-arc-performSelector-leaks -F$(PWD)/$(NODEMOBILE_ROOT) -I$(PWD)/$(ISH_SOURCE) -DISH_INTERNAL=1
 FilzaApplySandboxExt_CCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 FilzaApplySandboxExt_OBJCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 FilzaApplySandboxExt_OBJCCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
@@ -123,6 +128,7 @@ FilzaApplySandboxExt_SWIFTFLAGS += -swift-version 5 -default-isolation MainActor
 # Do not also link Vendor/idevice here: doing so duplicates the Rust runtime and
 # idevice/plist C ABI symbols. AirCard supplies the idevice symbols for this target.
 FilzaApplySandboxExt_LDFLAGS += $(AIRCARD_FFI)/lib/libairlift_ffi.a -F$(PWD)/$(NODEMOBILE_ROOT) -framework NodeMobile -lc++
+FilzaApplySandboxExt_LDFLAGS += -Wl,-force_load,$(PWD)/$(ISH_LIB)/libish.a -Wl,-force_load,$(PWD)/$(ISH_LIB)/libish_emu.a -Wl,-force_load,$(PWD)/$(ISH_LIB)/libfakefs.a -lresolv
 
 FilzaApplySandboxExt_FRAMEWORKS = UIKit Foundation SwiftUI Combine AVFoundation AVKit CoreMedia AudioToolbox CryptoKit Security UniformTypeIdentifiers PhotosUI JavaScriptCore AppIntents ActivityKit SafariServices CFNetwork MobileCoreServices WebKit QuickLook ImageIO
 FilzaApplySandboxExt_PRIVATE_FRAMEWORKS = IOSurface
@@ -133,6 +139,7 @@ FilzaApplySandboxExt_INSTALL_TARGET_PROCESSES = Filza
 # unrelated patch as a hidden side effect.
 before-FilzaApplySandboxExt-all::
 	@bash scripts/stage-byetunes-node-mobile.sh "$(NODEMOBILE_ROOT)"
+	@bash scripts/stage-official-ish.sh "$(ISH_ROOT)"
 	@bash scripts/build-byetunes-embedded-yoink.sh "$(BYETUNES_YOINK_BUNDLE)"
 	@bash scripts/stage-aircard.sh
 	@python3 scripts/patch-aircard-embedded-parity.py
@@ -151,6 +158,12 @@ before-FilzaApplySandboxExt-all::
 	@test -s "$(NODEMOBILE_FRAMEWORK)/NodeMobile" || (echo "Missing pinned NodeMobile framework" >&2; exit 1)
 	@test -s "$(NODEMOBILE_FRAMEWORK)/Headers/NodeMobile.h" || (echo "Missing NodeMobile headers" >&2; exit 1)
 	@test -s "$(BYETUNES_YOINK_BUNDLE)/server.js" || (echo "Missing embedded ByeTunes Yoink server bundle" >&2; exit 1)
+	@test -s "$(ISH_LIB)/libish.a" || (echo "Missing official iSH libish.a" >&2; exit 1)
+	@test -s "$(ISH_LIB)/libish_emu.a" || (echo "Missing official iSH libish_emu.a" >&2; exit 1)
+	@test -s "$(ISH_LIB)/libfakefs.a" || (echo "Missing official iSH libfakefs.a" >&2; exit 1)
+	@test -d "$(BYETUNES_ISH_BUNDLE)/rootfs/data" || (echo "Missing official iSH Alpine fakefs data" >&2; exit 1)
+	@test -s "$(BYETUNES_ISH_BUNDLE)/rootfs/meta.db" || (echo "Missing official iSH Alpine fakefs metadata" >&2; exit 1)
+	@grep -Eq '^ffmpeg-' "$(BYETUNES_ISH_BUNDLE)/package-manifest.txt" || (echo "Embedded Alpine rootfs lacks ffmpeg" >&2; exit 1)
 	@grep -Fq '"youtube": false' "$(BYETUNES_YOINK_BUNDLE)/provenance.json" || (echo "Embedded Yoink unexpectedly enables YouTube" >&2; exit 1)
 	@test -s "$(AIRCARD_FFI)/lib/libairlift_ffi.a" || (echo "Missing AirCard AirliftFFI static library" >&2; exit 1)
 	@test -f "$(AIRCARD_IOS)/AirCardContentView.swift" || (echo "Missing staged pinned full AirCard UI" >&2; exit 1)
