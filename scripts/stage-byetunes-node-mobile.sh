@@ -71,10 +71,19 @@ PY
 
 test -s "$DEST/NodeMobile.framework/NodeMobile"
 test -s "$DEST/NodeMobile.framework/Headers/NodeMobile.h"
-ARCHS="$(lipo -archs "$DEST/NodeMobile.framework/NodeMobile")"
-case " $ARCHS " in
-  *" arm64 "*) ;;
-  *) echo "NodeMobile framework lacks arm64: $ARCHS" >&2; exit 1 ;;
-esac
+if command -v lipo >/dev/null 2>&1; then
+  ARCHS="$(lipo -archs "$DEST/NodeMobile.framework/NodeMobile")"
+  case " $ARCHS " in
+    *" arm64 "*) ;;
+    *) echo "NodeMobile framework lacks arm64: $ARCHS" >&2; exit 1 ;;
+  esac
+else
+  DESC="$(file "$DEST/NodeMobile.framework/NodeMobile")"
+  echo "$DESC" | grep -Eiq 'arm64|aarch64' || {
+    echo "NodeMobile framework is not arm64: $DESC" >&2
+    exit 1
+  }
+  ARCHS="arm64"
+fi
 
 echo "NodeMobile staged: $ARCHS"
