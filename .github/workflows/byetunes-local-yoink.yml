@@ -54,9 +54,23 @@ jobs:
         working-directory: ${{ runner.temp }}/yoink
         run: pnpm install --frozen-lockfile
 
-      - name: Run Yoink unit tests
+      - name: Run unaffected upstream Yoink unit tests
         working-directory: ${{ runner.temp }}/yoink
-        run: pnpm run test:unit
+        run: |
+          pnpm exec vitest run \
+            --exclude tests/lib/request-logging.test.ts \
+            --exclude tests/lib/youtube.test.ts
+
+      - name: Assert ByeTunes compatibility deltas
+        working-directory: ${{ runner.temp }}/yoink
+        run: |
+          grep -Fq '"spotify" | "apple-music" | "deezer"' src/lib/spotify.ts
+          ! grep -Fq '"youtube"' src/lib/spotify.ts
+          ! grep -Fq 'from "./youtube"' src/lib/resolve-track.ts
+          ! grep -Fq 'from "./youtube"' src/lib/audio-sources.ts
+          ! grep -Fq 'X-Request-ID' src/lib/request-logging.ts
+          grep -Fq 'paste a spotify, deezer, or apple music link' src/app/api/download/route.ts
+          grep -Fq 'paste a spotify, deezer, or apple music link' src/app/api/metadata/route.ts
 
       - name: Build patched Yoink
         working-directory: ${{ runner.temp }}/yoink
