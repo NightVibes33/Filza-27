@@ -39,8 +39,14 @@ assert_pair() {
 assert_pair download_missing /api/download '{}'
 assert_pair download_unsupported /api/download '{"url":"https://example.com/not-a-track","format":"mp3","genreSource":"itunes","syncedLyrics":false}'
 assert_pair download_deezer_missing /api/download '{"url":"https://www.deezer.com/track/0","format":"mp3","genreSource":"itunes","syncedLyrics":false}'
+assert_pair download_spotify_missing /api/download '{"url":"https://open.spotify.com/track/0000000000000000000000","format":"mp3","genreSource":"spotify","syncedLyrics":false}'
+assert_pair download_apple_missing /api/download '{"url":"https://music.apple.com/us/song/not-a-track/0","format":"mp3","genreSource":"apple","syncedLyrics":false}'
+assert_pair download_youtube_probe /api/download '{"url":"https://www.youtube.com/watch?v=AAAAAAAAAAA","format":"mp3","genreSource":"youtube","syncedLyrics":false}'
 assert_pair metadata_missing /api/metadata '{}'
 assert_pair metadata_unsupported /api/metadata '{"url":"https://example.com/not-a-track"}'
 assert_pair metadata_deezer_missing /api/metadata '{"url":"https://www.deezer.com/track/0"}'
+assert_pair metadata_spotify_missing /api/metadata '{"url":"https://open.spotify.com/track/0000000000000000000000"}'
+assert_pair metadata_apple_missing /api/metadata '{"url":"https://music.apple.com/us/song/not-a-track/0"}'
+assert_pair metadata_youtube_probe /api/metadata '{"url":"https://www.youtube.com/watch?v=AAAAAAAAAAA"}'
 
 echo "Local patched Yoink matches the observed ByeTunes contract for controlled non-media probes."
