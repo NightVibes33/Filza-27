@@ -8,7 +8,9 @@ on:
     paths:
       - "ByeTunesLocal/**"
       - "scripts/prepare-byetunes-local-yoink.sh"
+      - "scripts/apply-byetunes-local-yoink-patch.py"
       - "scripts/test-byetunes-local-contract.sh"
+      - "scripts/stage-byetunes-node-mobile.sh"
       - ".github/workflows/byetunes-local-yoink.yml"
 
 permissions:
@@ -29,6 +31,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+
+      - name: Stage pinned NodeMobile iOS runtime
+        run: |
+          bash scripts/stage-byetunes-node-mobile.sh "$RUNNER_TEMP/NodeMobile"
+          test -s "$RUNNER_TEMP/NodeMobile/NodeMobile.framework/NodeMobile"
+          test -s "$RUNNER_TEMP/NodeMobile/NodeMobile.framework/Headers/NodeMobile.h"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
