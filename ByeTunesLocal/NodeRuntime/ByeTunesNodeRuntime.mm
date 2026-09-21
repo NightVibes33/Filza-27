@@ -45,6 +45,13 @@ static void RunProbe(NSString *method, NSString *path, NSDictionary *body, void 
     }] resume];
 }
 
+static BOOL ProbeMatches(NSDictionary *result, NSInteger status, NSString *bodyFragment) {
+    if (![result[@"status"] isEqual:@(status)]) return NO;
+    if (!bodyFragment.length) return YES;
+    NSString *body = [result[@"body"] isKindOfClass:NSString.class] ? result[@"body"] : @"";
+    return [body containsString:bodyFragment];
+}
+
 static void RunSelfTest(void) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2500 * NSEC_PER_MSEC),
                    dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
@@ -57,34 +64,64 @@ static void RunSelfTest(void) {
         NSMutableDictionary *tests = report[@"tests"];
         dispatch_group_t group = dispatch_group_create();
 
-        dispatch_group_enter(group);
-        RunProbe(@"GET", @"/health", nil, ^(NSDictionary *result) {
-            @synchronized (tests) { tests[@"health"] = result; }
-            dispatch_group_leave(group);
-        });
+        void (^probe)(NSString *, NSString *, NSDictionary *, NSString *) =
+        ^(NSString *method, NSString *path, NSDictionary *body, NSString *name) {
+            dispatch_group_enter(group);
+            RunProbe(method, path, body, ^(NSDictionary *result) {
+                @synchronized (tests) { tests[name] = result; }
+                dispatch_group_leave(group);
+            });
+        };
 
-        dispatch_group_enter(group);
-        RunProbe(@"POST", @"/api/metadata", @{}, ^(NSDictionary *result) {
-            @synchronized (tests) { tests[@"metadataMissingURL"] = result; }
-            dispatch_group_leave(group);
-        });
+        probe(@"GET", @"/health", nil, @"health");
+        probe(@"POST", @"/api/metadata", @{}, @"metadataMissingURL");
+        probe(@"POST", @"/api/metadata",
+              @{@"url": @"https://example.com/not-a-track"},
+              @"metadataUnsupportedURL");
+        probe(@"POST", @"/api/metadata",
+              @{@"url": @"https://www.deezer.com/track/0"},
+              @"metadataDeezerDeadTrack");
+        probe(@"POST", @"/api/metadata",
+              @{@"url": @"https://www.youtube.com/watch?v=AAAAAAAAAAA"},
+              @"metadataYouTubeRejected");
 
-        dispatch_group_enter(group);
-        RunProbe(@"POST", @"/api/metadata", @{@"url": @"https://example.com/not-a-track"}, ^(NSDictionary *result) {
-            @synchronized (tests) { tests[@"metadataUnsupportedURL"] = result; }
-            dispatch_group_leave(group);
-        });
-
-        dispatch_group_enter(group);
-        RunProbe(@"POST", @"/api/metadata", @{@"url": @"https://www.deezer.com/track/0"}, ^(NSDictionary *result) {
-            @synchronized (tests) { tests[@"metadataDeezerDeadTrack"] = result; }
-            dispatch_group_leave(group);
-        });
+        probe(@"POST", @"/api/download", @{}, @"downloadMissingURL");
+        probe(@"POST", @"/api/download",
+              @{@"url": @"https://example.com/not-a-track",
+                @"format": @"mp3",
+                @"genreSource": @"itunes",
+                @"syncedLyrics": @NO},
+              @"downloadUnsupportedURL");
+        probe(@"POST", @"/api/download",
+              @{@"url": @"https://www.deezer.com/track/0",
+                @"format": @"mp3",
+                @"genreSource": @"itunes",
+                @"syncedLyrics": @NO},
+              @"downloadDeezerDeadTrack");
+        probe(@"POST", @"/api/download",
+              @{@"url": @"https://www.youtube.com/watch?v=AAAAAAAAAAA",
+                @"format": @"mp3",
+                @"genreSource": @"itunes",
+                @"syncedLyrics": @NO},
+              @"downloadYouTubeRejected");
 
         dispatch_group_notify(group, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            BOOL passed =
+                ProbeMatches(tests[@"health"], 200, @"\"youtube\":false") &&
+                ProbeMatches(tests[@"metadataMissingURL"], 400, @"URL is required") &&
+                ProbeMatches(tests[@"metadataUnsupportedURL"], 400, @"spotify, deezer, or apple music") &&
+                ProbeMatches(tests[@"metadataDeezerDeadTrack"], 404, @"couldn't find this track") &&
+                ProbeMatches(tests[@"metadataYouTubeRejected"], 400, @"spotify, deezer, or apple music") &&
+                ProbeMatches(tests[@"downloadMissingURL"], 400, @"URL is required") &&
+                ProbeMatches(tests[@"downloadUnsupportedURL"], 400, @"spotify, deezer, or apple music") &&
+                ProbeMatches(tests[@"downloadDeezerDeadTrack"], 404, @"couldn't find this track") &&
+                ProbeMatches(tests[@"downloadYouTubeRejected"], 400, @"spotify, deezer, or apple music");
+
             report[@"complete"] = @YES;
+            report[@"passed"] = @(passed);
             WriteDiagnostics(report);
-            NSLog(@"[ByeTunesLocal] hidden NodeMobile self-test written to %@", ByeTunesDiagnosticsPath());
+            NSLog(@"[ByeTunesLocal] hidden NodeMobile self-test passed=%d path=%@",
+                  passed, ByeTunesDiagnosticsPath());
         });
     });
 }
