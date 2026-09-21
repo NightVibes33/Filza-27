@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOCK="$ROOT/ByeTunesLocal/Upstream/yoink.lock"
-PATCH="$ROOT/ByeTunesLocal/Upstream/patches/0001-byetunes-direct-deezer.patch"
+PATCHER="$ROOT/scripts/apply-byetunes-local-yoink-patch.py"
 DEST="${1:-$ROOT/.build/byetunes-local-yoink}"
 
 REPO="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["repository"])' "$LOCK")"
@@ -31,11 +31,10 @@ for path, expected in lock["expectedGitBlobs"].items():
 print("Pinned Yoink blob verification passed")
 PY
 
-git -C "$DEST" apply --check "$PATCH"
-git -C "$DEST" apply "$PATCH"
+python3 "$PATCHER" "$DEST"
 
 grep -Fq '"spotify" | "apple-music" | "youtube" | "deezer"' "$DEST/src/lib/spotify.ts"
-grep -Fq 'url.includes("deezer.com") || url.includes("deezer.page.link")' "$DEST/src/lib/spotify.ts"
+grep -Fq 'url.includes("deezer.com") || url.includes("deezer.page.link") || url.includes("link.deezer.com")' "$DEST/src/lib/spotify.ts"
 grep -Fq 'resolveDirectDeezerTrack' "$DEST/src/lib/resolve-track.ts"
 grep -Fq 'paste a spotify, deezer, or apple music link' "$DEST/src/app/api/download/route.ts"
 grep -Fq 'paste a spotify, deezer, or apple music link' "$DEST/src/app/api/metadata/route.ts"
