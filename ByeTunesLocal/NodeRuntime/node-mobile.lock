@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/fogtape/nodejs-mobile",
+  "tag": "v24.21.0-0",
+  "nodeVersion": "24.21.0",
+  "asset": "nodejs-mobile-ios-24.21.0-0.zip",
+  "url": "https://github.com/fogtape/nodejs-mobile/releases/download/v24.21.0-0/nodejs-mobile-ios-24.21.0-0.zip",
+  "sha256": "11ce3f366dc5f5f2f58a35186b257edc4fa365f2aeb1c0fe963c35728495b492"
+}
