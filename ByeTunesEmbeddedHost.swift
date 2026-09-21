@@ -6,27 +6,43 @@ import UIKit
 /// visible metadataSource picker. Reconcile that known contamination once,
 /// then leave the original ByeTunes state machine completely in control.
 private enum ByeTunesEmbeddedStateRepair {
-    private static let completedKey = "filzaByeTunesMetadataParityStateRepairV1"
+    private static let completedKey = "filzaByeTunesMetadataParityStateRepairV2"
 
     static func runIfNeeded() {
         let defaults = UserDefaults.standard
         guard !defaults.bool(forKey: completedKey) else { return }
 
-        let selected = (defaults.string(forKey: MetadataProviderSettings.legacySourceKey) ?? "local").lowercased()
+        // Older embedded builds could create metadataSource before ByeTunes'
+        // @AppStorage default was materialized. Treat a missing/invalid value as
+        // upstream ByeTunes 2.5's default ("apple"), never as Filza-local.
+        let stored = defaults.string(forKey: MetadataProviderSettings.legacySourceKey)?.lowercased()
+        let selected: String
         let repaired: [MetadataProviderID]
-        switch selected {
+        switch stored {
         case "youtube":
+            selected = "youtube"
             repaired = [.local, .youtube]
         case "itunes":
+            selected = "itunes"
             repaired = [.itunes]
         case "deezer":
+            selected = "deezer"
             repaired = [.deezer]
         case "apple":
+            selected = "apple"
             repaired = [.apple]
         case "all":
+            selected = "all"
             repaired = MetadataProviderSettings.defaultSources
         default:
-            repaired = [.local]
+            selected = "apple"
+            repaired = [.apple]
+            defaults.set(selected, forKey: MetadataProviderSettings.legacySourceKey)
+        }
+
+        // Preserve ByeTunes 2.5's own downloader default on clean installs.
+        if defaults.string(forKey: "downloadSearchProvider") == nil {
+            defaults.set("deezer", forKey: "downloadSearchProvider")
         }
 
         MetadataProviderSettings.saveSources(repaired)
