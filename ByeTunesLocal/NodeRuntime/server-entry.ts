@@ -20,7 +20,7 @@ import { fetchBestAudio } from "./src/lib/audio-sources";
 import { isCompilationAlbum } from "./src/lib/audio-metadata";
 
 const HOST = "127.0.0.1";
-const PORT = Number.parseInt(process.env.BYETUNES_LOCAL_PORT || "41337", 10);
+const PORT = Number.parseInt(process.env.BYETUNES_YOINK_PORT || "41337", 10);
 const MAX_BODY = 128 * 1024;
 
 function json(res: ServerResponse, status: number, body: unknown) {
@@ -177,6 +177,9 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       port: PORT,
       youtube: false,
       providers: ["spotify", "deezer", "apple-music"],
+      yoinkCommit: "061e33ffc8d5050f828196bb78f7034f817e1e2e",
+      node: process.version,
+      pid: process.pid,
     });
   }
 
