@@ -121,7 +121,7 @@ replace_once(
 replace_once(
     "src/lib/audio-sources.ts",
     '  source: "deezer" | "tidal" | "youtube";\n  format: "mp3" | "flac" | "webm";',
-    '  source: "deezer" | "tidal";\n  format: "mp3" | "flac";'
+    '  source: "deezer" | "tidal";\n  format: "mp3" | "flac" | "webm";'
 )
 
 audio_text = (root / "src/lib/audio-sources.ts").read_text()
