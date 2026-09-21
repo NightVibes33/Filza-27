@@ -106,11 +106,33 @@ static void StartNodeRuntime(void) {
 
         dispatch_async(ByeTunesNodeQueue(), ^{
             @autoreleasepool {
-                const char *nodeArg = "node";
-                const char *scriptArg = serverPath.fileSystemRepresentation;
-                char *argv[] = {(char *)nodeArg, (char *)scriptArg, NULL};
+                NSArray<NSString *> *arguments = @[@"node", serverPath];
+                size_t argumentBytes = 0;
+                for (NSString *argument in arguments)
+                    argumentBytes += strlen(argument.UTF8String) + 1;
+
+                char *argumentBuffer = (char *)calloc(argumentBytes, 1);
+                char **argv = (char **)calloc(arguments.count, sizeof(char *));
+                if (!argumentBuffer || !argv) {
+                    free(argumentBuffer);
+                    free(argv);
+                    WriteDiagnostics(@{@"complete": @YES, @"startupError": @"NodeMobile argv allocation failed"});
+                    return;
+                }
+
+                char *cursor = argumentBuffer;
+                for (NSUInteger index = 0; index < arguments.count; index++) {
+                    const char *value = arguments[index].UTF8String;
+                    size_t length = strlen(value);
+                    memcpy(cursor, value, length);
+                    argv[index] = cursor;
+                    cursor += length + 1;
+                }
+
                 NSLog(@"[ByeTunesLocal] starting embedded NodeMobile runtime");
-                int rc = node_start(2, argv);
+                int rc = node_start((int)arguments.count, argv);
+                free(argv);
+                free(argumentBuffer);
                 WriteDiagnostics(@{@"complete": @YES, @"nodeExited": @(rc)});
                 NSLog(@"[ByeTunesLocal] NodeMobile exited rc=%d", rc);
             }
