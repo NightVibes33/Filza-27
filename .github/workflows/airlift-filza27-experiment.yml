@@ -1,4 +1,4 @@
-name: Verify ByeTunes All Sources + YouTube + SSH IPA + AirCard
+name: Verify ByeTunes + SSH IPA + AirCard + Embedded Yoink
 
 on:
   push:
@@ -40,6 +40,11 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Setup Node 24 for embedded Yoink bundle
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
       - name: Verify main + AirCard integration wiring
         run: |
           set -euxo pipefail
@@ -58,6 +63,11 @@ jobs:
           grep -F 'al_filza_fs_read' scripts/stage-aircard.sh
           grep -F 'AirCard owns the Airlift/idevice runtime' RuntimeStability.m
           ! grep -F 'FILZA_AIRCARD_STREAM_COMPAT' scripts/stage-aircard.sh
+          grep -F 'ByeTunesLocal/NodeRuntime/ByeTunesNodeRuntime.mm' Makefile
+          grep -F 'stage-byetunes-node-mobile.sh' Makefile
+          grep -F 'build-byetunes-embedded-yoink.sh' Makefile
+          grep -F 'ByeTunesNodeRuntimeInstall();' Tweak.m
+          grep -F '"youtube": false' ByeTunesLocal/NodeRuntime/node-mobile.lock >/dev/null 2>&1 || true
 
       - name: Install Procursus build tools
         uses: dhinakg/procursus-action@main
@@ -134,6 +144,11 @@ jobs:
           grep -aFq 'direct normal-path AFC fallback installed' "$DYLIB"
           grep -aFq 'al_filza_fs_list' "$DYLIB"
           grep -aFq 'al_filza_fs_read' "$DYLIB"
+          grep -aFq 'ByeTunesLocal' "$DYLIB"
+          nm "$DYLIB" | grep -F 'node_start'
+          test -s .theos/byetunes-yoink-bundle/server.js
+          test -s .theos/byetunes-yoink-bundle/provenance.json
+          grep -Fq '"youtube": false' .theos/byetunes-yoink-bundle/provenance.json
 
       - name: Generate runtime resources
         shell: bash
@@ -166,6 +181,18 @@ jobs:
           cp .theos/byetunes-resources/AppIconImage.png "$APP/AppIconImage.png"
           cp .theos/byetunes-resources/ByeTunes-Info.plist "$APP/ByeTunes-Info.plist"
           cp .theos/byetunes-resources/Config.plist "$APP/Config.plist"
+
+          rm -rf "$APP/ByeTunesYoink.bundle"
+          mkdir -p "$APP/ByeTunesYoink.bundle"
+          cp -R .theos/byetunes-yoink-bundle/. "$APP/ByeTunesYoink.bundle/"
+
+          # NodeMobile is normally a static framework. If this pinned release
+          # ever changes to a dynamic framework, embed exactly the linked binary.
+          if otool -L "$APP/Frameworks/FilzaApplySandboxExt.dylib" | grep -Fq 'NodeMobile.framework/NodeMobile'; then
+            rm -rf "$APP/Frameworks/NodeMobile.framework"
+            cp -R Vendor/NodeMobile/NodeMobile.framework "$APP/Frameworks/NodeMobile.framework"
+            codesign --remove-signature "$APP/Frameworks/NodeMobile.framework/NodeMobile" >/dev/null 2>&1 || true
+          fi
 
           rm -rf "$APP/MondEmbedded.bundle" "$APP/Filza3105.bundle"
           cp -R ThirdParty/mond-current/Resources/MondEmbedded.bundle "$APP/MondEmbedded.bundle"
@@ -217,6 +244,10 @@ jobs:
           test -s "$APP/MondEmbedded.bundle/Info.plist"
           test -s "$APP/Filza3105.bundle/UpstreamAppInfo.plist"
           test -s "$APP/Config.plist"
+          test -s "$APP/ByeTunesYoink.bundle/server.js"
+          test -s "$APP/ByeTunesYoink.bundle/provenance.json"
+          grep -Fq '"youtube": false' "$APP/ByeTunesYoink.bundle/provenance.json"
+          test "$(plutil -extract ByeTunesApiUrl raw -o - "$APP/Config.plist")" = "https://api.byetunes.xyz"
           grep -aFq 'Tendies' "$DYLIB"
           grep -aFq 'NeoSpring' "$DYLIB"
 
@@ -251,6 +282,8 @@ jobs:
           unzip -l "$OUTPUT" | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
           unzip -l "$OUTPUT" | grep -F 'MondEmbedded.bundle/Info.plist'
           unzip -l "$OUTPUT" | grep -F 'Filza3105.bundle/UpstreamAppInfo.plist'
+          unzip -l "$OUTPUT" | grep -F 'ByeTunesYoink.bundle/server.js'
+          unzip -l "$OUTPUT" | grep -F 'ByeTunesYoink.bundle/provenance.json'
           shasum -a 256 "$OUTPUT" | tee .theos/IPA-SHA256.txt
 
       - name: Upload modern unsigned IPA
