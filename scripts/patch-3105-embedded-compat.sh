@@ -54,4 +54,47 @@ grep -Fq 'enum AppPaths' "$UTILS"
 ! grep -Fq 'DisplayIdentityAttestationToken' "$UTILS"
 ! grep -Fq 'enum AppUpdateChecker' "$UTILS"
 
-echo "Applied 3105 1.1.1 embedded-host compatibility transform (standalone updater/attestation excluded)"
+echo "Applied 3105 1.1.1 embedded-host compatibility baseline (standalone updater/attestation excluded)"
+
+test -f scripts/stage-3105-v2-overlay.sh || {
+  echo "Missing 3105 2.0 overlay staging script" >&2
+  exit 1
+}
+bash scripts/stage-3105-v2-overlay.sh
+
+# Upstream 2.0 uses a UIImage extension property as NSCache cost. In Filza's
+# embedded Swift target UIKit is main-actor isolated, so that one cache-cost
+# read does not compile from the repository image loader actor. Keep the same
+# decoded image cache and use NSCache's normal setObject overload.
+PRESENTATION="ThirdParty/3105/Sources/RepositoryPresentationSupport.swift"
+test -f "$PRESENTATION" || { echo "Missing staged 3105 repository presentation source" >&2; exit 1; }
+python3 - "$PRESENTATION" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+old = '''            decodedCache.setObject(
+                image,
+                forKey: cacheKey as NSString,
+                cost: image.memoryCost
+            )
+'''
+new = '''            decodedCache.setObject(
+                image,
+                forKey: cacheKey as NSString
+            )
+'''
+if old not in text:
+    raise SystemExit("3105 2.0 embedded compat: repository image-cache anchor changed")
+path.write_text(text.replace(old, new, 1), encoding="utf-8")
+PY
+
+# Keep Apple's native compact tab bar and only adjust feature visibility/order.
+# The dedicated Filza Apps Manager route still forces Files visible only for
+# that controller; normal 3105 Developer Mode controls it everywhere else.
+test -f scripts/patch-3105-feature-tabs.sh || {
+  echo "Missing 3105 feature-tab compatibility script" >&2
+  exit 1
+}
+bash scripts/patch-3105-feature-tabs.sh
