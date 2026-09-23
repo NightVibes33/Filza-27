@@ -177,3 +177,42 @@ assert old in s, "AirCard individual-key picker surface changed upstream"
 s = s.replace(old, new, 1)
 
 p.write_text(s)
+
+
+# FILZA_AIRCARD_CARD_LIBRARY: keep Card Maker as an independent web app. Filza
+# embeds the deployed site as a dedicated AirCard tab; no Card Maker source is
+# copied, vendored, or modified.
+models = Path("ThirdParty/AirCard/ios-app/Models.swift")
+models_text = models.read_text()
+needle = """    case walletCards = "Wallet Cards"
+    case passcodeThemes = "Passcode"
+"""
+replacement = """    case walletCards = "Wallet Cards"
+    case cardLibrary = "Library"
+    case passcodeThemes = "Passcode"
+"""
+assert needle in models_text, "AirCard AppTab enum changed upstream"
+models_text = models_text.replace(needle, replacement, 1)
+models.write_text(models_text)
+
+content = Path("ThirdParty/AirCard/ios-app/AirCardContentView.swift")
+content_text = content.read_text()
+needle = """            WalletCardsTab()
+                .tabItem { Label("Wallet Cards", systemImage: "creditcard.fill") }
+                .tag(AppTab.walletCards)
+
+            PasscodeThemeTab()
+"""
+replacement = """            WalletCardsTab()
+                .tabItem { Label("Wallet Cards", systemImage: "creditcard.fill") }
+                .tag(AppTab.walletCards)
+
+            FilzaAirCardLibraryView()
+                .tabItem { Label("Library", systemImage: "square.grid.2x2.fill") }
+                .tag(AppTab.cardLibrary)
+
+            PasscodeThemeTab()
+"""
+assert needle in content_text, "AirCard root tab layout changed upstream"
+content_text = content_text.replace(needle, replacement, 1)
+content.write_text(content_text)

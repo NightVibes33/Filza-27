@@ -160,6 +160,8 @@ jobs:
           grep -F 'FilzaAirCardPresentFromController' FilzaFeatureRouter.m
           grep -F 'FilzaAirCardBridge.m' Makefile
           grep -F 'FilzaAirCardHost.swift' Makefile
+          grep -F 'FilzaAirCardLibrary.swift' Makefile
+          grep -F 'cardmaker-omega.vercel.app' FilzaAirCardLibrary.swift
           grep -F 'FilzaAirCardDirectBackend.m' Makefile
           grep -F 'TendiesEngine.swift' Makefile
           grep -F 'RespringHelper.swift' Makefile
@@ -356,6 +358,8 @@ jobs:
               plistlib.dump(info, fh, sort_keys=False)
           PY
           plutil -replace NSPhotoLibraryUsageDescription -string "Filza 27 AirCard needs photo access to apply custom card skins and passcode themes." "$APP/Info.plist"
+          plutil -remove WKAppBoundDomains "$APP/Info.plist" 2>/dev/null || true
+          plutil -insert WKAppBoundDomains -json '["cardmaker-omega.vercel.app"]' "$APP/Info.plist"
           plutil -replace NSBonjourServices -json '["_http._tcp","_ssh._tcp","_remotepairing-pairable-host._tcp","_aircardprobe._tcp"]' "$APP/Info.plist"
           plutil -remove UIBackgroundModes "$APP/Info.plist" 2>/dev/null || true
           plutil -insert UIBackgroundModes -json '["audio"]' "$APP/Info.plist"
@@ -411,6 +415,7 @@ jobs:
           ats = info.get('NSAppTransportSecurity', {})
           assert ats.get('NSAllowsLocalNetworking') is True, ats
           assert ats.get('NSAllowsArbitraryLoads') is not True, ats
+          assert info.get('WKAppBoundDomains') == ['cardmaker-omega.vercel.app'], info.get('WKAppBoundDomains')
           PY
           grep -aFq 'Tendies' "$DYLIB"
           grep -aFq 'NeoSpring' "$DYLIB"
