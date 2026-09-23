@@ -51,7 +51,10 @@ jobs:
           grep -F 'FilzaAirCardBridge.m' Makefile
           grep -F 'FilzaAirCardHost.swift' Makefile
           grep -F 'FilzaAirCardLibrary.swift' Makefile
+          grep -F 'FilzaAirCardKeyImagePicker.swift' Makefile
           grep -F 'cardmaker-omega.vercel.app' FilzaAirCardLibrary.swift
+          grep -F 'preferredAssetRepresentationMode = .compatible' FilzaAirCardKeyImagePicker.swift
+          grep -F 'maxDimension: 640' scripts/patch-aircard-embedded-parity.py
           grep -F 'FilzaAirCardDirectBackend.m' Makefile
           grep -F 'TendiesEngine.swift' Makefile
           grep -F 'RespringHelper.swift' Makefile
