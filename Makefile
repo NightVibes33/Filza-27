@@ -18,13 +18,6 @@ MOND_GEN := $(MOND_CURRENT_ROOT)/Generated
 AIRCARD_ROOT := ThirdParty/AirCard
 AIRCARD_IOS := $(AIRCARD_ROOT)/ios-app
 AIRCARD_FFI := $(AIRCARD_ROOT)/AirliftFFI
-NODEMOBILE_ROOT := Vendor/NodeMobile
-NODEMOBILE_FRAMEWORK := $(NODEMOBILE_ROOT)/NodeMobile.framework
-BYETUNES_YOINK_BUNDLE := .theos/byetunes-yoink-bundle
-BYETUNES_ISH_BUNDLE := .theos/byetunes-ish-bundle
-ISH_ROOT := Vendor/iSH
-ISH_SOURCE := $(ISH_ROOT)/src
-ISH_LIB := $(ISH_ROOT)/lib
 
 FilzaApplySandboxExt_FILES = Tweak.m FilzaAirCardBridge.m FilzaAirCardDirectBackend.m FilzaFeatureRouter.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataRetryFix.m AppIconResourceProxyFix.m VirtualBackendFix.m SystemPathDiagnostics.m BadQuerySystemProbe.m GestaltManager.m FilzaMondBridge.m FilzaMainToolbarGestalt.m Filza3105Bridge.m Filza3105IPAExportBridge.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ByeTunesFullAppLauncher.m FilzaDiagnostics.m FilzaQuickActions.m WebDAVRuntimeFix.m WebDAVToggleStateFix.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m CVE43724RieCompatibility.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
 FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/AppIconHelper.m
@@ -32,8 +25,6 @@ FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/wallpaper_zip.c
 FilzaApplySandboxExt_FILES += $(BAD_QUERY_ROOT)/bad_query/bad_query.c
 FilzaApplySandboxExt_FILES += $(MOND_GEN)/mond_bad_query.c
 FilzaApplySandboxExt_FILES += $(AIRCARD_IOS)/GrappaHelper.m
-FilzaApplySandboxExt_FILES += ByeTunesLocal/NodeRuntime/ByeTunesNodeRuntime.mm
-FilzaApplySandboxExt_FILES += ByeTunesLocal/iSH/ByeTunesISHRuntime.m
 
 GCDWEBSERVER_OBJC_FILES := $(shell find $(GCDWEBSERVER_ROOT)/GCDWebServer $(GCDWEBSERVER_ROOT)/GCDWebDAVServer -type f -name '*.m' -print)
 FilzaApplySandboxExt_FILES += $(GCDWEBSERVER_OBJC_FILES)
@@ -117,7 +108,7 @@ FilzaApplySandboxExt_CFLAGS = -I$(PWD)/compat -I$(PWD) -I$(PWD)/XPF/src -I$(PWD)
     -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable \
     -Wno-incompatible-pointer-types -Wno-incompatible-pointer-types-discards-qualifiers \
     -Wno-deprecated-declarations -Wno-nonportable-include-path -Wno-format
-FilzaApplySandboxExt_CFLAGS += -Wno-arc-performSelector-leaks -F$(PWD)/$(NODEMOBILE_ROOT) -I$(PWD)/$(ISH_SOURCE) -DISH_INTERNAL=1
+FilzaApplySandboxExt_CFLAGS += -Wno-arc-performSelector-leaks
 FilzaApplySandboxExt_CCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 FilzaApplySandboxExt_OBJCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 FilzaApplySandboxExt_OBJCCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
@@ -127,8 +118,7 @@ FilzaApplySandboxExt_SWIFTFLAGS += -swift-version 5 -default-isolation MainActor
 # AirCard's libairlift_ffi statically contains its pinned idevice-ffi dependency.
 # Do not also link Vendor/idevice here: doing so duplicates the Rust runtime and
 # idevice/plist C ABI symbols. AirCard supplies the idevice symbols for this target.
-FilzaApplySandboxExt_LDFLAGS += $(AIRCARD_FFI)/lib/libairlift_ffi.a -F$(PWD)/$(NODEMOBILE_ROOT) -framework NodeMobile -lc++
-FilzaApplySandboxExt_LDFLAGS += -Wl,-force_load,$(PWD)/$(ISH_LIB)/libish.a -Wl,-force_load,$(PWD)/$(ISH_LIB)/libish_emu.a -Wl,-force_load,$(PWD)/$(ISH_LIB)/libfakefs.a -lresolv
+FilzaApplySandboxExt_LDFLAGS += $(AIRCARD_FFI)/lib/libairlift_ffi.a -lc++
 
 FilzaApplySandboxExt_FRAMEWORKS = UIKit Foundation SwiftUI Combine AVFoundation AVKit CoreMedia AudioToolbox CryptoKit Security UniformTypeIdentifiers PhotosUI JavaScriptCore AppIntents ActivityKit SafariServices CFNetwork MobileCoreServices WebKit QuickLook ImageIO
 FilzaApplySandboxExt_PRIVATE_FRAMEWORKS = IOSurface
@@ -138,9 +128,6 @@ FilzaApplySandboxExt_INSTALL_TARGET_PROCESSES = Filza
 # Every transformation is explicit and ordered. No script may invoke another
 # unrelated patch as a hidden side effect.
 before-FilzaApplySandboxExt-all::
-	@bash scripts/stage-byetunes-node-mobile.sh "$(NODEMOBILE_ROOT)"
-	@bash scripts/stage-official-ish.sh "$(ISH_ROOT)"
-	@bash scripts/build-byetunes-embedded-yoink.sh "$(BYETUNES_YOINK_BUNDLE)"
 	@bash scripts/stage-aircard.sh
 	@python3 scripts/patch-aircard-embedded-parity.py
 	@bash scripts/build-aircard-ffi.sh "$(AIRCARD_ROOT)" "$(AIRCARD_FFI)"
@@ -152,19 +139,8 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/patch-byetunes-upstream-parity-v2.sh
 	@bash scripts/restore-byetunes-v24-metadata-compat.sh
 	@bash scripts/patch-byetunes-metadata-parity-post.sh
-	@bash scripts/patch-byetunes-background-provider-parity.sh
-	@bash scripts/patch-byetunes-download-provider-parity.sh
+	@python3 scripts/patch-byetunes-metadata-only.py
 	@bash scripts/patch-byetunes-device-library-save.sh
-	@test -s "$(NODEMOBILE_FRAMEWORK)/NodeMobile" || (echo "Missing pinned NodeMobile framework" >&2; exit 1)
-	@test -s "$(NODEMOBILE_FRAMEWORK)/Headers/NodeMobile.h" || (echo "Missing NodeMobile headers" >&2; exit 1)
-	@test -s "$(BYETUNES_YOINK_BUNDLE)/server.js" || (echo "Missing embedded ByeTunes Yoink server bundle" >&2; exit 1)
-	@test -s "$(ISH_LIB)/libish.a" || (echo "Missing official iSH libish.a" >&2; exit 1)
-	@test -s "$(ISH_LIB)/libish_emu.a" || (echo "Missing official iSH libish_emu.a" >&2; exit 1)
-	@test -s "$(ISH_LIB)/libfakefs.a" || (echo "Missing official iSH libfakefs.a" >&2; exit 1)
-	@test -d "$(BYETUNES_ISH_BUNDLE)/rootfs/data" || (echo "Missing official iSH Alpine fakefs data" >&2; exit 1)
-	@test -s "$(BYETUNES_ISH_BUNDLE)/rootfs/meta.db" || (echo "Missing official iSH Alpine fakefs metadata" >&2; exit 1)
-	@grep -Eq '^ffmpeg-' "$(BYETUNES_ISH_BUNDLE)/package-manifest.txt" || (echo "Embedded Alpine rootfs lacks ffmpeg" >&2; exit 1)
-	@grep -Fq '"youtube": false' "$(BYETUNES_YOINK_BUNDLE)/provenance.json" || (echo "Embedded Yoink unexpectedly enables YouTube" >&2; exit 1)
 	@test -s "$(AIRCARD_FFI)/lib/libairlift_ffi.a" || (echo "Missing AirCard AirliftFFI static library" >&2; exit 1)
 	@test -f "$(AIRCARD_IOS)/AirCardContentView.swift" || (echo "Missing staged pinned full AirCard UI" >&2; exit 1)
 	@grep -Fq 'Choose Pairing File from Files…' "$(AIRCARD_IOS)/AirCardContentView.swift" || (echo "Missing restored AirCard pairing-file import UI" >&2; exit 1)
@@ -179,11 +155,11 @@ before-FilzaApplySandboxExt-all::
 	@test -f "$(BYETUNES_ROOT)/BackgroundAudioDownloadManager.swift" || (echo "Incomplete ByeTunes 2.4 sources" >&2; exit 1)
 	@test -f "$(BYETUNES_ACTIVITY_SHARED)" || (echo "Missing ByeTunes 2.4 shared Live Activity model" >&2; exit 1)
 	@test -f "ByeTunesMetadataCompat.swift" || (echo "Missing ByeTunes metadata compatibility layer" >&2; exit 1)
+	@test -f "scripts/patch-byetunes-metadata-only.py" || (echo "Missing ByeTunes metadata-only UI patch" >&2; exit 1)
+	@! grep -Fq 'Label("Download", systemImage: "arrow.down.circle")' "$(BYETUNES_ROOT)/TabViews.swift" || (echo "ByeTunes Download tab still present" >&2; exit 1)
 	@test -f "ByeTunesDownloadParityCompat.swift" || (echo "Missing ByeTunes download-provider compatibility layer" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-upstream-parity-v2.sh" || (echo "Missing structural ByeTunes upstream-parity patch" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-metadata-parity-post.sh" || (echo "Missing ByeTunes metadata-parity post-patch" >&2; exit 1)
-	@test -f "scripts/patch-byetunes-background-provider-parity.sh" || (echo "Missing ByeTunes background-provider parity patch" >&2; exit 1)
-	@test -f "scripts/patch-byetunes-download-provider-parity.sh" || (echo "Missing ByeTunes download-provider parity patch" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-device-library-save.sh" || (echo "Missing ByeTunes device-library save verifier" >&2; exit 1)
 	@test -f "scripts/patch-3105-embedded-compat.sh" || (echo "Missing 3105 embedded compatibility transform" >&2; exit 1)
 	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.c" || (echo "Missing pinned bad_query submodule" >&2; exit 1)

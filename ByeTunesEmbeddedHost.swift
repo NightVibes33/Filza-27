@@ -86,15 +86,7 @@ public final class ByeTunesEmbeddedHostFactory: NSObject {
             return true
         }
 
-        guard identifier == BackgroundAudioDownloadManager.sessionIdentifier else {
-            return false
-        }
-        guard UserDefaults.standard.bool(forKey: "backgroundDownloadsEnabled") else {
-            completionHandler()
-            return true
-        }
-        BackgroundAudioDownloadManager.shared.setBackgroundEventsCompletionHandler(completionHandler)
-        return true
+        return false
     }
 
     /// Used when Filza's existing Music Library controller owns navigation.

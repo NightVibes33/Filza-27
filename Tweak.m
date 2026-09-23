@@ -15,7 +15,6 @@
 
 #include "MCMFilzaIntegration.h"
 #include "PosterBoardFeature.h"
-#include "ByeTunesLocal/NodeRuntime/ByeTunesNodeRuntime.h"
 #include "kexploit/kexploit_opa334.h"
 #include "kexploit/kutils.h"
 #include "sandbox_escape.h"
@@ -1658,7 +1657,6 @@ static void runIOS185KernelPath(void) {
 
 __attribute__((constructor)) void TweakInit(void) {
     installHooks();
-    ByeTunesNodeRuntimeInstall();
     if (isExactIOS185Target()) {
         [NSFileManager.defaultManager createDirectoryAtPath:MCMFilzaVirtualRoot()
             withIntermediateDirectories:YES attributes:nil error:nil];
