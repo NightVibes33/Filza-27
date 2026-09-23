@@ -90,15 +90,41 @@ replacement = """            .sheet(isPresented: $showCredits) {
 """
 assert needle in s
 s = s.replace(needle, replacement, 1)
-# Individual-key picking is the one AirCard picker path that runs inside a
-# confirmationDialog inside Filza's embedded page sheet. Remove its SwiftUI
-# PhotosPicker Transferable state and wait for the dialog dismissal before
-# presenting the native picker.
-state_line = "    @State private var selectedKey: [PhotosPickerItem] = []\n"
-assert state_line in s, "AirCard individual-key picker state changed upstream"
-s = s.replace(state_line, "", 1)
+# Individual-key modal presentation must be owned by Filza's stable AirCard
+# hosting controller. The Form/Section only emits an edit request; it does not
+# own confirmationDialog/photosPicker/sheet state.
+creator_state_old = """struct ThemeCreatorSection: View {
+    @EnvironmentObject var vm: AppViewModel
+    @State private var selectedDigitForPicker: String? = nil
+    @State private var showKeySourceDialog: Bool = false
+    @State private var isKeyPhotosPickerPresented: Bool = false
+    @State private var isKeyDocumentPickerPresented: Bool = false
+    @State private var selectedKey: [PhotosPickerItem] = []
+"""
+creator_state_new = """struct ThemeCreatorSection: View {
+    @EnvironmentObject var vm: AppViewModel
+    @EnvironmentObject private var filzaAirCardHostPresenter: FilzaAirCardHostPresenter
+"""
+assert creator_state_old in s, "AirCard ThemeCreatorSection picker state changed upstream"
+s = s.replace(creator_state_old, creator_state_new, 1)
 
-dialog_old = """            Button {
+tap_old = """                .onTapGesture {
+                    selectedDigitForPicker = btn.digit
+                    showKeySourceDialog = true
+                }
+"""
+tap_new = """                .onTapGesture {
+                    filzaAirCardHostPresenter.presentIndividualKeySource(
+                        for: btn.digit,
+                        viewModel: vm
+                    )
+                }
+"""
+assert tap_old in s, "AirCard individual-key row action changed upstream"
+s = s.replace(tap_old, tap_new, 1)
+
+modal_old = """        .confirmationDialog("Choose Key \(selectedDigitForPicker ?? "") Image Source", isPresented: $showKeySourceDialog, titleVisibility: .visible) {
+            Button {
                 isKeyPhotosPickerPresented = true
             } label: {
                 Label("Photo Library", systemImage: "photo.on.rectangle")
@@ -108,34 +134,11 @@ dialog_old = """            Button {
             } label: {
                 Label("Choose from Files…", systemImage: "folder")
             }
-"""
-dialog_new = """            Button {
-                showKeySourceDialog = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                    isKeyPhotosPickerPresented = true
-                }
-            } label: {
-                Label("Photo Library", systemImage: "photo.on.rectangle")
+            Button("Cancel", role: .cancel) {
+                selectedDigitForPicker = nil
             }
-            Button {
-                showKeySourceDialog = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                    isKeyDocumentPickerPresented = true
-                }
-            } label: {
-                Label("Choose from Files…", systemImage: "folder")
-            }
-"""
-assert dialog_old in s, "AirCard individual-key source dialog changed upstream"
-s = s.replace(dialog_old, dialog_new, 1)
-
-# Individual-key image picking is nested inside AirCard's Form. In the standalone
-# app that presentation usually survives, but inside Filza's page-sheet host the
-# confirmationDialog -> PhotosPicker/UIDocumentPicker transition can dismiss the
-# embedded host or trip UIKit presentation assertions. Poster Slice does not use
-# this same nested presentation path. Present the individual-key pickers from a
-# stable background anchor instead of the Section itself.
-old = """        .photosPicker(
+        }
+        .photosPicker(
             isPresented: $isKeyPhotosPickerPresented,
             selection: $selectedKey,
             maxSelectionCount: 1,
@@ -173,74 +176,8 @@ old = """        .photosPicker(
             }
         }
 """
-new = """        .background {
-            Color.clear
-                .sheet(isPresented: $isKeyPhotosPickerPresented) {
-                    FilzaAirCardIndividualKeyPicker(
-                        onPick: { image in
-                            guard let digit = selectedDigitForPicker else {
-                                isKeyPhotosPickerPresented = false
-                                return
-                            }
-                            vm.setIndividualKey(digit: digit, image: image)
-                            selectedDigitForPicker = nil
-                            isKeyPhotosPickerPresented = false
-                        },
-                        onCancel: {
-                            selectedDigitForPicker = nil
-                            isKeyPhotosPickerPresented = false
-                        }
-                    )
-                    .ignoresSafeArea()
-                }
-                .sheet(isPresented: $isKeyDocumentPickerPresented) {
-                    DocumentPickerView(allowedContentTypes: [
-                        .image, .png, .jpeg, .heic,
-                        UTType(filenameExtension: "webp") ?? .image,
-                        UTType(filenameExtension: "tiff") ?? .image
-                    ]) { url in
-                        guard let digit = selectedDigitForPicker else {
-                            isKeyDocumentPickerPresented = false
-                            return
-                        }
-                        if let data = try? Data(contentsOf: url, options: .mappedIfSafe),
-                           let image = ImageEngine.safeImageFromData(data, maxDimension: 768) {
-                            vm.setIndividualKey(digit: digit, image: image)
-                        }
-                        selectedDigitForPicker = nil
-                        isKeyDocumentPickerPresented = false
-                    }
-                }
-        }
-"""
-assert old in s, "AirCard individual-key picker surface changed upstream"
-s = s.replace(old, new, 1)
-
-# A passcode key renders at 225px. Retain only a bounded source image so a
-# camera/RAW selection cannot keep a megapixel bitmap alive while the embedded
-# SwiftUI form rebuilds.
-vm_path = Path("ThirdParty/AirCard/ios-app/AppViewModel.swift")
-vm_text = vm_path.read_text()
-old_setter = """    func setIndividualKey(digit: String, image: UIImage) {
-        rawIndividualImages[digit] = image
-        individualOffsets[digit] = .zero
-        individualZooms[digit] = 1.0
-        selectedKeyDigit = digit
-        updateIndividualKey(digit: digit)
-    }
-"""
-new_setter = """    func setIndividualKey(digit: String, image: UIImage) {
-        let safeImage = ImageEngine.normalizeAndDownsample(image, maxDimension: 640)
-        rawIndividualImages[digit] = safeImage
-        individualOffsets[digit] = .zero
-        individualZooms[digit] = 1.0
-        selectedKeyDigit = digit
-        updateIndividualKey(digit: digit)
-    }
-"""
-assert old_setter in vm_text, "AirCard individual-key setter changed upstream"
-vm_text = vm_text.replace(old_setter, new_setter, 1)
-vm_path.write_text(vm_text)
+assert modal_old in s, "AirCard individual-key modal surface changed upstream"
+s = s.replace(modal_old, "", 1)
 
 p.write_text(s)
 

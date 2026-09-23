@@ -99,7 +99,7 @@ MOND_ZIP_SWIFT_FILES := \
     $(MOND_GEN)/ZIPFoundation/URL+ZIP.swift
 
 AIRCARD_SWIFT_FILES := $(AIRCARD_IOS)/AppViewModel.swift $(AIRCARD_IOS)/AirCardContentView.swift $(AIRCARD_IOS)/Models.swift $(AIRCARD_IOS)/NetworkStatus.swift $(AIRCARD_IOS)/PairingController.swift $(AIRCARD_IOS)/Utilities.swift $(AIRCARD_IOS)/RespringHelper.swift $(AIRCARD_IOS)/TendiesEngine.swift $(AIRCARD_IOS)/TendiesModel.swift $(AIRCARD_IOS)/TendiesView.swift
-FilzaApplySandboxExt_SWIFT_FILES = FilzaAirCardHost.swift FilzaAirCardLibrary.swift FilzaAirCardKeyImagePicker.swift $(AIRCARD_SWIFT_FILES) ByeTunesEmbeddedHost.swift ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift FilzaMondCurrentHost.swift Filza3105Host.swift $(MOND_SWIFT_FILES) $(MOND_PARTYUI_SWIFT_FILES) $(MOND_ZIP_SWIFT_FILES) $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
+FilzaApplySandboxExt_SWIFT_FILES = FilzaAirCardHost.swift FilzaAirCardLibrary.swift $(AIRCARD_SWIFT_FILES) ByeTunesEmbeddedHost.swift ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift FilzaMondCurrentHost.swift Filza3105Host.swift $(MOND_SWIFT_FILES) $(MOND_PARTYUI_SWIFT_FILES) $(MOND_ZIP_SWIFT_FILES) $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
 
 FilzaApplySandboxExt_CFLAGS = -I$(PWD)/compat -I$(PWD) -I$(PWD)/XPF/src -I$(PWD)/XPF/external/ChOma/include -I$(IDEVICE_VENDOR)/include -I$(PWD)/$(BAD_QUERY_ROOT)/bad_query -I$(PWD)/$(THREEONE_ROOT)/Sources -I$(PWD)/$(MOND_GEN) \
     -I$(PWD)/$(AIRCARD_IOS) -I$(PWD)/$(AIRCARD_FFI)/include -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Core -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Requests -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Responses -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebDAVServer \
@@ -146,8 +146,9 @@ before-FilzaApplySandboxExt-all::
 	@grep -Fq 'Choose Pairing File from Files…' "$(AIRCARD_IOS)/AirCardContentView.swift" || (echo "Missing restored AirCard pairing-file import UI" >&2; exit 1)
 	@test -f "FilzaAirCardHost.swift" || (echo "Missing AirCard embedded host" >&2; exit 1)
 	@test -f "FilzaAirCardLibrary.swift" || (echo "Missing AirCard Card Library web host" >&2; exit 1)
-	@test -f "FilzaAirCardKeyImagePicker.swift" || (echo "Missing stable AirCard individual-key picker" >&2; exit 1)
-	@grep -Fq 'FilzaAirCardIndividualKeyPicker' "$(AIRCARD_IOS)/AirCardContentView.swift" || (echo "Individual-key picker crash fix was not staged" >&2; exit 1)
+	@grep -Fq 'FilzaAirCardHostPresenter' "FilzaAirCardHost.swift" || (echo "Missing host-owned AirCard picker presenter" >&2; exit 1)
+	@grep -Fq 'presentIndividualKeySource' "$(AIRCARD_IOS)/AirCardContentView.swift" || (echo "Individual-key host presentation route was not staged" >&2; exit 1)
+	@! grep -Fq 'selectedDigitForPicker' "$(AIRCARD_IOS)/AirCardContentView.swift" || (echo "Nested individual-key picker state still present" >&2; exit 1)
 	@grep -Fq 'cardmaker-omega.vercel.app' "FilzaAirCardLibrary.swift" || (echo "Wrong AirCard Card Library origin" >&2; exit 1)
 	@grep -Fq 'case cardLibrary = "Library"' "$(AIRCARD_IOS)/Models.swift" || (echo "AirCard Card Library tab enum was not staged" >&2; exit 1)
 	@grep -Fq 'FilzaAirCardLibraryView()' "$(AIRCARD_IOS)/AirCardContentView.swift" || (echo "AirCard Card Library tab was not staged" >&2; exit 1)
