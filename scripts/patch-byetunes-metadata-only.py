@@ -23,8 +23,7 @@ content = replace_once(
     'remove download tab index'
 )
 
-content = replace_once(
-    content,
+tutorial_variants = [
 '''            if !showSplash && hasCompletedOnboarding && !tutorialComplete {
                 TutorialOverlayView(
                     isComplete: $tutorialComplete,
@@ -36,9 +35,22 @@ content = replace_once(
             }
 
 ''',
-    '',
-    'remove downloader tutorial'
-)
+'''            if hasCompletedOnboarding && !tutorialComplete {
+                TutorialOverlayView(
+                    isComplete: $tutorialComplete,
+                    songs: $songs,
+                    selectedTab: $selectedTab,
+                    downloadTabIndex: downloadTabIndex
+                )
+                .zIndex(1)
+            }
+
+'''
+]
+matched_tutorial = [variant for variant in tutorial_variants if variant in content]
+if len(matched_tutorial) != 1:
+    raise SystemExit(f"remove downloader tutorial: expected one staged variant, found {len(matched_tutorial)}")
+content = content.replace(matched_tutorial[0], '', 1)
 
 content = content.replace('            DownloadLiveActivityManager.shared.reconcileOrphanedActivitiesOnLaunch()\n', '')
 
