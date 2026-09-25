@@ -37,25 +37,24 @@ private final class FilzaAirCardLibraryModel: ObservableObject {
 }
 
 struct FilzaAirCardLibraryView: View {
-    @Environment(\.dismiss) private var dismiss
+    let onExit: () -> Void
+
     @EnvironmentObject private var vm: AppViewModel
     @StateObject private var model = FilzaAirCardLibraryModel()
 
     var body: some View {
         FilzaAirCardLibraryWebView(model: model)
             .overlay(alignment: .topLeading) {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 17, weight: .semibold))
-                        .frame(width: 40, height: 40)
+                Button(action: onExit) {
+                    Image(systemName: "house.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(width: 36, height: 36)
                         .background(.ultraThinMaterial, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Back to AirCard")
-                .padding(.leading, 10)
-                .padding(.top, 8)
+                .padding(.leading, 8)
+                .padding(.top, 6)
             }
             .confirmationDialog(
                 "Card saved",
