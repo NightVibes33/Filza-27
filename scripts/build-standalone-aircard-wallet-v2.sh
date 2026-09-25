@@ -33,6 +33,10 @@ grep -Fq 'Back to AirCard' "$SRC/ios-app/AirCardLibrary.swift"
 ! grep -Fq 'PasscodeThemeTab()' "$SRC/ios-app/ContentView.swift"
 ! grep -Fq 'TendiesView()' "$SRC/ios-app/ContentView.swift"
 grep -Fq 'cardmaker-omega.vercel.app' "$SRC/ios-app/AirCardLibrary.swift"
+grep -Fq '.ignoresSafeArea(.container, edges: .all)' "$SRC/ios-app/AirCardLibrary.swift"
+grep -Fq 'contentInsetAdjustmentBehavior = .never' "$SRC/ios-app/AirCardLibrary.swift"
+grep -Fq 'viewport-fit=cover' "$SRC/ios-app/AirCardLibrary.swift"
+grep -Fq '.overlay(alignment: .trailing)' "$SRC/ios-app/AirCardLibrary.swift"
 
 cd "$SRC"
 xcodegen generate
