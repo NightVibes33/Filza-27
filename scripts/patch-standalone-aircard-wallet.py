@@ -34,12 +34,12 @@ models.write_text(s.replace(old, new, 1))
 content = src / "ios-app/ContentView.swift"
 s = content.read_text()
 
-root_old = """struct ContentView: View {
-    @EnvironmentObject var vm: AppViewModel
+root_start = s.index("struct ContentView: View {")
+root_end_marker = "// MARK: - Pairing Tab"
+root_end = s.index(root_end_marker, root_start)
+assert root_start >= 0 and root_end > root_start, "Could not locate pinned ContentView root"
 
-    var body: some View {
-        TabView(selection: $vm.selectedTab) {"""
-root_new = """struct ContentView: View {
+new_root = """struct ContentView: View {
     @EnvironmentObject var vm: AppViewModel
     @State private var showCardStudio = false
     @State private var lastMainTab: AppTab = .pairing
@@ -68,30 +68,40 @@ root_new = """struct ContentView: View {
                 })
                 .environmentObject(vm)
             } else {
-                TabView(selection: airCardTabSelection) {"""
-assert root_old in s, "ContentView root changed upstream"
-s = s.replace(root_old, root_new, 1)
+                TabView(selection: airCardTabSelection) {
+                    PairingTab()
+                        .tabItem { Label("Pairing", systemImage: "antenna.radiowaves.left.and.right") }
+                        .tag(AppTab.pairing)
 
-tabs_old = """            PasscodeThemeTab()
-                .tabItem { Label("Passcode", systemImage: "lock.circle.fill") }
-                .tag(AppTab.passcodeThemes)
+                    WalletCardsTab()
+                        .tabItem { Label("Wallet Cards", systemImage: "creditcard.fill") }
+                        .tag(AppTab.walletCards)
 
-            TendiesView()
-                .tabItem { Label("Wallpapers", systemImage: "photo.stack.fill") }
-                .tag(AppTab.wallpapers)"""
-tabs_new = """            Color.clear
-                .tabItem { Label("Library", systemImage: "square.grid.2x2.fill") }
-                .tag(AppTab.cardLibrary)"""
-assert tabs_old in s, "Root tab layout changed upstream"
-s = s.replace(tabs_old, tabs_new, 1)
-
-cover_old = """        .onAppear {
-            vm.showSuccessAlert = false
-            vm.successAlertMessage = ""
+                    Color.clear
+                        .tabItem { Label("Library", systemImage: "square.grid.2x2.fill") }
+                        .tag(AppTab.cardLibrary)
+                }
+            }
         }
-    }
-}"""
-cover_new = """        .onAppear {
+        .alert("Notice", isPresented: Binding(
+            get: { vm.errorMessage != nil },
+            set: { if !$0 { vm.errorMessage = nil } }
+        )) {
+            Button("OK") { vm.errorMessage = nil }
+        } message: {
+            Text(vm.errorMessage ?? "")
+        }
+        .alert("Success! 🎉", isPresented: $vm.showSuccessAlert) {
+            Button("OK") {}
+        } message: {
+            Text(vm.successAlertMessage)
+        }
+        .sheet(isPresented: $vm.showShareSheet) {
+            if let url = vm.exportedThemeURL {
+                ShareSheet(items: [url])
+            }
+        }
+        .onAppear {
             vm.showSuccessAlert = false
             vm.successAlertMessage = ""
             if vm.selectedTab != .cardLibrary {
@@ -99,9 +109,11 @@ cover_new = """        .onAppear {
             }
         }
     }
-}"""
-assert cover_old in s, "ContentView modifier layout changed upstream"
-s = s.replace(cover_old, cover_new, 1)
+}
+
+"""
+
+s = s[:root_start] + new_root + s[root_end:]
 
 s = s.replace(
     "Apple Wallet Skins & Passcode Themes for iOS 18+",
