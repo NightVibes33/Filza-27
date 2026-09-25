@@ -60,7 +60,15 @@ root_new = """struct ContentView: View {
     }
 
     var body: some View {
-        TabView(selection: airCardTabSelection) {"""
+        Group {
+            if showCardStudio {
+                AirCardLibraryView(onExit: {
+                    showCardStudio = false
+                    vm.selectedTab = lastMainTab
+                })
+                .environmentObject(vm)
+            } else {
+                TabView(selection: airCardTabSelection) {"""
 assert root_old in s, "ContentView root changed upstream"
 s = s.replace(root_old, root_new, 1)
 
@@ -89,10 +97,6 @@ cover_new = """        .onAppear {
             if vm.selectedTab != .cardLibrary {
                 lastMainTab = vm.selectedTab
             }
-        }
-        .fullScreenCover(isPresented: $showCardStudio) {
-            AirCardLibraryView()
-                .environmentObject(vm)
         }
     }
 }"""
