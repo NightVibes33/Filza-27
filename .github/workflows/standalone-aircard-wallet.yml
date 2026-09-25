@@ -34,6 +34,12 @@ jobs:
           command -v xcodegen >/dev/null 2>&1 || brew install xcodegen
           xcodegen --version
 
+      - name: Restore patched AirliftFFI cache
+        uses: actions/cache@v4
+        with:
+          path: .theos/aircard-ffi-cache
+          key: aircard-ffi-macos26-xcode26.2-097a058-${{ hashFiles('scripts/patch-standalone-aircard-wallet.py') }}
+
       - name: Build standalone AirCard Wallet IPA
         shell: bash
         run: |
