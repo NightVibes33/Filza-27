@@ -49,7 +49,7 @@ grep -Fq 'using discovered Remote Pairing endpoint' "$SRC/rust-core/src/exploit.
 grep -Fq '.ignoresSafeArea(.container, edges: .all)' "$SRC/ios-app/AirCardLibrary.swift"
 grep -Fq 'contentInsetAdjustmentBehavior = .never' "$SRC/ios-app/AirCardLibrary.swift"
 grep -Fq 'viewport-fit=cover' "$SRC/ios-app/AirCardLibrary.swift"
-grep -Fq '.overlay(alignment: .trailing)' "$SRC/ios-app/AirCardLibrary.swift"
+grep -Fq '.overlay(alignment: .topTrailing)' "$SRC/ios-app/AirCardLibrary.swift"
 
 cd "$SRC"
 xcodegen generate
