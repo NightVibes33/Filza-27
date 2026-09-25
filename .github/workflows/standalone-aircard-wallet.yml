@@ -49,7 +49,7 @@ jobs:
           test -s "$IPA"
           unzip -tq "$IPA"
           test -s .theos/AirCard-Wallet-Standalone-SHA256.txt
-          grep -Fq '740cfd9e7f00be77887638a3e65edbdb19ff1867' scripts/build-standalone-aircard-wallet-v2.sh
+          grep -Fq '097a058c984ffc33ccb697b9dfe8058be3e86244' scripts/build-standalone-aircard-wallet-v2.sh
           grep -Fq 'AirCardLibraryView(onExit:' scripts/patch-standalone-aircard-wallet.py
           grep -Fq 'if showCardStudio {' scripts/patch-standalone-aircard-wallet.py
           ! grep -Fq 'fullScreenCover' scripts/patch-standalone-aircard-wallet.py
