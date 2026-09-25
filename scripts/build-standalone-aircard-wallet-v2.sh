@@ -20,8 +20,11 @@ python3 "$ROOT/scripts/patch-standalone-aircard-wallet.py" "$SRC"
 
 # The scanner transport is patched in rust-core, so rebuild the real upstream
 # AirliftFFI xcframework instead of silently reusing the stale prebuilt binary.
-chmod +x build-ios.sh
-./build-ios.sh
+chmod +x "$SRC/build-ios.sh"
+(
+  cd "$SRC"
+  ./build-ios.sh
+)
 
 grep -Fq 'case pairing = "Pairing"' "$SRC/ios-app/Models.swift"
 grep -Fq 'case walletCards = "Wallet Cards"' "$SRC/ios-app/Models.swift"
