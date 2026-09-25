@@ -45,16 +45,18 @@ struct FilzaAirCardLibraryView: View {
     var body: some View {
         FilzaAirCardLibraryWebView(model: model)
             .ignoresSafeArea(.container, edges: .all)
-            .overlay(alignment: .trailing) {
+            .overlay(alignment: .topTrailing) {
                 Button(action: onExit) {
                     Image(systemName: "house.fill")
                         .font(.system(size: 14, weight: .semibold))
-                        .frame(width: 34, height: 46)
-                        .background(.ultraThinMaterial, in: Capsule())
+                        .frame(width: 34, height: 34)
+                        .background(.ultraThinMaterial, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Back to AirCard")
-                .padding(.trailing, 6)
+                // Match Card Studio's top chrome: immediately left of the ellipsis.
+                .padding(.top, 74)
+                .padding(.trailing, 78)
             }
             .confirmationDialog(
                 "Card saved",
