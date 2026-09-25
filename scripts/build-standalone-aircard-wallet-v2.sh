@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PIN="740cfd9e7f00be77887638a3e65edbdb19ff1867"
+PIN="097a058c984ffc33ccb697b9dfe8058be3e86244"
 WORK="$ROOT/.theos/standalone-aircard-wallet-v2"
 SRC="$WORK/AirCard-iOS"
 OUTPUT="$ROOT/.theos/AirCard-Wallet-Standalone-unsigned.ipa"
@@ -15,7 +15,13 @@ git -C "$SRC" checkout --detach "$PIN"
 test "$(git -C "$SRC" rev-parse HEAD)" = "$PIN"
 
 cp "$ROOT/FilzaAirCardLibrary.swift" "$SRC/ios-app/AirCardLibrary.swift"
+cp "$ROOT/standalone-aircard/RemotePairingPortDiscovery.swift" "$SRC/ios-app/RemotePairingPortDiscovery.swift"
 python3 "$ROOT/scripts/patch-standalone-aircard-wallet.py" "$SRC"
+
+# The scanner transport is patched in rust-core, so rebuild the real upstream
+# AirliftFFI xcframework instead of silently reusing the stale prebuilt binary.
+chmod +x build-ios.sh
+./build-ios.sh
 
 grep -Fq 'case pairing = "Pairing"' "$SRC/ios-app/Models.swift"
 grep -Fq 'case walletCards = "Wallet Cards"' "$SRC/ios-app/Models.swift"
@@ -33,6 +39,10 @@ grep -Fq 'Back to AirCard' "$SRC/ios-app/AirCardLibrary.swift"
 ! grep -Fq 'PasscodeThemeTab()' "$SRC/ios-app/ContentView.swift"
 ! grep -Fq 'TendiesView()' "$SRC/ios-app/ContentView.swift"
 grep -Fq 'cardmaker-omega.vercel.app' "$SRC/ios-app/AirCardLibrary.swift"
+grep -Fq '_remotepairing._tcp.' "$SRC/ios-app/RemotePairingPortDiscovery.swift"
+grep -Fq 'al_connection_endpoint_set' "$SRC/ios-app/AppViewModel.swift"
+grep -Fq 'using discovered Remote Pairing endpoint' "$SRC/rust-core/src/exploit.rs"
+! grep -Fq 'Text("Credits")' "$SRC/ios-app/ContentView.swift"
 grep -Fq '.ignoresSafeArea(.container, edges: .all)' "$SRC/ios-app/AirCardLibrary.swift"
 grep -Fq 'contentInsetAdjustmentBehavior = .never' "$SRC/ios-app/AirCardLibrary.swift"
 grep -Fq 'viewport-fit=cover' "$SRC/ios-app/AirCardLibrary.swift"
