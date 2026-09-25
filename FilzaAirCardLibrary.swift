@@ -110,6 +110,13 @@ private struct FilzaAirCardLibraryWebView: UIViewRepresentable {
         )
         contentController.addUserScript(
             WKUserScript(
+                source: Self.nativeAppInteractionScript,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: false
+            )
+        )
+        contentController.addUserScript(
+            WKUserScript(
                 source: Self.downloadBridgeScript,
                 injectionTime: .atDocumentStart,
                 forMainFrameOnly: false
@@ -125,6 +132,7 @@ private struct FilzaAirCardLibraryWebView: UIViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = false
+        webView.allowsLinkPreview = false
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.scrollView.contentInset = .zero
         webView.scrollView.scrollIndicatorInsets = .zero
@@ -179,6 +187,65 @@ private struct FilzaAirCardLibraryWebView: UIViewRepresentable {
 
       applyViewportFit();
       document.addEventListener('DOMContentLoaded', applyViewportFit, { once: true });
+    })();
+    """#
+
+    private static let nativeAppInteractionScript = #"""
+    (() => {
+      if (window.__airCardNativeInteractionPolicyInstalled) return;
+      window.__airCardNativeInteractionPolicyInstalled = true;
+
+      const style = document.createElement('style');
+      style.id = 'aircard-native-interaction-policy';
+      style.textContent = `
+        html, body {
+          -webkit-touch-callout: none !important;
+        }
+
+        body *:not(input):not(textarea):not([contenteditable="true"]):not([contenteditable="true"] *) {
+          -webkit-touch-callout: none !important;
+          -webkit-user-select: none !important;
+          user-select: none !important;
+        }
+
+        img, canvas, svg, video, a {
+          -webkit-touch-callout: none !important;
+          -webkit-user-select: none !important;
+          user-select: none !important;
+          -webkit-user-drag: none !important;
+        }
+
+        input, textarea, [contenteditable="true"], [contenteditable="true"] * {
+          -webkit-user-select: text !important;
+          user-select: text !important;
+        }
+      `;
+
+      const installStyle = () => {
+        if (!document.getElementById(style.id)) {
+          (document.head || document.documentElement).appendChild(style);
+        }
+      };
+
+      installStyle();
+      document.addEventListener('DOMContentLoaded', installStyle, { once: true });
+
+      const isEditable = (node) => {
+        const element = node instanceof Element ? node : node?.parentElement;
+        return !!element?.closest('input, textarea, [contenteditable="true"]');
+      };
+
+      document.addEventListener('contextmenu', (event) => {
+        if (!isEditable(event.target)) event.preventDefault();
+      }, true);
+
+      document.addEventListener('dragstart', (event) => {
+        if (!isEditable(event.target)) event.preventDefault();
+      }, true);
+
+      document.addEventListener('selectstart', (event) => {
+        if (!isEditable(event.target)) event.preventDefault();
+      }, true);
     })();
     """#
 
