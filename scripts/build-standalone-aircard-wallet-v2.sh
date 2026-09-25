@@ -64,7 +64,7 @@ grep -Fq 'contentInsetAdjustmentBehavior = .never' "$SRC/ios-app/AirCardLibrary.
 grep -Fq 'viewport-fit=cover' "$SRC/ios-app/AirCardLibrary.swift"
 grep -Fq 'webView.allowsLinkPreview = false' "$SRC/ios-app/AirCardLibrary.swift"
 grep -Fq '__airCardNativeInteractionPolicyInstalled' "$SRC/ios-app/AirCardLibrary.swift"
-grep -Fq '-webkit-touch-callout: none' "$SRC/ios-app/AirCardLibrary.swift"
+grep -Fq -- '-webkit-touch-callout: none' "$SRC/ios-app/AirCardLibrary.swift"
 grep -Fq '.overlay(alignment: .topTrailing)' "$SRC/ios-app/AirCardLibrary.swift"
 grep -Fq '.padding(.top, 6)' "$SRC/ios-app/AirCardLibrary.swift"
 grep -Fq '.padding(.trailing, 64)' "$SRC/ios-app/AirCardLibrary.swift"
