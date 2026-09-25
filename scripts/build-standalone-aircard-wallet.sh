@@ -34,7 +34,8 @@ s = s.replace("inside Filza 27", "in AirCard")
 s = s.replace("inside Filza", "in AirCard")
 library.write_text(s)
 
-# Exactly three visible tabs: Pairing, Wallet, Library.
+# Pairing and Wallet remain normal tabs. Library is a launcher item that opens
+# the Card Maker full-screen so AirCard's bottom tab bar disappears entirely.
 models = src / "ios-app/Models.swift"
 s = models.read_text()
 old = '''enum AppTab: String, CaseIterable, Identifiable {
@@ -55,18 +56,65 @@ models.write_text(s.replace(old, new, 1))
 
 content = src / "ios-app/ContentView.swift"
 s = content.read_text()
-old = '''            PasscodeThemeTab()
+
+root_old = '''struct ContentView: View {
+    @EnvironmentObject var vm: AppViewModel
+
+    var body: some View {
+        TabView(selection: $vm.selectedTab) {
+            PairingTab()
+                .tabItem { Label("Pairing", systemImage: "antenna.radiowaves.left.and.right") }
+                .tag(AppTab.pairing)
+
+            WalletCardsTab()
+                .tabItem { Label("Wallet Cards", systemImage: "creditcard.fill") }
+                .tag(AppTab.walletCards)
+
+            PasscodeThemeTab()
                 .tabItem { Label("Passcode", systemImage: "lock.circle.fill") }
                 .tag(AppTab.passcodeThemes)
 
             TendiesView()
                 .tabItem { Label("Wallpapers", systemImage: "photo.stack.fill") }
-                .tag(AppTab.wallpapers)'''
-new = '''            AirCardLibraryView()
+                .tag(AppTab.wallpapers)
+        }'''
+root_new = '''struct ContentView: View {
+    @EnvironmentObject var vm: AppViewModel
+    @State private var showLibrary = false
+
+    private var tabSelection: Binding<AppTab> {
+        Binding(
+            get: { vm.selectedTab },
+            set: { newValue in
+                if newValue == .cardLibrary {
+                    showLibrary = true
+                } else {
+                    vm.selectedTab = newValue
+                }
+            }
+        )
+    }
+
+    var body: some View {
+        TabView(selection: tabSelection) {
+            PairingTab()
+                .tabItem { Label("Pairing", systemImage: "antenna.radiowaves.left.and.right") }
+                .tag(AppTab.pairing)
+
+            WalletCardsTab()
+                .tabItem { Label("Wallet Cards", systemImage: "creditcard.fill") }
+                .tag(AppTab.walletCards)
+
+            Color.clear
                 .tabItem { Label("Library", systemImage: "square.grid.2x2.fill") }
-                .tag(AppTab.cardLibrary)'''
-assert old in s, "Pinned AirCard root tab layout changed"
-s = s.replace(old, new, 1)
+                .tag(AppTab.cardLibrary)
+        }
+        .fullScreenCover(isPresented: $showLibrary) {
+            AirCardLibraryView()
+                .environmentObject(vm)
+        }'''
+assert root_old in s, "Pinned AirCard ContentView root changed"
+s = s.replace(root_old, root_new, 1)
 
 # This is the upstream pairing UI. Intentionally do not restore Filza's
 # "Choose Pairing File from Files…" patch.
@@ -130,6 +178,8 @@ grep -Fq 'case walletCards = "Wallet Cards"' "$SRC/ios-app/Models.swift"
 grep -Fq 'case cardLibrary = "Library"' "$SRC/ios-app/Models.swift"
 ! grep -Fq 'case passcodeThemes = "Passcode"' "$SRC/ios-app/Models.swift"
 ! grep -Fq 'case wallpapers = "Wallpapers"' "$SRC/ios-app/Models.swift"
+grep -Fq 'fullScreenCover(isPresented: $showLibrary)' "$SRC/ios-app/ContentView.swift"
+grep -Fq 'Color.clear' "$SRC/ios-app/ContentView.swift"
 grep -Fq 'AirCardLibraryView()' "$SRC/ios-app/ContentView.swift"
 ! grep -Fq 'PasscodeThemeTab()' "$SRC/ios-app/ContentView.swift"
 ! grep -Fq 'TendiesView()' "$SRC/ios-app/ContentView.swift"
