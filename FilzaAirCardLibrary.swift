@@ -17,25 +17,12 @@ private enum FilzaAirCardLibraryConfig {
 
 @MainActor
 private final class FilzaAirCardLibraryModel: ObservableObject {
-    @Published var isLoading = false
     @Published var statusText: String?
     @Published var lastDownloadedName = ""
     @Published var lastDownloadedImage: UIImage?
     @Published var showDownloadActions = false
 
     weak var webView: WKWebView?
-
-    func reload() {
-        webView?.reload()
-    }
-
-    func goBack() {
-        webView?.goBack()
-    }
-
-    func loadHome() {
-        webView?.load(URLRequest(url: FilzaAirCardLibraryConfig.homeURL, cachePolicy: .useProtocolCachePolicy))
-    }
 
     func didSaveImage(_ image: UIImage, name: String) {
         lastDownloadedImage = image
@@ -54,53 +41,7 @@ struct FilzaAirCardLibraryView: View {
     @StateObject private var model = FilzaAirCardLibraryModel()
 
     var body: some View {
-        NavigationStack {
-            ZStack(alignment: .bottom) {
-                FilzaAirCardLibraryWebView(model: model)
-                    .ignoresSafeArea(edges: .bottom)
-
-                if model.isLoading {
-                    ProgressView()
-                        .padding(10)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .padding(.bottom, 12)
-                } else if let status = model.statusText {
-                    Text(status)
-                        .font(.caption)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 12)
-                        .onTapGesture { model.statusText = nil }
-                }
-            }
-            .navigationTitle("Card Library")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Button {
-                        model.goBack()
-                    } label: {
-                        Image(systemName: "chevron.backward")
-                    }
-                    .disabled(!(model.webView?.canGoBack ?? false))
-
-                    Button {
-                        model.reload()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-
-                    Button {
-                        model.loadHome()
-                    } label: {
-                        Image(systemName: "house")
-                    }
-                }
-            }
+        FilzaAirCardLibraryWebView(model: model)
             .confirmationDialog(
                 "Card saved",
                 isPresented: $model.showDownloadActions,
@@ -110,7 +51,6 @@ struct FilzaAirCardLibraryView: View {
                     Button("Apply to Selected Wallet Cards") {
                         if let image = model.lastDownloadedImage {
                             vm.setSkinForAllCards(image: image)
-                            model.statusText = "Applied \(model.lastDownloadedName) to selected Wallet cards"
                         }
                     }
                 }
@@ -118,10 +58,20 @@ struct FilzaAirCardLibraryView: View {
                 Button("Keep in Card Library", role: .cancel) {}
             } message: {
                 Text(model.lastDownloadedName.isEmpty
-                    ? "The image was saved inside Filza 27."
-                    : "\(model.lastDownloadedName) was saved inside Filza 27.")
+                    ? "The card was saved to AirCard."
+                    : "\(model.lastDownloadedName) was saved to AirCard.")
             }
-        }
+            .alert(
+                "Library Error",
+                isPresented: Binding(
+                    get: { model.statusText != nil },
+                    set: { if !$0 { model.statusText = nil } }
+                )
+            ) {
+                Button("OK") { model.statusText = nil }
+            } message: {
+                Text(model.statusText ?? "")
+            }
     }
 }
 
@@ -151,7 +101,7 @@ private struct FilzaAirCardLibraryWebView: UIViewRepresentable {
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
-        webView.allowsBackForwardNavigationGestures = true
+        webView.allowsBackForwardNavigationGestures = false
         webView.scrollView.contentInsetAdjustmentBehavior = .automatic
         webView.isOpaque = false
         webView.backgroundColor = .systemBackground
@@ -231,12 +181,7 @@ private struct FilzaAirCardLibraryWebView: UIViewRepresentable {
             self.model = model
         }
 
-        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-            model.isLoading = true
-        }
-
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            model.isLoading = false
             model.statusText = nil
         }
 
@@ -245,7 +190,6 @@ private struct FilzaAirCardLibraryWebView: UIViewRepresentable {
             didFailProvisionalNavigation navigation: WKNavigation!,
             withError error: Error
         ) {
-            model.isLoading = false
             model.fail("Card Library unavailable offline until it has been cached at least once.")
         }
 
@@ -254,7 +198,6 @@ private struct FilzaAirCardLibraryWebView: UIViewRepresentable {
             didFail navigation: WKNavigation!,
             withError error: Error
         ) {
-            model.isLoading = false
             model.fail(error.localizedDescription)
         }
 
