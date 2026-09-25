@@ -44,17 +44,17 @@ struct FilzaAirCardLibraryView: View {
 
     var body: some View {
         FilzaAirCardLibraryWebView(model: model)
-            .overlay(alignment: .topLeading) {
+            .ignoresSafeArea(.container, edges: .all)
+            .overlay(alignment: .trailing) {
                 Button(action: onExit) {
                     Image(systemName: "house.fill")
-                        .font(.system(size: 15, weight: .semibold))
-                        .frame(width: 36, height: 36)
-                        .background(.ultraThinMaterial, in: Circle())
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(width: 34, height: 46)
+                        .background(.ultraThinMaterial, in: Capsule())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Back to AirCard")
-                .padding(.leading, 8)
-                .padding(.top, 6)
+                .padding(.trailing, 6)
             }
             .confirmationDialog(
                 "Card saved",
@@ -101,6 +101,13 @@ private struct FilzaAirCardLibraryWebView: UIViewRepresentable {
         contentController.add(context.coordinator, name: FilzaAirCardLibraryConfig.messageHandler)
         contentController.addUserScript(
             WKUserScript(
+                source: Self.pwaViewportScript,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            )
+        )
+        contentController.addUserScript(
+            WKUserScript(
                 source: Self.downloadBridgeScript,
                 injectionTime: .atDocumentStart,
                 forMainFrameOnly: false
@@ -116,10 +123,16 @@ private struct FilzaAirCardLibraryWebView: UIViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = false
-        webView.scrollView.contentInsetAdjustmentBehavior = .automatic
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
+        webView.scrollView.contentInset = .zero
+        webView.scrollView.scrollIndicatorInsets = .zero
+        webView.scrollView.automaticallyAdjustsScrollIndicatorInsets = false
         webView.isOpaque = false
-        webView.backgroundColor = .systemBackground
-        webView.scrollView.backgroundColor = .systemBackground
+        webView.backgroundColor = .black
+        webView.scrollView.backgroundColor = .black
+        if #available(iOS 15.0, *) {
+            webView.underPageBackgroundColor = .black
+        }
 
         model.webView = webView
         webView.load(URLRequest(
@@ -139,6 +152,33 @@ private struct FilzaAirCardLibraryWebView: UIViewRepresentable {
         )
         webView.navigationDelegate = nil
     }
+
+    private static let pwaViewportScript = #"""
+    (() => {
+      const applyViewportFit = () => {
+        let viewport = document.querySelector('meta[name="viewport"]');
+        if (!viewport) {
+          viewport = document.createElement('meta');
+          viewport.setAttribute('name', 'viewport');
+          viewport.setAttribute('content', 'width=device-width, initial-scale=1, viewport-fit=cover');
+          (document.head || document.documentElement).appendChild(viewport);
+          return;
+        }
+
+        const parts = (viewport.getAttribute('content') || '')
+          .split(',')
+          .map(v => v.trim())
+          .filter(Boolean)
+          .filter(v => !/^viewport-fit\s*=/i.test(v));
+
+        parts.push('viewport-fit=cover');
+        viewport.setAttribute('content', parts.join(', '));
+      };
+
+      applyViewportFit();
+      document.addEventListener('DOMContentLoaded', applyViewportFit, { once: true });
+    })();
+    """#
 
     private static let downloadBridgeScript = #"""
     (() => {
