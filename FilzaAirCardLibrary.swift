@@ -55,8 +55,8 @@ struct FilzaAirCardLibraryView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Back to AirCard")
                 // Match Card Studio's top chrome: immediately left of the ellipsis.
-                .padding(.top, 74)
-                .padding(.trailing, 78)
+                .padding(.top, 6)
+                .padding(.trailing, 64)
             }
             .confirmationDialog(
                 "Card saved",
