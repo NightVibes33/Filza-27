@@ -37,7 +37,8 @@ jobs:
       - name: Build standalone AirCard Wallet IPA
         shell: bash
         run: |
-          set -o pipefail
+          set -euxo pipefail
+          mkdir -p .theos
           bash scripts/build-standalone-aircard-wallet.sh 2>&1 | tee .theos/standalone-aircard-build.log
 
       - name: Verify standalone contract
