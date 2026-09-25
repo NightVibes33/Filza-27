@@ -37,11 +37,26 @@ private final class FilzaAirCardLibraryModel: ObservableObject {
 }
 
 struct FilzaAirCardLibraryView: View {
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var vm: AppViewModel
     @StateObject private var model = FilzaAirCardLibraryModel()
 
     var body: some View {
         FilzaAirCardLibraryWebView(model: model)
+            .overlay(alignment: .topLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 17, weight: .semibold))
+                        .frame(width: 40, height: 40)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back to AirCard")
+                .padding(.leading, 10)
+                .padding(.top, 8)
+            }
             .confirmationDialog(
                 "Card saved",
                 isPresented: $model.showDownloadActions,
