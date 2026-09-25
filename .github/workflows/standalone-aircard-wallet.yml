@@ -1,0 +1,77 @@
+name: Verify standalone AirCard Wallet IPA
+
+on:
+  push:
+    branches:
+      - temp/aircard-wallet-standalone
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: standalone-aircard-wallet-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-26-intel
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+    steps:
+      - name: Xcode 26.2 setup
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.2'
+
+      - name: Checkout temp branch
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        shell: bash
+        run: |
+          set -euxo pipefail
+          command -v xcodegen >/dev/null 2>&1 || brew install xcodegen
+          xcodegen --version
+
+      - name: Build standalone AirCard Wallet IPA
+        shell: bash
+        run: |
+          set -o pipefail
+          bash scripts/build-standalone-aircard-wallet.sh 2>&1 | tee .theos/standalone-aircard-build.log
+
+      - name: Verify standalone contract
+        shell: bash
+        run: |
+          set -euxo pipefail
+          IPA=.theos/AirCard-Wallet-Standalone-unsigned.ipa
+          test -s "$IPA"
+          unzip -tq "$IPA"
+          test -s .theos/AirCard-Wallet-Standalone-SHA256.txt
+          grep -Fq '740cfd9e7f00be77887638a3e65edbdb19ff1867' scripts/build-standalone-aircard-wallet.sh
+          grep -Fq 'AirCardLibraryView()' scripts/build-standalone-aircard-wallet.sh
+          grep -Fq '! grep -Fq '\''Choose Pairing File from Files…' scripts/build-standalone-aircard-wallet.sh
+          ! grep -Fq 'scripts/patch-aircard-embedded-parity.py' scripts/build-standalone-aircard-wallet.sh
+          du -h "$IPA"
+          cat .theos/AirCard-Wallet-Standalone-SHA256.txt
+
+      - name: Upload unsigned standalone IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: AirCard-Wallet-Standalone-unsigned
+          path: |
+            .theos/AirCard-Wallet-Standalone-unsigned.ipa
+            .theos/AirCard-Wallet-Standalone-SHA256.txt
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AirCard-Wallet-Standalone-build-log-${{ github.run_id }}
+          path: .theos/standalone-aircard-build.log
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 14
