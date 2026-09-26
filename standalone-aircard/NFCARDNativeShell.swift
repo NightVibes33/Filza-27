@@ -61,12 +61,7 @@ struct NFCARDPairingTab: View {
                 VStack(spacing: 12) {
                     header
                     readyPanel
-                    networkPanel
                     pairingPanel
-
-                    if !vm.log.isEmpty {
-                        activityPanel
-                    }
                 }
                 .padding(.horizontal, 14)
                 .padding(.top, 10)
@@ -84,14 +79,14 @@ struct NFCARDPairingTab: View {
             vm.refreshPairingFile()
         }
         .confirmationDialog(
-            "Delete pairing session?",
+            "Remove pairing?",
             isPresented: $showDeleteConfirm,
             titleVisibility: .visible
         ) {
-            Button("Delete", role: .destructive) { vm.deletePairingFile() }
+            Button("Remove", role: .destructive) { vm.deletePairingFile() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("The active pairing credentials will be removed.")
+            Text("NFCARD will forget this iPhone. You can pair it again at any time.")
         }
     }
 
@@ -105,15 +100,7 @@ struct NFCARDPairingTab: View {
                     vm.refreshNetworkStatus()
                     vm.refreshPairingFile()
                 } label: {
-                    Label("Refresh Status", systemImage: "arrow.clockwise")
-                }
-
-                if !vm.log.isEmpty {
-                    Button(role: .destructive) {
-                        vm.log.removeAll()
-                    } label: {
-                        Label("Clear Activity", systemImage: "trash")
-                    }
+                    Label("Refresh", systemImage: "arrow.clockwise")
                 }
             } label: {
                 Image(systemName: "ellipsis")
@@ -136,12 +123,12 @@ struct NFCARDPairingTab: View {
                         .frame(width: 12, height: 12)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(vm.vpnUp ? "Ready to Pair" : "VPN Required")
+                        Text(vm.vpnUp ? "NFCARD Ready" : "Connection Required")
                             .font(.headline)
                             .foregroundStyle(NFCARDTheme.text)
                         Text(vm.vpnUp
-                             ? "Local tunnel is ready for pairing, scanning and flashing."
-                             : "Connect LocalDevVPN before pairing or scanning.")
+                             ? "NFCARD is ready to pair and scan Wallet cards."
+                             : "Connect LocalDevVPN to continue in NFCARD.")
                             .font(.caption)
                             .foregroundStyle(NFCARDTheme.secondary)
                     }
@@ -177,93 +164,27 @@ struct NFCARDPairingTab: View {
         }
     }
 
-    private var networkPanel: some View {
-        NFCARDPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Network")
-                    .font(.headline)
-                    .foregroundStyle(NFCARDTheme.text)
-
-                HStack(spacing: 10) {
-                    Circle()
-                        .fill(vm.vpnUp ? NFCARDTheme.accent : Color.orange)
-                        .frame(width: 10, height: 10)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(vm.vpnUp ? "Loopback VPN Connected" : "Loopback VPN Not Detected")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(NFCARDTheme.text)
-                        Text(vm.vpnUp ? "Your device is ready." : "Open LocalDevVPN and connect.")
-                            .font(.caption)
-                            .foregroundStyle(NFCARDTheme.secondary)
-                    }
-                }
-
-                HStack(spacing: 8) {
-                    Text("Device IP")
-                        .font(.caption)
-                        .foregroundStyle(NFCARDTheme.secondary)
-
-                    TextField("10.7.0.1", text: $vm.deviceIP)
-                        .keyboardType(.decimalPad)
-                        .autocorrectionDisabled()
-                        .font(.system(.subheadline, design: .monospaced))
-                        .foregroundStyle(NFCARDTheme.text)
-                        .padding(.horizontal, 10)
-                        .frame(height: 36)
-                        .background(NFCARDTheme.surfaceRaised, in: RoundedRectangle(cornerRadius: 9))
-                        .frame(maxWidth: 150)
-
-                    Spacer()
-
-                    Button {
-                        vm.refreshNetworkStatus()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(NFCARDTheme.accent)
-                            .frame(width: 36, height: 36)
-                            .background(NFCARDTheme.surfaceRaised, in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                if !vm.networkDetail.isEmpty {
-                    Text(vm.networkDetail)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(NFCARDTheme.secondary.opacity(0.75))
-                        .lineLimit(3)
-                }
-            }
-        }
-    }
-
     private var pairingPanel: some View {
         NFCARDPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Active Pairing")
-                    .font(.headline)
-                    .foregroundStyle(NFCARDTheme.text)
-
-                if vm.hasPairingFile {
-                    HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 14) {
+                if vm.hasPairingFile && vm.pairingPhase != .pairing {
+                    HStack(spacing: 11) {
                         ZStack {
                             Circle()
                                 .fill(NFCARDTheme.accent)
-                                .frame(width: 30, height: 30)
+                                .frame(width: 34, height: 34)
                             Image(systemName: "checkmark")
-                                .font(.system(size: 13, weight: .black))
+                                .font(.system(size: 14, weight: .black))
                                 .foregroundStyle(.black)
                         }
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Ready")
-                                .font(.subheadline.weight(.bold))
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Connected")
+                                .font(.headline)
                                 .foregroundStyle(NFCARDTheme.text)
-                            Text("\(vm.pairingFileName) (\(vm.pairingFileSizeString))")
-                                .font(.caption.monospaced())
+                            Text("This iPhone is paired with NFCARD and ready for Wallet cards.")
+                                .font(.caption)
                                 .foregroundStyle(NFCARDTheme.secondary)
-                                .lineLimit(1)
                         }
 
                         Spacer()
@@ -272,45 +193,32 @@ struct NFCARDPairingTab: View {
                             showDeleteConfirm = true
                         } label: {
                             Image(systemName: "trash")
+                                .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(NFCARDTheme.danger)
-                                .frame(width: 34, height: 34)
+                                .frame(width: 38, height: 38)
+                                .background(NFCARDTheme.surfaceRaised, in: Circle())
                         }
                         .buttonStyle(.plain)
-                    }
-                } else {
-                    HStack(spacing: 10) {
-                        Image(systemName: "link.badge.plus")
-                            .font(.title3)
-                            .foregroundStyle(NFCARDTheme.accent)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Not Paired")
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(NFCARDTheme.text)
-                            Text("Pair this iPhone before scanning Wallet cards.")
-                                .font(.caption)
-                                .foregroundStyle(NFCARDTheme.secondary)
-                        }
-                    }
-                }
-
-                if vm.pairingPhase == .pairing {
-                    Divider().overlay(NFCARDTheme.border)
-
-                    HStack(spacing: 9) {
-                        ProgressView()
-                            .tint(NFCARDTheme.accent)
-                        Text(vm.pairingStatus.isEmpty ? "Starting local pairing host…" : vm.pairingStatus)
-                            .font(.caption)
-                            .foregroundStyle(NFCARDTheme.secondary)
+                        .accessibilityLabel("Remove pairing")
                     }
 
+                    Button {
+                        vm.startPairing()
+                    } label: {
+                        Label("Pair Again", systemImage: "arrow.triangle.2.circlepath")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.black)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 46)
+                            .background(NFCARDTheme.accent, in: RoundedRectangle(cornerRadius: 13))
+                    }
+                    .buttonStyle(.plain)
+                } else if vm.pairingPhase == .pairing {
                     if let pin = vm.pairingPIN {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("YOUR PAIRING CODE")
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(NFCARDTheme.secondary)
-                                .tracking(0.8)
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label("Pairing code ready", systemImage: "key.fill")
+                                .font(.headline)
+                                .foregroundStyle(NFCARDTheme.text)
 
                             HStack {
                                 Text(pin)
@@ -329,26 +237,28 @@ struct NFCARDPairingTab: View {
                                         .background(NFCARDTheme.surfaceRaised, in: RoundedRectangle(cornerRadius: 10))
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel("Copy pairing code")
                             }
                             .padding(12)
                             .background(NFCARDTheme.accentSoft.opacity(0.8), in: RoundedRectangle(cornerRadius: 12))
 
-                            Text("Open Settings, enter this code when prompted, approve the request, then return to NFCARD.")
+                            Text("Enter this code when iOS asks to pair with NFCARD. Approve the request, then return here.")
                                 .font(.caption)
                                 .foregroundStyle(NFCARDTheme.secondary)
+                        }
+                    } else {
+                        HStack(spacing: 11) {
+                            ProgressView()
+                                .tint(NFCARDTheme.accent)
 
-                            Button {
-                                if let url = URL(string: UIApplication.openSettingsURLString) {
-                                    UIApplication.shared.open(url)
-                                }
-                            } label: {
-                                Label("Open Settings", systemImage: "arrow.up.forward.app")
-                                    .font(.subheadline.weight(.bold))
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 42)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Pairing with NFCARD")
+                                    .font(.headline)
+                                    .foregroundStyle(NFCARDTheme.text)
+                                Text("Keep NFCARD open while iOS prepares the pairing request.")
+                                    .font(.caption)
+                                    .foregroundStyle(NFCARDTheme.secondary)
                             }
-                            .buttonStyle(.bordered)
-                            .tint(NFCARDTheme.accent)
                         }
                     }
 
@@ -364,21 +274,26 @@ struct NFCARDPairingTab: View {
                     }
                     .buttonStyle(.plain)
                 } else {
-                    if !vm.pairingStatus.isEmpty && vm.pairingStatus != "idle" {
-                        Text(vm.pairingStatus)
-                            .font(.caption)
-                            .foregroundStyle(
-                                vm.pairingStatus.localizedCaseInsensitiveContains("failed")
-                                ? NFCARDTheme.danger
-                                : NFCARDTheme.secondary
-                            )
+                    HStack(spacing: 11) {
+                        Image(systemName: "iphone.gen3")
+                            .font(.title2)
+                            .foregroundStyle(NFCARDTheme.accent)
+                            .frame(width: 34)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Pair this iPhone")
+                                .font(.headline)
+                                .foregroundStyle(NFCARDTheme.text)
+                            Text("Pair once with NFCARD, then choose and customize your Wallet cards.")
+                                .font(.caption)
+                                .foregroundStyle(NFCARDTheme.secondary)
+                        }
                     }
 
                     Button {
                         vm.startPairing()
                     } label: {
-                        Label(vm.hasPairingFile ? "Re-Pair This iPhone" : "Pair This iPhone",
-                              systemImage: "antenna.radiowaves.left.and.right")
+                        Label("Pair This iPhone", systemImage: "antenna.radiowaves.left.and.right")
                             .font(.subheadline.weight(.bold))
                             .foregroundStyle(.black)
                             .frame(maxWidth: .infinity)
@@ -390,30 +305,6 @@ struct NFCARDPairingTab: View {
             }
         }
     }
-
-    private var activityPanel: some View {
-        NFCARDPanel {
-            VStack(alignment: .leading, spacing: 9) {
-                HStack {
-                    Text("Activity")
-                        .font(.headline)
-                        .foregroundStyle(NFCARDTheme.text)
-                    Spacer()
-                    Button("Clear") { vm.log.removeAll() }
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(NFCARDTheme.accent)
-                }
-
-                ForEach(Array(vm.log.suffix(4).enumerated()), id: \.offset) { _, line in
-                    Text(line)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(NFCARDTheme.secondary)
-                        .lineLimit(2)
-                }
-            }
-        }
-    }
-}
 
 struct NFCARDWalletCardsTab: View {
     @EnvironmentObject private var vm: AppViewModel
