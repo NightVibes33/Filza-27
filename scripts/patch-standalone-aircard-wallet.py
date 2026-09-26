@@ -69,11 +69,11 @@ new_root = """struct ContentView: View {
                 .environmentObject(vm)
             } else {
                 TabView(selection: airCardTabSelection) {
-                    PairingTab()
+                    NFCARDPairingTab()
                         .tabItem { Label("Pairing", systemImage: "antenna.radiowaves.left.and.right") }
                         .tag(AppTab.pairing)
 
-                    WalletCardsTab()
+                    NFCARDWalletCardsTab()
                         .tabItem { Label("Wallet Cards", systemImage: "creditcard.fill") }
                         .tag(AppTab.walletCards)
 
@@ -81,6 +81,7 @@ new_root = """struct ContentView: View {
                         .tabItem { Label("Library", systemImage: "square.grid.2x2.fill") }
                         .tag(AppTab.cardLibrary)
                 }
+                .tint(NFCARDTheme.accent)
             }
         }
         .alert("Notice", isPresented: Binding(
@@ -297,8 +298,8 @@ info_path = src / "ios-app/Info.plist"
 with info_path.open("rb") as fh:
     info = plistlib.load(fh)
 
-info["CFBundleDisplayName"] = "AirCard"
-info["NSPhotoLibraryUsageDescription"] = "AirCard needs photo access to apply custom Apple Wallet card skins."
+info["CFBundleDisplayName"] = "NFCARD"
+info["NSPhotoLibraryUsageDescription"] = "NFCARD needs photo access so you can choose artwork for your Wallet cards."
 info["WKAppBoundDomains"] = ["cardmaker-omega.vercel.app"]
 bonjour = list(info.get("NSBonjourServices", []))
 if "_remotepairing._tcp" not in bonjour:
@@ -439,3 +440,12 @@ s = s.replace(
     "PRODUCT_BUNDLE_IDENTIFIER: com.nightvibes33.aircard"
 )
 project.write_text(s)
+
+
+# Rebrand the visible on-device pairing host while preserving pairing behavior.
+pairing_controller = src / "ios-app/PairingController.swift"
+s = pairing_controller.read_text()
+s = s.replace('private let hostName = "AirCard-iOS"', 'private let hostName = "NFCARD"')
+s = s.replace("Settings › AirCard-iOS › Local Network", "Settings › NFCARD › Local Network")
+s = s.replace("Pair with AirCard-iOS", "Pair with NFCARD")
+pairing_controller.write_text(s)

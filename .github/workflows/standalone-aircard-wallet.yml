@@ -1,4 +1,4 @@
-name: Verify standalone AirCard Wallet IPA
+name: Verify NFCARD IPA
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: standalone-aircard-wallet-${{ github.ref }}
+  group: nfcard-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -40,37 +40,39 @@ jobs:
           path: .theos/aircard-ffi-cache
           key: aircard-ffi-macos26-xcode26.2-097a058-${{ hashFiles('scripts/patch-standalone-aircard-wallet.py') }}
 
-      - name: Build standalone AirCard Wallet IPA
+      - name: Build NFCARD IPA
         shell: bash
         run: |
           set -euxo pipefail
           mkdir -p .theos
-          bash scripts/build-standalone-aircard-wallet-v2.sh 2>&1 | tee .theos/standalone-aircard-build.log
+          bash scripts/build-standalone-aircard-wallet-v2.sh 2>&1 | tee .theos/nfcard-build.log
 
       - name: Verify standalone contract
         shell: bash
         run: |
           set -euxo pipefail
-          IPA=.theos/AirCard-Wallet-Standalone-unsigned.ipa
+          IPA=.theos/NFCARD-unsigned.ipa
           test -s "$IPA"
           unzip -tq "$IPA"
-          test -s .theos/AirCard-Wallet-Standalone-SHA256.txt
+          test -s .theos/NFCARD-SHA256.txt
           grep -Fq '097a058c984ffc33ccb697b9dfe8058be3e86244' scripts/build-standalone-aircard-wallet-v2.sh
+          grep -Fq 'NFCARDPairingTab()' scripts/patch-standalone-aircard-wallet.py
+          grep -Fq 'NFCARDWalletCardsTab()' scripts/patch-standalone-aircard-wallet.py
           grep -Fq 'AirCardLibraryView(onExit:' scripts/patch-standalone-aircard-wallet.py
           grep -Fq 'if showCardStudio {' scripts/patch-standalone-aircard-wallet.py
           ! grep -Fq 'fullScreenCover' scripts/patch-standalone-aircard-wallet.py
           grep -Fq '! grep -Fq '\''Choose Pairing File from Files…' scripts/build-standalone-aircard-wallet-v2.sh
           ! grep -Fq 'scripts/patch-aircard-embedded-parity.py' scripts/build-standalone-aircard-wallet-v2.sh
           du -h "$IPA"
-          cat .theos/AirCard-Wallet-Standalone-SHA256.txt
+          cat .theos/NFCARD-SHA256.txt
 
-      - name: Upload unsigned standalone IPA
+      - name: Upload unsigned NFCARD IPA
         uses: actions/upload-artifact@v4
         with:
-          name: AirCard-Wallet-Standalone-unsigned
+          name: NFCARD-unsigned
           path: |
-            .theos/AirCard-Wallet-Standalone-unsigned.ipa
-            .theos/AirCard-Wallet-Standalone-SHA256.txt
+            .theos/NFCARD-unsigned.ipa
+            .theos/NFCARD-SHA256.txt
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 14
@@ -79,8 +81,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AirCard-Wallet-Standalone-build-log-${{ github.run_id }}
-          path: .theos/standalone-aircard-build.log
+          name: NFCARD-build-log-${{ github.run_id }}
+          path: .theos/nfcard-build.log
           if-no-files-found: warn
           include-hidden-files: true
           retention-days: 14
