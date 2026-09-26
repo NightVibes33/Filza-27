@@ -11,6 +11,10 @@ s = s.replace("FilzaAirCard", "AirCard")
 s = s.replace("filzaAirCard", "airCard")
 s = s.replace("inside Filza 27", "in AirCard")
 s = s.replace("inside Filza", "in AirCard")
+s = s.replace("Back to AirCard", "Back to NFCARD")
+s = s.replace("in AirCard Card Library", "in NFCARD Card Library")
+s = s.replace("was saved to AirCard.", "was saved to NFCARD.")
+s = s.replace("saved to AirCard.", "saved to NFCARD.")
 library.write_text(s)
 
 models = src / "ios-app/Models.swift"
@@ -312,6 +316,14 @@ scan_new = """    func startCardScanning() {
 
 """
 s = s[:scan_start] + scan_new + s[scan_end:]
+# App Store-facing copy: never expose pairing artifacts or internal file terminology.
+s = s.replace('pairingStatus = "Starting local host…"', 'pairingStatus = "Preparing NFCARD pairing…"')
+s = s.replace('self.pairingStatus = "Paired successfully! ✅"', 'self.pairingStatus = "Connected"')
+s = s.replace('pairingStatus = "Pairing file deleted"', 'pairingStatus = "Not paired"')
+s = s.replace(
+    'errorMessage = "Pairing file is required before scanning. Pair this iPhone first."',
+    'errorMessage = "Pair this iPhone with NFCARD before scanning Wallet cards."'
+)
 appvm.write_text(s)
 
 # Add discovery permission for Apple's live remote-pairing daemon.
@@ -470,4 +482,10 @@ s = pairing_controller.read_text()
 s = s.replace('private let hostName = "AirCard-iOS"', 'private let hostName = "NFCARD"')
 s = s.replace("Settings › AirCard-iOS › Local Network", "Settings › NFCARD › Local Network")
 s = s.replace("Pair with AirCard-iOS", "Pair with NFCARD")
+s = s.replace('pairingStatus = "Broadcasting… open Settings to pair"', 'pairingStatus = "Waiting for iOS pairing request…"')
+s = s.replace('pairingStatus = "Advertising — open Settings › Privacy & Security › Developer Mode"', 'pairingStatus = "Waiting for iOS pairing request…"')
+s = s.replace(
+    'pairingStatus = "Enter PIN \\(pin) in Settings › Privacy & Security › Developer Mode › Pair with NFCARD"',
+    'pairingStatus = "Pairing code ready"'
+)
 pairing_controller.write_text(s)
