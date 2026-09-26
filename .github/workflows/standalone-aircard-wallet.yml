@@ -38,7 +38,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .theos/aircard-ffi-cache
-          key: aircard-ffi-macos26-xcode26.2-097a058-${{ hashFiles('scripts/patch-standalone-aircard-wallet.py') }}
+          key: aircard-ffi-macos26-xcode26.2-097a058-rp-v1
+          restore-keys: |
+            aircard-ffi-macos26-xcode26.2-097a058-
 
       - name: Build NFCARD IPA
         shell: bash
