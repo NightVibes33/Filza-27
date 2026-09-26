@@ -44,12 +44,23 @@ new_root = """struct ContentView: View {
     @State private var showCardStudio = false
     @State private var lastMainTab: AppTab = .pairing
 
+    private func setCardStudioVisible(_ visible: Bool) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            showCardStudio = visible
+            if !visible {
+                vm.selectedTab = lastMainTab
+            }
+        }
+    }
+
     private var airCardTabSelection: Binding<AppTab> {
         Binding(
             get: { vm.selectedTab },
             set: { newTab in
                 if newTab == .cardLibrary {
-                    showCardStudio = true
+                    setCardStudioVisible(true)
                     vm.selectedTab = lastMainTab
                 } else {
                     lastMainTab = newTab
@@ -60,29 +71,40 @@ new_root = """struct ContentView: View {
     }
 
     var body: some View {
-        Group {
-            if showCardStudio {
-                AirCardLibraryView(onExit: {
-                    showCardStudio = false
-                    vm.selectedTab = lastMainTab
-                })
-                .environmentObject(vm)
-            } else {
-                TabView(selection: airCardTabSelection) {
-                    NFCARDPairingTab()
-                        .tabItem { Label("Pairing", systemImage: "antenna.radiowaves.left.and.right") }
-                        .tag(AppTab.pairing)
+        ZStack {
+            TabView(selection: airCardTabSelection) {
+                NFCARDPairingTab()
+                    .tabItem { Label("Pairing", systemImage: "antenna.radiowaves.left.and.right") }
+                    .tag(AppTab.pairing)
 
-                    NFCARDWalletCardsTab()
-                        .tabItem { Label("Wallet Cards", systemImage: "creditcard.fill") }
-                        .tag(AppTab.walletCards)
+                NFCARDWalletCardsTab()
+                    .tabItem { Label("Wallet Cards", systemImage: "creditcard.fill") }
+                    .tag(AppTab.walletCards)
 
-                    Color.clear
-                        .tabItem { Label("Library", systemImage: "square.grid.2x2.fill") }
-                        .tag(AppTab.cardLibrary)
-                }
-                .tint(NFCARDTheme.accent)
+                Color.clear
+                    .tabItem { Label("Library", systemImage: "square.grid.2x2.fill") }
+                    .tag(AppTab.cardLibrary)
             }
+            .tint(NFCARDTheme.accent)
+            .opacity(showCardStudio ? 0 : 1)
+            .allowsHitTesting(!showCardStudio)
+            .accessibilityHidden(showCardStudio)
+            .zIndex(0)
+
+            // Keep the WKWebView mounted and preloaded instead of creating it
+            // at the instant Library is tapped. This removes the root-view swap,
+            // safe-area reflow and first-frame WebKit hitch that caused jitter.
+            AirCardLibraryView(onExit: {
+                setCardStudioVisible(false)
+            })
+            .environmentObject(vm)
+            .opacity(showCardStudio ? 1 : 0)
+            .allowsHitTesting(showCardStudio)
+            .accessibilityHidden(!showCardStudio)
+            .zIndex(1)
+        }
+        .transaction { transaction in
+            transaction.disablesAnimations = true
         }
         .alert("Notice", isPresented: Binding(
             get: { vm.errorMessage != nil },

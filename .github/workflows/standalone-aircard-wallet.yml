@@ -61,7 +61,9 @@ jobs:
           grep -Fq 'NFCARDPairingTab()' scripts/patch-standalone-aircard-wallet.py
           grep -Fq 'NFCARDWalletCardsTab()' scripts/patch-standalone-aircard-wallet.py
           grep -Fq 'AirCardLibraryView(onExit:' scripts/patch-standalone-aircard-wallet.py
-          grep -Fq 'if showCardStudio {' scripts/patch-standalone-aircard-wallet.py
+          grep -Fq 'setCardStudioVisible(true)' scripts/patch-standalone-aircard-wallet.py
+          grep -Fq '.opacity(showCardStudio ? 1 : 0)' scripts/patch-standalone-aircard-wallet.py
+          ! grep -Fq 'if showCardStudio {' scripts/patch-standalone-aircard-wallet.py
           ! grep -Fq 'fullScreenCover' scripts/patch-standalone-aircard-wallet.py
           grep -Fq '! grep -Fq '\''Choose Pairing File from Files…' scripts/build-standalone-aircard-wallet-v2.sh
           ! grep -Fq 'scripts/patch-aircard-embedded-parity.py' scripts/build-standalone-aircard-wallet-v2.sh
