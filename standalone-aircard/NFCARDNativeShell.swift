@@ -52,6 +52,7 @@ private struct NFCARDWordmark: View {
 struct NFCARDPairingTab: View {
     @EnvironmentObject private var vm: AppViewModel
     @State private var showDeleteConfirm = false
+    @State private var localDevVPNConnected = false
 
     var body: some View {
         ZStack {
@@ -71,13 +72,16 @@ struct NFCARDPairingTab: View {
         }
         .preferredColorScheme(.dark)
         .onAppear {
+            refreshLocalDevVPNState()
             vm.refreshNetworkStatus()
             vm.refreshPairingFile()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            refreshLocalDevVPNState()
             vm.refreshNetworkStatus()
         }
         .refreshable {
+            refreshLocalDevVPNState()
             vm.refreshNetworkStatus()
             vm.refreshPairingFile()
         }
@@ -90,6 +94,21 @@ struct NFCARDPairingTab: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("NFCARD will forget this iPhone. You can pair it again at any time.")
+        }
+    }
+
+    private func refreshLocalDevVPNState() {
+        let peer = NetworkStatus.host(vm.deviceIP)
+        let octets = peer.split(separator: ".", omittingEmptySubsequences: false)
+        guard octets.count == 4 else {
+            localDevVPNConnected = false
+            return
+        }
+
+        let subnetPrefix = octets.prefix(3).joined(separator: ".") + "."
+        localDevVPNConnected = NetworkStatus.interfaces().contains { interface in
+            NetworkStatus.isTunnelInterface(interface.name)
+                && interface.ipv4.hasPrefix(subnetPrefix)
         }
     }
 
@@ -122,14 +141,14 @@ struct NFCARDPairingTab: View {
             VStack(spacing: 12) {
                 HStack(spacing: 11) {
                     Circle()
-                        .fill(vm.vpnUp ? NFCARDTheme.accent : Color.orange)
+                        .fill(localDevVPNConnected ? NFCARDTheme.accent : Color.orange)
                         .frame(width: 12, height: 12)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(vm.vpnUp ? "LocalDevVPN Connected" : "LocalDevVPN Disconnected")
+                        Text(localDevVPNConnected ? "LocalDevVPN Connected" : "LocalDevVPN Disconnected")
                             .font(.headline)
                             .foregroundStyle(NFCARDTheme.text)
-                        Text(vm.vpnUp
+                        Text(localDevVPNConnected
                              ? "NFCARD is ready to pair and scan Wallet cards."
                              : "Connect LocalDevVPN before pairing or scanning.")
                             .font(.caption)
@@ -154,7 +173,7 @@ struct NFCARDPairingTab: View {
                 } label: {
                     HStack(spacing: 7) {
                         Image(systemName: "arrow.up.forward.app")
-                        Text(vm.vpnUp ? "Open LocalDevVPN" : "Connect LocalDevVPN")
+                        Text(localDevVPNConnected ? "Open LocalDevVPN" : "Connect LocalDevVPN")
                     }
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(.black)
