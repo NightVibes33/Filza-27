@@ -471,7 +471,7 @@ project = src / "project.yml"
 s = project.read_text()
 s = s.replace(
     "PRODUCT_BUNDLE_IDENTIFIER: com.mak5er.aircard",
-    "PRODUCT_BUNDLE_IDENTIFIER: com.nightvibes33.aircard"
+    "PRODUCT_BUNDLE_IDENTIFIER: com.nightvibes33.nfcard"
 )
 project.write_text(s)
 

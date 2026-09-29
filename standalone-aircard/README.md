@@ -13,7 +13,7 @@ This branch is retained as the migration/source-history reference. The dedicated
 - Upstream base: `Mak5er/AirCard-iOS`
 - Pinned upstream commit: `097a058c984ffc33ccb697b9dfe8058be3e86244`
 - App display name: `NFCARD`
-- Bundle identifier: `com.nightvibes33.aircard`
+- Bundle identifier: `com.nightvibes33.nfcard`
 
 ## Migrated functionality
 

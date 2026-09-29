@@ -167,7 +167,7 @@ project = src / "project.yml"
 s = project.read_text()
 s = s.replace(
     "PRODUCT_BUNDLE_IDENTIFIER: com.mak5er.aircard",
-    "PRODUCT_BUNDLE_IDENTIFIER: com.nightvibes33.aircard"
+    "PRODUCT_BUNDLE_IDENTIFIER: com.nightvibes33.nfcard"
 )
 project.write_text(s)
 PY
@@ -202,7 +202,7 @@ unzip -q "$OUTPUT" -d "$VERIFY"
 APP="$(find "$VERIFY/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
 test -n "$APP"
 test "$(plutil -extract CFBundleDisplayName raw -o - "$APP/Info.plist")" = "AirCard"
-test "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Info.plist")" = "com.nightvibes33.aircard"
+test "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Info.plist")" = "com.nightvibes33.nfcard"
 plutil -p "$APP/Info.plist" | grep -Fq 'cardmaker-omega.vercel.app'
 ! plutil -p "$APP/Info.plist" | grep -Fq 'com.aircard.passthm'
 ! plutil -p "$APP/Info.plist" | grep -Fq 'com.aircard.tendies'
