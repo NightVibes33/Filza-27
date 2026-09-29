@@ -74,6 +74,9 @@ struct NFCARDPairingTab: View {
             vm.refreshNetworkStatus()
             vm.refreshPairingFile()
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            vm.refreshNetworkStatus()
+        }
         .refreshable {
             vm.refreshNetworkStatus()
             vm.refreshPairingFile()
@@ -123,12 +126,12 @@ struct NFCARDPairingTab: View {
                         .frame(width: 12, height: 12)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(vm.vpnUp ? "NFCARD Ready" : "Connection Required")
+                        Text(vm.vpnUp ? "LocalDevVPN Connected" : "LocalDevVPN Disconnected")
                             .font(.headline)
                             .foregroundStyle(NFCARDTheme.text)
                         Text(vm.vpnUp
                              ? "NFCARD is ready to pair and scan Wallet cards."
-                             : "Connect LocalDevVPN to continue in NFCARD.")
+                             : "Connect LocalDevVPN before pairing or scanning.")
                             .font(.caption)
                             .foregroundStyle(NFCARDTheme.secondary)
                     }
