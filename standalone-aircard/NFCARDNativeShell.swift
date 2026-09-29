@@ -305,6 +305,7 @@ struct NFCARDPairingTab: View {
             }
         }
     }
+}
 
 struct NFCARDWalletCardsTab: View {
     @EnvironmentObject private var vm: AppViewModel
