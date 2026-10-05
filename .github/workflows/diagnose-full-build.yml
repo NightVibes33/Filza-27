@@ -314,29 +314,7 @@ jobs:
           unzip -l "$OUTPUT" | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
           unzip -l "$OUTPUT" | grep -F 'ByeTunesYoink.bundle/server.js'
           unzip -l "$OUTPUT" | grep -F 'ByeTunesISH.bundle/rootfs/meta.db'
-          ! unzip -l "$OUTPUT" | grep -E 'Payload/[^/]+\.app/Config\.plist          shasum -a 256 "$OUTPUT" | tee .theos/IPA-SHA256.txt
-
-      - name: Upload modern unsigned IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: Filza-27-modern-unsigned-arm64
-          path: |
-            .theos/Filza-27-modern-*-unsigned.ipa
-            .theos/IPA-SHA256.txt
-            .theos/obj/FilzaApplySandboxExt.dylib
-          if-no-files-found: error
-          include-hidden-files: true
-          retention-days: 14
-
-      - name: Upload complete build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: filza-full-build-log-${{ github.run_id }}
-          path: .theos/full-build.log
-          if-no-files-found: warn
-          retention-days: 7
-
+          ! unzip -l "$OUTPUT" | grep -E 'Payload/[^/]+\\.app/Config\\.plist$'
           shasum -a 256 "$OUTPUT" | tee .theos/IPA-SHA256.txt
 
       - name: Upload modern unsigned IPA
