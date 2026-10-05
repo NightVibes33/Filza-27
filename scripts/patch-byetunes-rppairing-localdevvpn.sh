@@ -54,7 +54,11 @@ def replace_function(source: str, signature: str, replacement: str) -> str:
 # is reachable specifically through 10.7.0.1. NFCARD already probes the three
 # LocalDevVPN peers; use the same contract here while retaining Bonjour's live
 # port when iOS advertises one.
-socket_replacement = r'''    private func makeSocketAddress(host: String = DEVICE_HOST, port: UInt16) -> sockaddr_in {
+socket_replacement = r'''    private func makeSocketAddress(port: UInt16) -> sockaddr_in {
+        makeSocketAddress(host: DEVICE_HOST, port: port)
+    }
+
+    private func makeSocketAddress(host: String, port: UInt16) -> sockaddr_in {
         var addr = sockaddr_in()
         memset(&addr, 0, MemoryLayout<sockaddr_in>.size)
         addr.sin_family = sa_family_t(AF_INET)
@@ -64,7 +68,7 @@ socket_replacement = r'''    private func makeSocketAddress(host: String = DEVIC
         }
         return addr
     }'''
-if "makeSocketAddress(host: String = DEVICE_HOST" not in text:
+if "private func makeSocketAddress(host: String, port: UInt16)" not in text:
     text = replace_function(
         text,
         "    private func makeSocketAddress(port: UInt16)",
@@ -251,7 +255,7 @@ text = text.replace(
 path.write_text(text)
 PY
 
-grep -Fq 'makeSocketAddress(host: String = DEVICE_HOST' "$DEVICE"
+grep -Fq 'private func makeSocketAddress(host: String, port: UInt16)' "$DEVICE"
 grep -Fq '"10.7.0.2"' "$DEVICE"
 grep -Fq '"10.7.0.3"' "$DEVICE"
 grep -Fq 'LocalDevVPN Remote Pairing connected via' "$DEVICE"
