@@ -31,11 +31,12 @@ make package FINALPACKAGE=1
 DYLIB="$REPO_ROOT/.theos/obj/FilzaApplySandboxExt.dylib"
 [[ -f "$DYLIB" ]] || { echo "built dylib not found: $DYLIB" >&2; exit 70; }
 
-# Keep the standalone release path identical to the verified Actions package:
-# stage v2.4 runtime files plus the exact pre-v2.4 YouTubeKit JS resources that
-# SignatureSolver resolves from Bundle.main.
+# Keep the standalone release path identical to the verified Actions package.
+# Stage only redistributable ByeTunes app resources plus the exact pre-v2.4
+# YouTubeKit JS resources that SignatureSolver resolves from Bundle.main.
+# Config.plist is intentionally not extracted from or copied out of ByeTunes.
 bash "$REPO_ROOT/scripts/stage-byetunes-resources.sh" "$REPO_ROOT/.theos/byetunes-resources"
-for resource in AppIconImage.png ByeTunes-Info.plist Config.plist meriyah.umd.js astring.umd.js yt_ejs_helper.js; do
+for resource in AppIconImage.png ByeTunes-Info.plist meriyah.umd.js astring.umd.js yt_ejs_helper.js; do
   [[ -s "$REPO_ROOT/.theos/byetunes-resources/$resource" ]] || {
     echo "staged ByeTunes resource missing: $resource" >&2
     exit 70
@@ -76,7 +77,7 @@ fi
 
 cp "$REPO_ROOT/.theos/byetunes-resources/AppIconImage.png" "$APP/AppIconImage.png"
 cp "$REPO_ROOT/.theos/byetunes-resources/ByeTunes-Info.plist" "$APP/ByeTunes-Info.plist"
-cp "$REPO_ROOT/.theos/byetunes-resources/Config.plist" "$APP/Config.plist"
+rm -f "$APP/Config.plist"
 cp "$REPO_ROOT/.theos/byetunes-resources/meriyah.umd.js" "$APP/meriyah.umd.js"
 cp "$REPO_ROOT/.theos/byetunes-resources/astring.umd.js" "$APP/astring.umd.js"
 cp "$REPO_ROOT/.theos/byetunes-resources/yt_ejs_helper.js" "$APP/yt_ejs_helper.js"
