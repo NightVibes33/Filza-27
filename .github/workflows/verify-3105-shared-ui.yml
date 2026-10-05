@@ -95,10 +95,14 @@ jobs:
           grep -Fq 'Label("Close", systemImage: "xmark")' "$PANEL"
           grep -Fq 'controller.modalPresentationStyle = .pageSheet' "$PANEL"
           grep -Fq 'sheet.detents = [.large()]' "$PANEL"
-          grep -Fq 'sheet.prefersGrabberVisible = true' "$PANEL"
+          grep -Fq 'controller.isModalInPresentation = true' "$PANEL"
+          grep -Fq 'sheet.prefersGrabberVisible = false' "$PANEL"
+          grep -Fq 'DragGesture(minimumDistance: 12' "$PANEL"
+          grep -Fq 'deliberate downward swipe that begins in this top bar' "$PANEL"
           grep -Fq 'FilzaEmbeddedPanel {' Filza3105Host.swift
           grep -Fq 'FilzaEmbeddedPanel {' ByeTunesEmbeddedHost.swift
           grep -Fq 'FilzaEmbeddedPanel {' FilzaMondCurrentHost.swift
+          grep -Fq 'FilzaEmbeddedPanel {' FilzaNFCARDHost.swift
           ! test -d MondModern
           ! test -e scripts/prepare-ios16-compat.sh
           ! test -e scripts/patch-mond-ios16-backport.sh
