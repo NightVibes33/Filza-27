@@ -68,25 +68,22 @@ def balanced_end(text: str, start: int) -> int:
 sm = song.read_text()
 
 if "var appleSyncedLyricsStoreID: Int64 = 0" not in sm:
-    song_identity_anchor = """    var trackNumber: Int?
-    var trackCount: Int?
-    var discNumber: Int?
-    var discCount: Int?
-    var lyrics: String?
-"""
-    song_identity_replacement = """    var trackNumber: Int?
-    var trackCount: Int?
-    var discNumber: Int?
-    var discCount: Int?
-    var lyrics: String?
-    var appleSyncedLyricsStoreID: Int64 = 0
-"""
-    sm = replace_once(
-        sm,
-        song_identity_anchor,
-        song_identity_replacement,
-        "per-song Apple synced lyrics catalog ID"
+    song_struct_start = sm.find("struct SongMetadata: Identifiable {")
+    if song_struct_start < 0:
+        raise SystemExit("SongMetadata struct missing")
+    song_struct_end = balanced_end(sm, song_struct_start)
+    song_struct = sm[song_struct_start:song_struct_end]
+    lyrics_field = "    var lyrics: String?\n"
+    lyrics_pos = song_struct.find(lyrics_field)
+    if lyrics_pos < 0:
+        raise SystemExit("SongMetadata lyrics field missing")
+    lyrics_insert = lyrics_pos + len(lyrics_field)
+    song_struct = (
+        song_struct[:lyrics_insert]
+        + "    var appleSyncedLyricsStoreID: Int64 = 0\n"
+        + song_struct[lyrics_insert:]
     )
+    sm = sm[:song_struct_start] + song_struct + sm[song_struct_end:]
 
 enum_old = '''enum LyricsSearchService: String, CaseIterable, Identifiable {
     case lrclib
