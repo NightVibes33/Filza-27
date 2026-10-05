@@ -241,7 +241,7 @@ if "Apple synced lyrics unavailable; falling back to LRCLIB" not in sm:
 
 sm = sm.replace(
     'if fetchLyricsEnabled && !appleSubscriptionLyrics && (song.lyrics == nil || song.lyrics?.isEmpty == true) {',
-    'if fetchLyricsEnabled && (song.lyrics == nil || song.lyrics?.isEmpty == true) {'
+    'if (fetchLyricsEnabled || appleSubscriptionLyrics) && (song.lyrics == nil || song.lyrics?.isEmpty == true) {'
 )
 song.write_text(sm)
 
@@ -428,6 +428,7 @@ grep -Fq 'case appleMusic' "$SONG"
 grep -Fq 'static var allCases: [LyricsSearchService] { [.appleMusic, .lrclib] }' "$SONG"
 grep -Fq 'searchLyricsFromAppleMusic' "$SONG"
 grep -Fq 'AppleMusicSyncedLyricsClient.shared.fetchSyncedLyrics' "$SONG"
+grep -Fq 'fetchLyricsEnabled || appleSubscriptionLyrics' "$SONG"
 grep -Fq 'AppleMusicSyncedLyricsAvailabilityBadge' "$ITUNES"
 grep -Fq 'AppleMusicSyncedLyricsConnectionRow' "$SETTINGS"
 grep -Fq 'appleSyncedLyricsConfirmed' "$MEDIA"

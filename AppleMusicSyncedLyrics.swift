@@ -541,6 +541,9 @@ struct AppleMusicSyncedLyricsConnectionRow: View {
         .sheet(isPresented: $showingLogin) {
             AppleMusicSyncedLyricsLoginSheet { success in
                 connected = success || AppleMusicSyncedLyricsCredentialStore.isConnected
+                if success {
+                    UserDefaults.standard.set(true, forKey: "appleSubscriptionLyrics")
+                }
             }
         }
     }
@@ -560,8 +563,7 @@ struct AppleMusicSyncedLyricsBootstrapView<Content: View>: View {
             .onAppear {
                 guard !didPrompt else { return }
                 didPrompt = true
-                guard UserDefaults.standard.bool(forKey: "appleSubscriptionLyrics"),
-                      !AppleMusicSyncedLyricsCredentialStore.isConnected else {
+                guard !AppleMusicSyncedLyricsCredentialStore.isConnected else {
                     return
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
@@ -569,7 +571,12 @@ struct AppleMusicSyncedLyricsBootstrapView<Content: View>: View {
                 }
             }
             .sheet(isPresented: $showingLogin) {
-                AppleMusicSyncedLyricsLoginSheet { _ in }
+                AppleMusicSyncedLyricsLoginSheet { success in
+                    if success {
+                        UserDefaults.standard.set(true, forKey: "appleSubscriptionLyrics")
+                        Logger.shared.log("[AppleLyrics] Apple-first synced lyrics enabled after sign-in")
+                    }
+                }
             }
     }
 }
