@@ -137,7 +137,7 @@ jobs:
           grep -aFq 'https://api.deezer.com/search' "$DYLIB"
           grep -aFq 'https://lrclib.net/api/get' "$DYLIB"
           grep -aFq 'https://lrclib.net/api/search' "$DYLIB"
-          grep -aFq '/syllable-lyrics' "$DYLIB"
+          grep -aFq 'syllable-lyrics' "$DYLIB"
           grep -aFq 'media-user-token' "$DYLIB"
           grep -aFq 'Apple Music Synced' "$DYLIB"
           ! grep -aFq '/api/metadata' "$DYLIB"

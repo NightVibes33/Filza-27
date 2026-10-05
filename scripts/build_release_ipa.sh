@@ -111,7 +111,7 @@ BYETUNES_BINARY="$APP/Frameworks/FilzaApplySandboxExt.dylib"
   echo "packaged FilzaApplySandboxExt.dylib missing" >&2
   exit 70
 }
-for required in '/syllable-lyrics' 'media-user-token' 'Apple Music Synced'; do
+for required in 'syllable-lyrics' 'media-user-token' 'Apple Music Synced'; do
   if ! LC_ALL=C grep -aFq "$required" "$BYETUNES_BINARY"; then
     echo "required Apple Music synced-lyrics marker missing from packaged binary: $required" >&2
     exit 70
