@@ -68,10 +68,23 @@ def balanced_end(text: str, start: int) -> int:
 sm = song.read_text()
 
 if "var appleSyncedLyricsStoreID: Int64 = 0" not in sm:
+    song_identity_anchor = """    var trackNumber: Int?
+    var trackCount: Int?
+    var discNumber: Int?
+    var discCount: Int?
+    var lyrics: String?
+"""
+    song_identity_replacement = """    var trackNumber: Int?
+    var trackCount: Int?
+    var discNumber: Int?
+    var discCount: Int?
+    var lyrics: String?
+    var appleSyncedLyricsStoreID: Int64 = 0
+"""
     sm = replace_once(
         sm,
-        "    var lyrics: String?\n",
-        "    var lyrics: String?\n    var appleSyncedLyricsStoreID: Int64 = 0\n",
+        song_identity_anchor,
+        song_identity_replacement,
         "per-song Apple synced lyrics catalog ID"
     )
 
