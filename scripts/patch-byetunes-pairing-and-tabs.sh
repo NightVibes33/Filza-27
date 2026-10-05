@@ -272,11 +272,7 @@ settings_manager_new = '''    @ObservedObject var manager: DeviceManager
 if "private var onDevicePairing = ByeTunesOnDevicePairingController.shared" not in s:
     s = replace_once(s, settings_manager, settings_manager_new, "settings pairing controller")
 
-first_divider = '''                        Divider().padding(.leading, 56)
-'''
-settings_pairing = '''                        Divider().padding(.leading, 56)
-
-                        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 {
+settings_pairing = '''                        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 {
                             Button {
                                 onDevicePairing.start(manager: manager)
                             } label: {
@@ -322,9 +318,22 @@ settings_pairing = '''                        Divider().padding(.leading, 56)
 
                             Divider().padding(.leading, 56)
                         }
+
 '''
 if "Settings › Privacy & Security › Developer Mode › Pair with ByeTunes" not in s:
-    s = replace_once(s, first_divider, settings_pairing, "settings on-device pairing row")
+    status_marker = '                            Text("Status")'
+    status_pos = s.find(status_marker)
+    if status_pos < 0:
+        raise SystemExit("settings Connection/Status row missing")
+    status_row_start = s.rfind('                        HStack {', 0, status_pos)
+    divider_start = s.rfind('                        Divider().padding(.leading, 56)', 0, status_row_start)
+    if status_row_start < 0 or divider_start < 0:
+        raise SystemExit("settings Connection divider anchor missing")
+    divider_end = s.find("\n", divider_start)
+    if divider_end < 0:
+        raise SystemExit("settings Connection divider line incomplete")
+    divider_end += 1
+    s = s[:divider_end] + "\n" + settings_pairing + s[divider_end:]
 
 s = s.replace('Text("DOWNLOADS")', 'Text("METADATA & LYRICS")', 1)
 s = s.replace('Text("Metadata & Download Settings")', 'Text("Metadata & Lyrics")', 1)
