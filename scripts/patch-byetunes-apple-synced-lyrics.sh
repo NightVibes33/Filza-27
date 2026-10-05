@@ -392,7 +392,13 @@ if "@State private var showingAppleMusicLogin = false" not in ls:
         1
     )
 
-old_apply = '''    private func applyLyricsResult(_ result: LyricsSearchResult) {
+apply_replacement = '''    private func applyLyricsResult(_ result: LyricsSearchResult) {
+        if result.service == .appleMusic && !AppleMusicSyncedLyricsCredentialStore.isConnected {
+            pendingAppleMusicResult = result
+            showingAppleMusicLogin = true
+            return
+        }
+
         isResolvingLyrics = true
         errorMessage = nil
 
@@ -410,41 +416,19 @@ old_apply = '''    private func applyLyricsResult(_ result: LyricsSearchResult) 
                     self.lyrics = fetchedLyrics
                     self.isPresented = false
                 } else {
-                    self.errorMessage = "Couldn’t load lyrics from \(result.service.displayName). Try another result or service."
-                }
-            }
-        }
-    }
-'''
-new_apply = '''    private func applyLyricsResult(_ result: LyricsSearchResult) {
-        if result.service == .appleMusic && !AppleMusicSyncedLyricsCredentialStore.isConnected {
-            pendingAppleMusicResult = result
-            showingAppleMusicLogin = true
-            return
-        }
-
-        isResolvingLyrics = true
-        errorMessage = nil
-
-        Task {
-            let fetchedLyrics = await SongMetadata.resolveLyrics(for: result, songTitle: songTitle, songArtist: songArtist)
-            await MainActor.run {
-                self.isResolvingLyrics = false
-                if let fetchedLyrics, !fetchedLyrics.isEmpty {
-                    Logger.shared.log("[LyricsSearch] Fetched lyrics from \(result.service.displayName)")
-                    self.lyrics = fetchedLyrics
-                    self.isPresented = false
-                } else {
                     self.errorMessage = result.service == .appleMusic
                         ? "Apple Music synced lyrics could not be loaded. LRCLIB remains available as a fallback."
                         : "Couldn’t load lyrics from \(result.service.displayName). Try another result or service."
                 }
             }
         }
-    }
-'''
+    }'''
 if "pendingAppleMusicResult = result" not in ls:
-    ls = replace_once(ls, old_apply, new_apply, "Apple lyrics selector login")
+    apply_start = ls.find("    private func applyLyricsResult(_ result: LyricsSearchResult) {")
+    if apply_start < 0:
+        raise SystemExit("applyLyricsResult function missing")
+    apply_end = balanced_end(ls, apply_start)
+    ls = ls[:apply_start] + apply_replacement + ls[apply_end:]
 
 sheet_marker = '''        .onChange(of: lyricsService) { _ in
             results = []
