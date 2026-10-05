@@ -66,6 +66,12 @@ socket_replacement = r'''    private func makeSocketAddress(port: UInt16) -> soc
             inet_pton(AF_INET, hostCString, &addr.sin_addr)
         }
         return addr
+    }
+
+    private func isRPPairingEndpointReachable(host: String, port: UInt16) -> Bool {
+        host.withCString { hostCString in
+            ByeTunesTCPProbe(hostCString, port, 500)
+        }
     }'''
 text = replace_function(
     text,
@@ -94,11 +100,33 @@ tunnel_replacement = r'''    private func establishRPPairingTunnel() -> Bool {
             ports.append(RP_PAIRING_PORT)
         }
 
-        let hosts = ["10.7.0.1", "10.7.0.2", "10.7.0.3", "127.0.0.1"]
-        var lastFailure = "no endpoint attempted"
+        let allowedHosts = ["10.7.0.1", "10.7.0.3", "127.0.0.1", "10.7.0.2"]
+        var hosts: [String] = []
+        if let cached = UserDefaults.standard.string(forKey: "filzaByeTunesLastRPPairingHost"),
+           allowedHosts.contains(cached) {
+            hosts.append(cached)
+        }
+        for host in allowedHosts where !hosts.contains(host) {
+            hosts.append(host)
+        }
+
+        var lastFailure = "no reachable Remote Pairing endpoint"
 
         for port in ports {
-            for host in hosts {
+            let reachableHosts = hosts.filter { host in
+                isRPPairingEndpointReachable(host: host, port: port)
+            }
+
+            Logger.shared.log(
+                "[DeviceManager] LocalDevVPN preflight reachable hosts=\(reachableHosts.joined(separator: ",")) port=\(port)"
+            )
+
+            guard !reachableHosts.isEmpty else {
+                lastFailure = "no TCP-reachable peer on port \(port)"
+                continue
+            }
+
+            for host in reachableHosts {
                 resetConnectionHandles()
                 var addr = makeSocketAddress(host: host, port: port)
                 let addrLen = socklen_t(MemoryLayout<sockaddr_in>.size)
@@ -118,6 +146,7 @@ tunnel_replacement = r'''    private func establishRPPairingTunnel() -> Bool {
                 }
 
                 if tunnelErr == nil, rpAdapter != nil, rpHandshake != nil {
+                    UserDefaults.standard.set(host, forKey: "filzaByeTunesLastRPPairingHost")
                     Logger.shared.log("[DeviceManager] LocalDevVPN Remote Pairing connected via \(host):\(port)")
                     return true
                 }
@@ -285,6 +314,8 @@ PY
 
 grep -Fq 'ByeTunesRemotePairingPortDiscovery.resolveSynchronously' "$DEVICE"
 grep -Fq 'LocalDevVPN discovered live Remote Pairing port=' "$DEVICE"
+grep -Fq 'ByeTunesTCPProbe' "$DEVICE"
+grep -Fq 'LocalDevVPN preflight reachable hosts=' "$DEVICE"
 grep -Fq 'LocalDevVPN Remote Pairing connected via \(host):\(port)' "$DEVICE"
 grep -Fq 'private var autoReconnectSuspended = false' "$DEVICE"
 grep -Fq 'func setAutoReconnectSuspended(_ suspended: Bool)' "$DEVICE"
@@ -294,4 +325,4 @@ grep -Fq '"10.7.0.2"' "$DEVICE"
 grep -Fq '"10.7.0.3"' "$DEVICE"
 grep -Fq '"127.0.0.1"' "$DEVICE"
 
-echo "Applied NFCARD-style multi-peer LocalDevVPN Remote Pairing transport"
+echo "Applied preflighted LocalDevVPN Remote Pairing transport"
