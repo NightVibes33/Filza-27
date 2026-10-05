@@ -93,7 +93,7 @@ struct Config {
     // Metadata comes from Apple/iTunes/Deezer and lyrics come from LRCLIB.
     static let byeTunesApiUrl = ""
     static let byeTunesApiHost = ""
-    static let downloadBackendLabel = "On-device Yoink"
+    static let downloadBackendLabel = "Disabled"
 }
 '''
 )
@@ -117,82 +117,26 @@ while metadata_marker in dv:
 if removed_metadata_calls not in (0, 4):
     raise SystemExit(f"expected 4 private Spotify metadata call sites or an already-patched file; removed {removed_metadata_calls}")
 
-# The developer-hosted downloader remains removed. Restore downloads through
-# Filza's bundled, loopback-only Yoink+iSH runtime instead.
+# The standalone downloader was removed from Filza. Leave the upstream queue
+# types compilable, but never construct a request to ByeTunes /api/download.
 download_replacement = '''    private func downloadBackendCandidates(
         for source: DownloadSourceChoice,
         track: DownloadTrack? = nil
     ) async throws -> [BackendCandidate] {
-        let urlString = "http://127.0.0.1:41337/api/download"
-        guard let url = URL(string: urlString) else {
-            throw DownloadError.invalidURL(urlString)
-        }
-
-        let desiredFormat = desiredDownloadFormat()
-        let wantsSyncedLyrics =
-            UserDefaults.standard.bool(forKey: "fetchLyrics") ||
-            UserDefaults.standard.bool(forKey: "appleSubscriptionLyrics")
-
-        func makeCandidate(label: String, format: String, overrideURL: String? = nil) throws -> BackendCandidate {
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONSerialization.data(withJSONObject: [
-                "url": overrideURL ?? source.url,
-                "format": format,
-                "genreSource": source.backendGenreSource,
-                "syncedLyrics": wantsSyncedLyrics
-            ])
-            return BackendCandidate(label: label, request: request, customDownload: nil, requestedFormat: format)
-        }
-
-        var candidates = [try makeCandidate(label: Config.downloadBackendLabel, format: desiredFormat)]
-        if desiredFormat.lowercased() != "mp3" {
-            candidates.append(try makeCandidate(label: "\(Config.downloadBackendLabel) (MP3 Fallback)", format: "mp3"))
-        }
-
-        if source.platform == .appleMusic, track != nil {
-            var spotifyURL: String?
-
-            if spotifyURL == nil,
-               let mapped = try? await fetchMappedURL(for: mappingSeedURL(for: source.url), platform: .spotify) {
-                spotifyURL = mapped
-                log("Spotify fallback: song.link AM→Spotify: \(mapped)")
-            }
-
-            if spotifyURL == nil,
-               let deezerMapped = try? await fetchMappedURL(for: mappingSeedURL(for: source.url), platform: .deezer),
-               let mapped = try? await fetchMappedURL(for: deezerMapped, platform: .spotify) {
-                spotifyURL = mapped
-                log("Spotify fallback: song.link AM→Deezer→Spotify: \(mapped)")
-            }
-
-            if let spotifyURL {
-                candidates.append(try makeCandidate(label: "\(Config.downloadBackendLabel) (Spotify)", format: desiredFormat, overrideURL: spotifyURL))
-                if desiredFormat.lowercased() != "mp3" {
-                    candidates.append(try makeCandidate(label: "\(Config.downloadBackendLabel) (Spotify MP3 Fallback)", format: "mp3", overrideURL: spotifyURL))
-                }
-            }
-        }
-
-        return candidates
+        _ = source
+        _ = track
+        return []
     }'''
+if "/api/download" in dv or "Config.byeTunesApiUrl" in dv:
+    dv, _ = replace_braced_function(
+        dv,
+        "    private func downloadBackendCandidates(",
+        download_replacement
+    )
 
-# Route audio only to the bundled loopback Yoink runtime. Metadata never uses
-# the old private backend and Config.plist stays absent.
-current_download_start = dv.find("    private func downloadBackendCandidates(")
-if current_download_start < 0:
-    raise SystemExit("downloadBackendCandidates missing")
-current_download_end = find_balanced_end(dv, current_download_start)
-current_download = dv[current_download_start:current_download_end]
-if "http://127.0.0.1:41337/api/download" not in current_download:
-    dv = dv[:current_download_start] + download_replacement + dv[current_download_end:]
-
-for forbidden in ("/api/metadata", "Config.byeTunesApiUrl", "api.byetunes.xyz"):
+for forbidden in ("/api/metadata", "/api/download", "Config.byeTunesApiUrl"):
     if forbidden in dv:
         raise SystemExit(f"private ByeTunes backend marker remains in DownloadView.swift: {forbidden}")
-if "http://127.0.0.1:41337/api/download" not in dv:
-    raise SystemExit("on-device Yoink download endpoint missing")
 for required in (
     "SongMetadata.searchiTunes",
     "SongMetadata.searchDeezer",
@@ -345,8 +289,7 @@ print("Applied Filza public ByeTunes metadata + LRCLIB policy")
 PY
 
 ! grep -Fq '/api/metadata' "$DOWNLOAD"
-grep -Fq 'http://127.0.0.1:41337/api/download' "$DOWNLOAD"
-! grep -Fq 'api.byetunes.xyz' "$DOWNLOAD"
+! grep -Fq '/api/download' "$DOWNLOAD"
 ! grep -Fq 'ByeTunesApiUrl' "$CONFIG"
 ! grep -Fq 'path(forResource: "Config"' "$CONFIG"
 grep -Fq 'SongMetadata.searchiTunes' "$DOWNLOAD"
