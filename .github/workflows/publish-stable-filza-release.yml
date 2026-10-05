@@ -4,18 +4,9 @@ name: Publish Stable Filza Release
 # A merged main push is also an explicit release trigger.
 on:
   workflow_run:
-    workflows: ["Verify ByeTunes All Sources + YouTube + SSH IPA"]
+    workflows: ["Verify Filza 27 arm64 IPA"]
     types: [completed]
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "README.md"
-      - ".github/workflows/publish-stable-filza-release.yml"
-  pull_request_target:
-    branches: [main]
-    paths:
-      - ".github/force-stable-release.trigger"
 
 permissions:
   actions: read
@@ -29,8 +20,6 @@ jobs:
   publish:
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'push' ||
-      github.event_name == 'pull_request_target' ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
@@ -58,7 +47,7 @@ jobs:
           else
             RUN_JSON="$(gh run list \
               --repo "$GITHUB_REPOSITORY" \
-              --workflow verify-upstream-byetunes-ssh.yml \
+              --workflow diagnose-full-build.yml \
               --branch main \
               --status success \
               --limit 1 \

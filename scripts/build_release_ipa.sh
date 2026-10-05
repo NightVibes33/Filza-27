@@ -32,11 +32,10 @@ DYLIB="$REPO_ROOT/.theos/obj/FilzaApplySandboxExt.dylib"
 [[ -f "$DYLIB" ]] || { echo "built dylib not found: $DYLIB" >&2; exit 70; }
 
 # Keep the standalone release path identical to the verified Actions package.
-# Stage only redistributable ByeTunes app resources plus the exact pre-v2.4
-# YouTubeKit JS resources that SignatureSolver resolves from Bundle.main.
-# Config.plist is intentionally not extracted from or copied out of ByeTunes.
+# Stage only the ByeTunes resources still consumed by the embedded 2.5 UI.
+# Config.plist/private backend data and retired pre-v2.4 YouTubeKit JS are not packaged.
 bash "$REPO_ROOT/scripts/stage-byetunes-resources.sh" "$REPO_ROOT/.theos/byetunes-resources"
-for resource in AppIconImage.png ByeTunes-Info.plist meriyah.umd.js astring.umd.js yt_ejs_helper.js; do
+for resource in AppIconImage.png ByeTunes-Info.plist; do
   [[ -s "$REPO_ROOT/.theos/byetunes-resources/$resource" ]] || {
     echo "staged ByeTunes resource missing: $resource" >&2
     exit 70
@@ -78,9 +77,6 @@ fi
 cp "$REPO_ROOT/.theos/byetunes-resources/AppIconImage.png" "$APP/AppIconImage.png"
 cp "$REPO_ROOT/.theos/byetunes-resources/ByeTunes-Info.plist" "$APP/ByeTunes-Info.plist"
 rm -f "$APP/Config.plist"
-cp "$REPO_ROOT/.theos/byetunes-resources/meriyah.umd.js" "$APP/meriyah.umd.js"
-cp "$REPO_ROOT/.theos/byetunes-resources/astring.umd.js" "$APP/astring.umd.js"
-cp "$REPO_ROOT/.theos/byetunes-resources/yt_ejs_helper.js" "$APP/yt_ejs_helper.js"
 
 rm -rf "$APP/Filza3105.bundle"
 cp -R "$REPO_ROOT/ThirdParty/3105/Resources/Filza3105.bundle" "$APP/Filza3105.bundle"
@@ -103,10 +99,6 @@ fi
 
 [[ "$(plutil -extract MinimumOSVersion raw -o - "$APP/Info.plist")" == "17.0" ]] || { echo "unexpected MinimumOSVersion" >&2; exit 70; }
 [[ ! -e "$APP/Frameworks/FilzaMondModern.dylib" ]] || { echo "stale split Mond runtime present" >&2; exit 70; }
-
-for resource in meriyah.umd.js astring.umd.js yt_ejs_helper.js; do
-  [[ -s "$APP/$resource" ]] || { echo "YouTubeKit app resource missing: $resource" >&2; exit 70; }
-done
 
 # Enforce the public-source ByeTunes policy on the actual packaged binary.
 # Config.plist and private ByeTunes metadata/download routes must never return.
@@ -146,8 +138,4 @@ fi
 )
 
 unzip -tq "$OUTPUT_IPA"
-for resource in meriyah.umd.js astring.umd.js yt_ejs_helper.js; do
-  unzip -l "$OUTPUT_IPA" | grep -F "$resource" >/dev/null
- done
-
 shasum -a 256 "$OUTPUT_IPA"
