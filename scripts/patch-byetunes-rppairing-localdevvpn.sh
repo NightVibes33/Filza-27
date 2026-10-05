@@ -50,15 +50,21 @@ def replace_function(source: str, signature: str, replacement: str) -> str:
     end = balanced_end(source, start)
     return source[:start] + replacement.rstrip() + "\n" + source[end:]
 
-# The working temp AirCard/NFCARD implementation does not probe arbitrary
-# loopback peers. It discovers Apple's live _remotepairing._tcp port and talks
-# to LocalDevVPN's device peer at 10.7.0.1. Mirror that behavior exactly.
+# LocalDevVPN/SideStore loopback transports do not guarantee that the device
+# peer is 10.7.0.1. Keep Bonjour's live port, but probe the same LocalDevVPN
+# peer range used by NFCARD/Airlift instead of pinning a single host.
 socket_replacement = r'''    private func makeSocketAddress(port: UInt16) -> sockaddr_in {
+        makeSocketAddress(host: DEVICE_HOST, port: port)
+    }
+
+    private func makeSocketAddress(host: String, port: UInt16) -> sockaddr_in {
         var addr = sockaddr_in()
         memset(&addr, 0, MemoryLayout<sockaddr_in>.size)
         addr.sin_family = sa_family_t(AF_INET)
         addr.sin_port = CFSwapInt16HostToBig(port)
-        inet_pton(AF_INET, DEVICE_HOST, &addr.sin_addr)
+        host.withCString { hostCString in
+            inet_pton(AF_INET, hostCString, &addr.sin_addr)
+        }
         return addr
     }'''
 text = replace_function(
@@ -88,39 +94,44 @@ tunnel_replacement = r'''    private func establishRPPairingTunnel() -> Bool {
             ports.append(RP_PAIRING_PORT)
         }
 
+        let hosts = ["10.7.0.1", "10.7.0.2", "10.7.0.3", "127.0.0.1"]
         var lastFailure = "no endpoint attempted"
+
         for port in ports {
-            resetConnectionHandles()
-            var addr = makeSocketAddress(port: port)
-            let addrLen = socklen_t(MemoryLayout<sockaddr_in>.size)
-            let tunnelErr = withUnsafePointer(to: &addr) {
-                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
-                    tunnel_create_rppairing(
-                        sockaddrPointer,
-                        addrLen,
-                        "Music-Provider",
-                        rpPairingHandle,
-                        nil,
-                        nil,
-                        &rpAdapter,
-                        &rpHandshake
-                    )
+            for host in hosts {
+                resetConnectionHandles()
+                var addr = makeSocketAddress(host: host, port: port)
+                let addrLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+                let tunnelErr = withUnsafePointer(to: &addr) {
+                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                        tunnel_create_rppairing(
+                            sockaddrPointer,
+                            addrLen,
+                            "Music-Provider",
+                            rpPairingHandle,
+                            nil,
+                            nil,
+                            &rpAdapter,
+                            &rpHandshake
+                        )
+                    }
                 }
-            }
 
-            if tunnelErr == nil, rpAdapter != nil, rpHandshake != nil {
-                Logger.shared.log("[DeviceManager] LocalDevVPN Remote Pairing connected via \(DEVICE_HOST):\(port)")
-                return true
-            }
+                if tunnelErr == nil, rpAdapter != nil, rpHandshake != nil {
+                    Logger.shared.log("[DeviceManager] LocalDevVPN Remote Pairing connected via \(host):\(port)")
+                    return true
+                }
 
-            if let err = tunnelErr {
-                let msg = err.pointee.message != nil ? String(cString: err.pointee.message!) : "No message"
-                lastFailure = "\(DEVICE_HOST):\(port) code=\(err.pointee.code) sub=\(err.pointee.sub_code) \(msg)"
-                idevice_error_free(err)
-            } else {
-                lastFailure = "\(DEVICE_HOST):\(port) returned no adapter/handshake"
+                if let err = tunnelErr {
+                    let msg = err.pointee.message != nil ? String(cString: err.pointee.message!) : "No message"
+                    lastFailure = "\(host):\(port) code=\(err.pointee.code) sub=\(err.pointee.sub_code) \(msg)"
+                    Logger.shared.log("[DeviceManager] LocalDevVPN endpoint rejected \(host):\(port): \(msg)")
+                    idevice_error_free(err)
+                } else {
+                    lastFailure = "\(host):\(port) returned no adapter/handshake"
+                }
+                resetConnectionHandles()
             }
-            resetConnectionHandles()
         }
 
         self.logOnce(
@@ -274,13 +285,13 @@ PY
 
 grep -Fq 'ByeTunesRemotePairingPortDiscovery.resolveSynchronously' "$DEVICE"
 grep -Fq 'LocalDevVPN discovered live Remote Pairing port=' "$DEVICE"
-grep -Fq 'LocalDevVPN Remote Pairing connected via \(DEVICE_HOST):\(port)' "$DEVICE"
+grep -Fq 'LocalDevVPN Remote Pairing connected via \(host):\(port)' "$DEVICE"
 grep -Fq 'private var autoReconnectSuspended = false' "$DEVICE"
 grep -Fq 'func setAutoReconnectSuspended(_ suspended: Bool)' "$DEVICE"
 grep -Fq 'Auto-reconnect paused while on-device pairing is active' "$DEVICE"
 grep -Fq 'for _ in 0..<48' "$DEVICE"
-! grep -Fq '"10.7.0.2"' "$DEVICE"
-! grep -Fq '"10.7.0.3"' "$DEVICE"
-! grep -Fq '"127.0.0.1"' "$DEVICE"
+grep -Fq '"10.7.0.2"' "$DEVICE"
+grep -Fq '"10.7.0.3"' "$DEVICE"
+grep -Fq '"127.0.0.1"' "$DEVICE"
 
-echo "Applied AirCard-parity LocalDevVPN Remote Pairing transport"
+echo "Applied NFCARD-style multi-peer LocalDevVPN Remote Pairing transport"

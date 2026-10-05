@@ -338,22 +338,26 @@ final class AppleMusicSyncedLyricsClient {
 
     func validateStoredCredentials() async -> Bool {
         guard let userToken = AppleMusicSyncedLyricsCredentialStore.userToken,
-              !userToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              let developerToken = await developerToken() else {
+              !userToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return false
         }
 
-        guard let storefront = await validatedStorefront(
+        guard let developerToken = await developerToken() else {
+            Logger.shared.log("[AppleLyrics] developer token unavailable; keeping saved Apple Music login")
+            return true
+        }
+
+        if let storefront = await validatedStorefront(
             developerToken: developerToken,
             userToken: userToken
-        ) else {
-            return false
+        ) {
+            _ = AppleMusicSyncedLyricsCredentialStore.save(
+                userToken: userToken,
+                storefront: storefront
+            )
+        } else {
+            Logger.shared.log("[AppleLyrics] storefront validation deferred; keeping saved Apple Music login")
         }
-
-        _ = AppleMusicSyncedLyricsCredentialStore.save(
-            userToken: userToken,
-            storefront: storefront
-        )
         return true
     }
 
@@ -810,6 +814,8 @@ private final class AppleMusicSyncedLyricsLoginViewController: UIViewController,
     private var webView: WKWebView!
     private var pollTimer: Timer?
     private var completed = false
+    private var tokenFirstSeenAt: Date?
+    private static let storefrontGrace: TimeInterval = 8
 
     init(completion: @escaping (Bool) -> Void) {
         self.completion = completion
@@ -838,31 +844,31 @@ private final class AppleMusicSyncedLyricsLoginViewController: UIViewController,
     }
 
     private func prepareFreshLogin() {
-        let cookieStore = webView.configuration.websiteDataStore.httpCookieStore
-        cookieStore.getAllCookies { [weak self] cookies in
+        let dataStore = webView.configuration.websiteDataStore
+        let types = WKWebsiteDataStore.allWebsiteDataTypes()
+        dataStore.fetchDataRecords(ofTypes: types) { [weak self] records in
             guard let self else { return }
-            let appleCookies = cookies.filter { cookie in
-                cookie.domain.contains("apple.com") || cookie.domain.contains("icloud.com")
+            let appleRecords = records.filter {
+                $0.displayName.contains("apple.com") || $0.displayName.contains("icloud.com")
             }
 
-            let group = DispatchGroup()
-            for cookie in appleCookies {
-                group.enter()
-                cookieStore.delete(cookie) {
-                    group.leave()
-                }
-            }
-
-            group.notify(queue: .main) {
+            let loadLogin: @MainActor () -> Void = {
                 guard let url = URL(string: "https://music.apple.com/login") else { return }
-                var request = URLRequest(url: url)
-                request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 27_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
-                self.webView.load(request)
-                self.pollTimer = Timer.scheduledTimer(withTimeInterval: 0.75, repeats: true) { [weak self] _ in
+                self.webView.load(URLRequest(url: url))
+                self.pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
                     Task { @MainActor in
                         self?.pollCookies()
                     }
                 }
+            }
+
+            guard !appleRecords.isEmpty else {
+                Task { @MainActor in loadLogin() }
+                return
+            }
+
+            dataStore.removeData(ofTypes: types, for: appleRecords) {
+                Task { @MainActor in loadLogin() }
             }
         }
     }
@@ -876,27 +882,56 @@ private final class AppleMusicSyncedLyricsLoginViewController: UIViewController,
         webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
             Task { @MainActor in
                 guard let self, !self.completed else { return }
-                guard let token = cookies.first(where: { $0.name == "media-user-token" })?.value,
-                      !token.isEmpty else {
+                guard let tokenCookie = cookies.first(where: { $0.name == "media-user-token" }),
+                      !tokenCookie.value.isEmpty else {
                     return
                 }
 
-                self.completed = true
-                self.pollTimer?.invalidate()
-                self.pollTimer = nil
-                Logger.shared.log("[AppleLyrics] captured Apple Music token candidate; validating with Apple")
+                let storefront = cookies.first(where: { $0.name == "itua" })?.value
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
 
-                let success = await AppleMusicSyncedLyricsClient.shared
-                    .validateAndPersistUserToken(token)
-
-                if success {
-                    Logger.shared.log("[AppleLyrics] Apple Music user token is saved and usable")
-                } else {
-                    Logger.shared.log("[AppleLyrics] captured token was not usable; reconnect required")
+                if let storefront, !storefront.isEmpty {
+                    self.finishLogin(token: tokenCookie.value, storefront: storefront.lowercased())
+                    return
                 }
-                self.completion(success)
+
+                if self.tokenFirstSeenAt == nil {
+                    self.tokenFirstSeenAt = Date()
+                    Logger.shared.log("[AppleLyrics] media-user-token captured; waiting briefly for storefront")
+                    return
+                }
+
+                guard let firstSeen = self.tokenFirstSeenAt,
+                      Date().timeIntervalSince(firstSeen) >= Self.storefrontGrace else {
+                    return
+                }
+
+                self.finishLogin(token: tokenCookie.value, storefront: nil)
             }
         }
+    }
+
+    private func finishLogin(token rawToken: String, storefront: String?) {
+        guard !completed else { return }
+        let token = (rawToken.removingPercentEncoding ?? rawToken)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else { return }
+
+        completed = true
+        pollTimer?.invalidate()
+        pollTimer = nil
+
+        let saved = AppleMusicSyncedLyricsCredentialStore.save(
+            userToken: token,
+            storefront: storefront
+        )
+
+        if saved {
+            Logger.shared.log("[AppleLyrics] Apple Music user token captured and persisted")
+        } else {
+            Logger.shared.log("[AppleLyrics] Apple Music token capture succeeded but persistence failed")
+        }
+        completion(saved)
     }
 
     func webView(
