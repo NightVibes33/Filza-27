@@ -15,12 +15,21 @@ GCDWEBSERVER_ROOT := ThirdParty/GCDWebServer
 THREEONE_ROOT := ThirdParty/3105
 MOND_CURRENT_ROOT := ThirdParty/mond-current
 MOND_GEN := $(MOND_CURRENT_ROOT)/Generated
+NODEMOBILE_ROOT := Vendor/NodeMobile
+NODEMOBILE_FRAMEWORK := $(NODEMOBILE_ROOT)/NodeMobile.framework
+ISH_ROOT := Vendor/iSH
+ISH_SOURCE := $(ISH_ROOT)/src
+ISH_LIB := $(ISH_ROOT)/lib
+BYETUNES_YOINK_BUNDLE := .theos/byetunes-yoink-bundle
+BYETUNES_ISH_BUNDLE := .theos/byetunes-ish-bundle
 
 FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataRetryFix.m AppIconResourceProxyFix.m VirtualBackendFix.m SystemPathDiagnostics.m BadQuerySystemProbe.m GestaltManager.m FilzaMondBridge.m FilzaMainToolbarGestalt.m Filza3105Bridge.m Filza3105IPAExportBridge.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ByeTunesFullAppLauncher.m FilzaDiagnostics.m FilzaQuickActions.m WebDAVRuntimeFix.m WebDAVToggleStateFix.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m CVE43724RieCompatibility.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
 FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/AppIconHelper.m
 FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/wallpaper_zip.c
 FilzaApplySandboxExt_FILES += $(BAD_QUERY_ROOT)/bad_query/bad_query.c
 FilzaApplySandboxExt_FILES += $(MOND_GEN)/mond_bad_query.c
+FilzaApplySandboxExt_FILES += ByeTunesLocal/NodeRuntime/ByeTunesNodeRuntime.mm
+FilzaApplySandboxExt_FILES += ByeTunesLocal/iSH/ByeTunesISHRuntime.m
 
 GCDWEBSERVER_OBJC_FILES := $(shell find $(GCDWEBSERVER_ROOT)/GCDWebServer $(GCDWEBSERVER_ROOT)/GCDWebDAVServer -type f -name '*.m' -print)
 FilzaApplySandboxExt_FILES += $(GCDWEBSERVER_OBJC_FILES)
@@ -103,14 +112,15 @@ FilzaApplySandboxExt_CFLAGS = -I$(PWD)/compat -I$(PWD) -I$(PWD)/XPF/src -I$(PWD)
     -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable \
     -Wno-incompatible-pointer-types -Wno-incompatible-pointer-types-discards-qualifiers \
     -Wno-deprecated-declarations -Wno-nonportable-include-path -Wno-format
-FilzaApplySandboxExt_CFLAGS += -Wno-arc-performSelector-leaks
+FilzaApplySandboxExt_CFLAGS += -Wno-arc-performSelector-leaks -F$(PWD)/$(NODEMOBILE_ROOT) -I$(PWD)/$(ISH_SOURCE) -DISH_INTERNAL=1
 FilzaApplySandboxExt_CCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 FilzaApplySandboxExt_OBJCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 FilzaApplySandboxExt_OBJCCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 # Build-only compiler allowance for ByeTunes' existing large SwiftUI expressions.
 # This does not patch or alter Mond/ByeTunes runtime source or behavior.
 FilzaApplySandboxExt_SWIFTFLAGS += -swift-version 5 -default-isolation MainActor -Xfrontend -solver-expression-time-threshold=300 -Xcc -I$(IDEVICE_VENDOR)/include -Xcc -I$(PWD)/$(MOND_GEN)
-FilzaApplySandboxExt_LDFLAGS += $(IDEVICE_STATIC)
+FilzaApplySandboxExt_LDFLAGS += $(IDEVICE_STATIC) -F$(PWD)/$(NODEMOBILE_ROOT) -framework NodeMobile -lc++
+FilzaApplySandboxExt_LDFLAGS += -Wl,-force_load,$(PWD)/$(ISH_LIB)/libish.a -Wl,-force_load,$(PWD)/$(ISH_LIB)/libish_emu.a -Wl,-force_load,$(PWD)/$(ISH_LIB)/libfakefs.a -lresolv
 
 FilzaApplySandboxExt_FRAMEWORKS = UIKit Foundation SwiftUI Combine AVFoundation AVKit CoreMedia AudioToolbox CryptoKit Security UniformTypeIdentifiers PhotosUI JavaScriptCore AppIntents ActivityKit SafariServices CFNetwork MobileCoreServices WebKit QuickLook ImageIO
 FilzaApplySandboxExt_PRIVATE_FRAMEWORKS = IOSurface
@@ -120,6 +130,9 @@ FilzaApplySandboxExt_INSTALL_TARGET_PROCESSES = Filza
 # Every transformation is explicit and ordered. No script may invoke another
 # unrelated patch as a hidden side effect.
 before-FilzaApplySandboxExt-all::
+	@bash scripts/stage-byetunes-node-mobile.sh "$(NODEMOBILE_ROOT)"
+	@bash scripts/stage-official-ish.sh "$(ISH_ROOT)"
+	@bash scripts/build-byetunes-embedded-yoink.sh "$(BYETUNES_YOINK_BUNDLE)"
 	@bash scripts/stage-mond-current.sh
 	@bash scripts/stage-mond-22-overlay.sh
 	@bash scripts/stage-3105-v1.sh
@@ -131,6 +144,7 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/patch-byetunes-background-provider-parity.sh
 	@bash scripts/patch-byetunes-download-provider-parity.sh
 	@bash scripts/patch-byetunes-device-library-save.sh
+	@bash scripts/patch-byetunes-rppairing-localdevvpn.sh
 	@bash scripts/patch-byetunes-public-metadata-stack.sh
 	@bash scripts/patch-byetunes-apple-synced-lyrics.sh
 	@test -s "$(IDEVICE_STATIC)" || (echo "Missing $(IDEVICE_STATIC). Run: bash scripts/build-idevice.sh" >&2; exit 1)
@@ -148,9 +162,19 @@ before-FilzaApplySandboxExt-all::
 	@test -f "scripts/patch-byetunes-public-metadata-stack.sh" || (echo "Missing ByeTunes public metadata policy patch" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-apple-synced-lyrics.sh" || (echo "Missing Apple Music synced-lyrics patch" >&2; exit 1)
 	@test -f "AppleMusicSyncedLyrics.swift" || (echo "Missing Apple Music synced-lyrics runtime" >&2; exit 1)
+	@test -f "scripts/patch-byetunes-rppairing-localdevvpn.sh" || (echo "Missing LocalDevVPN Remote Pairing repair" >&2; exit 1)
+	@test -s "$(NODEMOBILE_FRAMEWORK)/NodeMobile" || (echo "Missing pinned NodeMobile framework" >&2; exit 1)
+	@test -s "$(NODEMOBILE_FRAMEWORK)/Headers/NodeMobile.h" || (echo "Missing NodeMobile headers" >&2; exit 1)
+	@test -s "$(ISH_LIB)/libish.a" || (echo "Missing official iSH libish.a" >&2; exit 1)
+	@test -s "$(ISH_LIB)/libish_emu.a" || (echo "Missing official iSH libish_emu.a" >&2; exit 1)
+	@test -s "$(ISH_LIB)/libfakefs.a" || (echo "Missing official iSH libfakefs.a" >&2; exit 1)
+	@test -s "$(BYETUNES_YOINK_BUNDLE)/server.js" || (echo "Missing embedded Yoink server bundle" >&2; exit 1)
+	@grep -Fq '"youtube": false' "$(BYETUNES_YOINK_BUNDLE)/provenance.json" || (echo "Embedded Yoink unexpectedly enables YouTube" >&2; exit 1)
 	@! grep -Fq '/api/metadata' "$(BYETUNES_ROOT)/DownloadView.swift" || (echo "Private ByeTunes metadata backend remains" >&2; exit 1)
-	@! grep -Fq '/api/download' "$(BYETUNES_ROOT)/DownloadView.swift" || (echo "Private ByeTunes download backend remains" >&2; exit 1)
+	@grep -Fq 'http://127.0.0.1:41337/api/download' "$(BYETUNES_ROOT)/DownloadView.swift" || (echo "On-device Yoink download endpoint missing" >&2; exit 1)
+	@! grep -Fq 'api.byetunes.xyz' "$(BYETUNES_ROOT)/DownloadView.swift" || (echo "Developer-hosted ByeTunes backend returned" >&2; exit 1)
 	@! grep -Fq 'ByeTunesApiUrl' "$(BYETUNES_ROOT)/Config.swift" || (echo "ByeTunes Config.plist key remains" >&2; exit 1)
+	@grep -Fq 'LocalDevVPN Remote Pairing connected via' "$(BYETUNES_ROOT)/iDeviceManager.swift" || (echo "LocalDevVPN Remote Pairing repair missing" >&2; exit 1)
 	@grep -Fq 'static func cleanSyncedLyrics' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "LRCLIB synced lyric preservation missing" >&2; exit 1)
 	@grep -Fq 'AppleMusicSyncedLyricsClient.shared.fetchSyncedLyrics' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "Apple Music synced lyric provider missing" >&2; exit 1)
 	@grep -Fq 'appleSyncedLyricsConfirmed' "$(BYETUNES_ROOT)/MediaLibraryBuilder.swift" || (echo "truthful Apple synced lyric DB flags missing" >&2; exit 1)

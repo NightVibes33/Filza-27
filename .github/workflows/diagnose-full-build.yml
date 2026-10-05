@@ -10,7 +10,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  byetunes-ish-rootfs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout rootfs recipe
+        uses: actions/checkout@v4
+
+      - name: Enable x86 emulation for Alpine i386
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: 386
+
+      - name: Restore pinned iSH rootfs cache
+        id: ish-rootfs-cache
+        uses: actions/cache@v4
+        with:
+          path: .theos/ByeTunesISH.bundle
+          key: byetunes-ish-rootfs-${{ hashFiles('ByeTunesLocal/iSH/ish.lock', 'ByeTunesLocal/iSH/alpine.lock', 'scripts/build-byetunes-ish-rootfs.sh') }}
+
+      - name: Install iSH fakefs build dependencies
+        if: steps.ish-rootfs-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld meson ninja-build libarchive-dev libsqlite3-dev
+
+      - name: Build pinned Alpine i386 + FFmpeg fakefs
+        if: steps.ish-rootfs-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          bash scripts/build-byetunes-ish-rootfs.sh "$GITHUB_WORKSPACE/.theos/ByeTunesISH.bundle"
+
+      - name: Verify official iSH rootfs
+        run: |
+          set -euxo pipefail
+          test -d .theos/ByeTunesISH.bundle/rootfs/data
+          test -s .theos/ByeTunesISH.bundle/rootfs/meta.db
+          grep -Eq '^ffmpeg-' .theos/ByeTunesISH.bundle/package-manifest.txt
+          grep -Fq '"youtube": false' .theos/ByeTunesISH.bundle/provenance.json
+
+      - name: Upload official iSH rootfs
+        uses: actions/upload-artifact@v4
+        with:
+          name: byetunes-official-ish-rootfs
+          path: .theos/ByeTunesISH.bundle/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 7
+
   diagnose:
+    needs: byetunes-ish-rootfs
     runs-on: macos-26-intel
     env:
       THEOS: ${{ github.workspace }}/theos
@@ -34,6 +82,26 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - name: Download pinned official iSH rootfs
+        uses: actions/download-artifact@v4
+        with:
+          name: byetunes-official-ish-rootfs
+          path: .ci/ByeTunesISH.bundle
+
+      - name: Setup Node 24 for embedded Yoink
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install official iSH build tools
+        shell: bash
+        run: |
+          set -euxo pipefail
+          brew install llvm lld meson ninja
+          echo "$(brew --prefix lld)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+          "$(brew --prefix lld)/bin/ld.lld" --version
 
       - name: Install Procursus build tools
         uses: dhinakg/procursus-action@main
@@ -110,6 +178,9 @@ jobs:
           export PATH="/opt/procursus/bin:$PATH"
           mkdir -p .theos
           gmake clean >/dev/null 2>&1 || true
+          mkdir -p .theos/byetunes-ish-bundle
+          cp -R .ci/ByeTunesISH.bundle/. .theos/byetunes-ish-bundle/
+          test -s .theos/byetunes-ish-bundle/rootfs/meta.db
           set -o pipefail
           # Mond 2.0 upstream uses iOS 17 APIs. This is a compiler/deployment
           # target only; it does not change Filza's CFBundle app version.
@@ -140,9 +211,19 @@ jobs:
           grep -aFq 'syllable-lyrics' "$DYLIB"
           grep -aFq 'media-user-token' "$DYLIB"
           grep -aFq 'Apple Music Synced' "$DYLIB"
-          ! grep -aFq '/api/metadata' "$DYLIB"
-          ! grep -aFq '/api/download' "$DYLIB"
+          grep -aFq 'http://127.0.0.1:41337/api/download' "$DYLIB"
+          grep -aFq 'LocalDevVPN Remote Pairing connected via' "$DYLIB"
+          grep -aFq 'ByeTunesLocal' "$DYLIB"
+          nm "$DYLIB" | grep -F 'node_start'
+          ! grep -aFq 'api.byetunes.xyz' "$DYLIB"
           ! grep -aFq 'ByeTunesApiUrl' "$DYLIB"
+          test -s .theos/byetunes-yoink-bundle/server.js
+          grep -Fq '"youtube": false' .theos/byetunes-yoink-bundle/provenance.json
+          test -s Vendor/iSH/lib/libish.a
+          test -s Vendor/iSH/lib/libish_emu.a
+          test -s Vendor/iSH/lib/libfakefs.a
+          test -s .theos/byetunes-ish-bundle/rootfs/meta.db
+          grep -Eq '^ffmpeg-' .theos/byetunes-ish-bundle/package-manifest.txt
 
       - name: Stage release resources
         shell: bash
@@ -184,6 +265,17 @@ jobs:
           cp .theos/byetunes-resources/ByeTunes-Info.plist "$APP/ByeTunes-Info.plist"
           rm -f "$APP/Config.plist"
 
+          rm -rf "$APP/ByeTunesYoink.bundle" "$APP/ByeTunesISH.bundle"
+          mkdir -p "$APP/ByeTunesYoink.bundle" "$APP/ByeTunesISH.bundle"
+          cp -R .theos/byetunes-yoink-bundle/. "$APP/ByeTunesYoink.bundle/"
+          cp -R .theos/byetunes-ish-bundle/. "$APP/ByeTunesISH.bundle/"
+
+          if otool -L "$APP/Frameworks/FilzaApplySandboxExt.dylib" | grep -Fq 'NodeMobile.framework/NodeMobile'; then
+            rm -rf "$APP/Frameworks/NodeMobile.framework"
+            cp -R Vendor/NodeMobile/NodeMobile.framework "$APP/Frameworks/NodeMobile.framework"
+            codesign --remove-signature "$APP/Frameworks/NodeMobile.framework/NodeMobile" >/dev/null 2>&1 || true
+          fi
+
           rm -rf "$APP/MondEmbedded.bundle" "$APP/Filza3105.bundle"
           cp -R ThirdParty/mond-current/Resources/MondEmbedded.bundle "$APP/MondEmbedded.bundle"
           cp -R ThirdParty/3105/Resources/Filza3105.bundle "$APP/Filza3105.bundle"
@@ -192,8 +284,9 @@ jobs:
           plutil -replace CFBundleVersion -string "$GITHUB_RUN_NUMBER" "$APP/Info.plist"
           plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
           plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
-          plutil -replace NSLocalNetworkUsageDescription -string "Filza 27 uses your local network when you enable its WebDAV or SSH/SFTP server." "$APP/Info.plist"
-          plutil -replace NSBonjourServices -json '["_http._tcp","_ssh._tcp"]' "$APP/Info.plist"
+          plutil -replace NSLocalNetworkUsageDescription -string "Filza 27 uses your local network for WebDAV, SSH/SFTP, and on-device Remote Pairing through LocalDevVPN." "$APP/Info.plist"
+          plutil -replace NSBonjourServices -json '["_http._tcp","_ssh._tcp","_remotepairing._tcp"]' "$APP/Info.plist"
+          plutil -replace NSAppTransportSecurity -json '{"NSAllowsLocalNetworking":true}' "$APP/Info.plist"
           bash scripts/merge-3105-app-metadata.sh "$APP/Info.plist"
           plutil -remove CFBundleURLTypes "$APP/Info.plist" 2>/dev/null || true
 
@@ -203,10 +296,15 @@ jobs:
           test -s "$APP/Frameworks/FilzaApplySandboxExt.dylib"
           test -s "$APP/MondEmbedded.bundle/Info.plist"
           test -s "$APP/Filza3105.bundle/UpstreamAppInfo.plist"
-
-          for forbidden in '/api/metadata' '/api/download' 'ByeTunesApiUrl'; do
-            ! LC_ALL=C grep -aFq "$forbidden" "$APP/Frameworks/FilzaApplySandboxExt.dylib"
-          done
+          test -s "$APP/ByeTunesYoink.bundle/server.js"
+          test -s "$APP/ByeTunesISH.bundle/rootfs/meta.db"
+          grep -Eq '^ffmpeg-' "$APP/ByeTunesISH.bundle/package-manifest.txt"
+          grep -Fq '"youtube": false' "$APP/ByeTunesYoink.bundle/provenance.json"
+          grep -aFq 'http://127.0.0.1:41337/api/download' "$APP/Frameworks/FilzaApplySandboxExt.dylib"
+          ! LC_ALL=C grep -aFq 'api.byetunes.xyz' "$APP/Frameworks/FilzaApplySandboxExt.dylib"
+          ! LC_ALL=C grep -aFq 'ByeTunesApiUrl' "$APP/Frameworks/FilzaApplySandboxExt.dylib"
+          test "$(plutil -extract NSAppTransportSecurity.NSAllowsLocalNetworking raw -o - "$APP/Info.plist")" = "true"
+          plutil -extract NSBonjourServices json -o - "$APP/Info.plist" | grep -Fq '_remotepairing._tcp'
 
           OUTPUT="$GITHUB_WORKSPACE/.theos/Filza-27-modern-${GITHUB_SHA::7}-unsigned.ipa"
           rm -f "$OUTPUT"
@@ -214,7 +312,31 @@ jobs:
           test -s "$OUTPUT"
           unzip -tq "$OUTPUT"
           unzip -l "$OUTPUT" | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
-          ! unzip -l "$OUTPUT" | grep -E 'Payload/[^/]+\.app/Config\.plist$'
+          unzip -l "$OUTPUT" | grep -F 'ByeTunesYoink.bundle/server.js'
+          unzip -l "$OUTPUT" | grep -F 'ByeTunesISH.bundle/rootfs/meta.db'
+          ! unzip -l "$OUTPUT" | grep -E 'Payload/[^/]+\.app/Config\.plist          shasum -a 256 "$OUTPUT" | tee .theos/IPA-SHA256.txt
+
+      - name: Upload modern unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Filza-27-modern-unsigned-arm64
+          path: |
+            .theos/Filza-27-modern-*-unsigned.ipa
+            .theos/IPA-SHA256.txt
+            .theos/obj/FilzaApplySandboxExt.dylib
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14
+
+      - name: Upload complete build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: filza-full-build-log-${{ github.run_id }}
+          path: .theos/full-build.log
+          if-no-files-found: warn
+          retention-days: 7
+
           shasum -a 256 "$OUTPUT" | tee .theos/IPA-SHA256.txt
 
       - name: Upload modern unsigned IPA
