@@ -32,6 +32,33 @@ def replace_n(text: str, old: str, new: str, expected: int, label: str) -> str:
         raise SystemExit(f"{label}: expected {expected} matches, found {count}")
     return text.replace(old, new)
 
+def balanced_end(text: str, start: int) -> int:
+    brace = text.find("{", start)
+    if brace < 0:
+        raise SystemExit("balanced block: opening brace missing")
+    depth = 0
+    in_string = False
+    escaped = False
+    for i in range(brace, len(text)):
+        ch = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+    raise SystemExit("balanced block: closing brace missing")
+
 # ---------------------------------------------------------------------------
 # Remove the Download tab from both legacy and iOS 26+ tab shells.
 # ---------------------------------------------------------------------------
@@ -75,18 +102,18 @@ download_index = '''    private var downloadTabIndex: Int {
 '''
 s = replace_once(s, download_index, "", "ContentView download index")
 
-tutorial = '''            if !showSplash && hasCompletedOnboarding && !tutorialComplete {
-                TutorialOverlayView(
-                    isComplete: $tutorialComplete,
-                    songs: $songs,
-                    selectedTab: $selectedTab,
-                    downloadTabIndex: downloadTabIndex
-                )
-                .zIndex(1)
-            }
-
-'''
-s = replace_once(s, tutorial, "", "download tutorial overlay")
+tutorial_marker = "            if !showSplash && hasCompletedOnboarding && !tutorialComplete {"
+tutorial_start = s.find(tutorial_marker)
+if tutorial_start < 0:
+    raise SystemExit("download tutorial overlay marker missing")
+tutorial_end = balanced_end(s, tutorial_start)
+while tutorial_end < len(s) and s[tutorial_end] in " \\t":
+    tutorial_end += 1
+if tutorial_end < len(s) and s[tutorial_end] == "\\n":
+    tutorial_end += 1
+if tutorial_end < len(s) and s[tutorial_end] == "\\n":
+    tutorial_end += 1
+s = s[:tutorial_start] + s[tutorial_end:]
 
 old_open_url = '''        .onOpenURL { url in
             if url.scheme?.lowercased() == "byetunes" {
