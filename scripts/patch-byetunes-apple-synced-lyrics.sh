@@ -7,15 +7,17 @@ LYRICS="$ROOT/LyricsSearchSheet.swift"
 ITUNES="$ROOT/iTunesSearchSheet.swift"
 SETTINGS="$ROOT/SettingsView.swift"
 MEDIA="$ROOT/MediaLibraryBuilder.swift"
+EDITOR="$ROOT/ManualMetadataEditor.swift"
+QUEUE="$ROOT/QueuePersistence.swift"
 
-for file in "$SONG" "$LYRICS" "$ITUNES" "$SETTINGS" "$MEDIA"; do
+for file in "$SONG" "$LYRICS" "$ITUNES" "$SETTINGS" "$MEDIA" "$EDITOR" "$QUEUE"; do
   test -s "$file" || {
     echo "missing ByeTunes source: $file" >&2
     exit 1
   }
 done
 
-python3 - "$SONG" "$LYRICS" "$ITUNES" "$SETTINGS" "$MEDIA" <<'PY'
+python3 - "$SONG" "$LYRICS" "$ITUNES" "$SETTINGS" "$MEDIA" "$EDITOR" "$QUEUE" <<'PY'
 from pathlib import Path
 import sys
 
@@ -24,6 +26,8 @@ lyrics = Path(sys.argv[2])
 itunes = Path(sys.argv[3])
 settings = Path(sys.argv[4])
 media = Path(sys.argv[5])
+editor = Path(sys.argv[6])
+queue = Path(sys.argv[7])
 
 def replace_once(text: str, old: str, new: str, label: str) -> str:
     count = text.count(old)
@@ -31,7 +35,45 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
         raise SystemExit(f"{label}: expected exactly one match, found {count}")
     return text.replace(old, new, 1)
 
+def balanced_end(text: str, start: int) -> int:
+    brace = text.find("{", start)
+    if brace < 0:
+        raise SystemExit("opening brace not found")
+    depth = 0
+    in_string = False
+    escaped = False
+    i = brace
+    while i < len(text):
+        ch = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    raise SystemExit("unbalanced Swift block")
+
 sm = song.read_text()
+
+if "var appleSyncedLyricsStoreID: Int64 = 0" not in sm:
+    sm = replace_once(
+        sm,
+        "    var lyrics: String?\n",
+        "    var lyrics: String?\n    var appleSyncedLyricsStoreID: Int64 = 0\n",
+        "per-song Apple synced lyrics catalog ID"
+    )
 
 enum_old = '''enum LyricsSearchService: String, CaseIterable, Identifiable {
     case lrclib
@@ -239,13 +281,95 @@ auto_new = '''    static func fetchLyrics(title: String, artist: String, album: 
 if "Apple synced lyrics unavailable; falling back to LRCLIB" not in sm:
     sm = replace_once(sm, auto_old, auto_new, "Apple-first automatic lyrics")
 
-sm = sm.replace(
-    'if fetchLyricsEnabled && !appleSubscriptionLyrics && (song.lyrics == nil || song.lyrics?.isEmpty == true) {',
-    'if (fetchLyricsEnabled || appleSubscriptionLyrics) && (song.lyrics == nil || song.lyrics?.isEmpty == true) {'
-)
+caller_start = sm.find('        let fetchLyricsEnabled = UserDefaults.standard.bool(forKey: "fetchLyrics")')
+if caller_start >= 0 and "Verified Apple Music TTML for per-song catalog lyrics" not in sm[caller_start:caller_start + 4200]:
+    caller_if = sm.find("        if fetchLyricsEnabled", caller_start)
+    if caller_if < 0:
+        raise SystemExit("automatic lyric enrichment block missing")
+    caller_end = balanced_end(sm, caller_if)
+
+    caller_replacement = '''        let fetchLyricsEnabled = UserDefaults.standard.object(forKey: "fetchLyrics") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "fetchLyrics")
+        let appleSubscriptionLyrics = UserDefaults.standard.object(forKey: "appleSubscriptionLyrics") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "appleSubscriptionLyrics")
+
+        if (fetchLyricsEnabled || appleSubscriptionLyrics) && (song.lyrics == nil || song.lyrics?.isEmpty == true) {
+            var usedAppleSyncedLyrics = false
+
+            if appleSubscriptionLyrics,
+               AppleMusicSyncedLyricsCredentialStore.isConnected {
+                let query = "\(song.artist) \(song.title)"
+                if let match = await AppleMusicAPI.shared.searchSong(query: query, albumHint: song.album),
+                   let storeID = Int64(match.id),
+                   let appleLyrics = await AppleMusicSyncedLyricsClient.shared.fetchSyncedLyrics(songID: match.id),
+                   !appleLyrics.isEmpty {
+                    song.appleSyncedLyricsStoreID = storeID
+                    song.storeId = storeID
+                    if song.storefrontId == 0 {
+                        let region = (UserDefaults.standard.string(forKey: "storeRegion") ?? "US").lowercased()
+                        song.storefrontId = SongMetadata.storefrontMap[region] ?? 0
+                    }
+                    song.lyrics = appleLyrics
+                    usedAppleSyncedLyrics = true
+                    Logger.shared.log("[SongMetadata] Verified Apple Music TTML for per-song catalog lyrics id=\(match.id)")
+                }
+            }
+
+            if !usedAppleSyncedLyrics && fetchLyricsEnabled,
+               let fallbackLyrics = await SongMetadata.fetchLyricsFromLRCLIB(
+                    title: song.title,
+                    artist: song.artist,
+                    album: song.album,
+                    durationMs: song.durationMs
+               ) {
+                song.appleSyncedLyricsStoreID = 0
+                song.lyrics = fallbackLyrics
+                Logger.shared.log("[SongMetadata] Apple synced lyrics unavailable; using LRCLIB fallback")
+            }
+        }'''
+
+    sm = sm[:caller_start] + caller_replacement + sm[caller_end:]
+
+# A manual Apple metadata match must carry the same per-song lyric identity.
+apply_sig = "    static func applyAppleMusicMatch(_ match: AppleMusicAPI.AppleMusicSong, to song: SongMetadata) async -> SongMetadata {"
+apply_start = sm.find(apply_sig)
+if apply_start < 0:
+    raise SystemExit("applyAppleMusicMatch missing")
+apply_end = balanced_end(sm, apply_start)
+apply_block = sm[apply_start:apply_end]
+if "Apple metadata selector verified synced TTML" not in apply_block:
+    return_pos = apply_block.rfind("        return enrichedSong")
+    if return_pos < 0:
+        raise SystemExit("applyAppleMusicMatch return missing")
+    apple_metadata_lyrics = '''        if UserDefaults.standard.bool(forKey: "appleSubscriptionLyrics"),
+           AppleMusicSyncedLyricsCredentialStore.isConnected,
+           let appleStoreID = Int64(amsMatch.id),
+           let verifiedAppleLyrics = await AppleMusicSyncedLyricsClient.shared.fetchSyncedLyrics(songID: amsMatch.id),
+           !verifiedAppleLyrics.isEmpty {
+            enrichedSong.appleSyncedLyricsStoreID = appleStoreID
+            if enrichedSong.lyrics == nil || enrichedSong.lyrics?.isEmpty == true {
+                enrichedSong.lyrics = verifiedAppleLyrics
+            }
+            Logger.shared.log("[SongMetadata] Apple metadata selector verified synced TTML id=\(amsMatch.id)")
+        }
+
+'''
+    apply_block = apply_block[:return_pos] + apple_metadata_lyrics + apply_block[return_pos:]
+    sm = sm[:apply_start] + apply_block + sm[apply_end:]
+
 song.write_text(sm)
 
 ls = lyrics.read_text()
+if "var onAppleMusicSelection: ((String) -> Void)? = nil" not in ls:
+    ls = replace_once(
+        ls,
+        "    let songArtist: String\n",
+        "    let songArtist: String\n    var onAppleMusicSelection: ((String) -> Void)? = nil\n    var onLocalLyricsSelection: (() -> Void)? = nil\n",
+        "lyrics selector source callbacks"
+    )
+
 ls = ls.replace(
     '@State private var lyricsService: LyricsSearchService = .lrclib',
     '@State private var lyricsService: LyricsSearchService = .appleMusic'
@@ -267,6 +391,11 @@ old_apply = '''    private func applyLyricsResult(_ result: LyricsSearchResult) 
             await MainActor.run {
                 self.isResolvingLyrics = false
                 if let fetchedLyrics, !fetchedLyrics.isEmpty {
+                    if result.service == .appleMusic, let appleMusicID = result.appleMusicID {
+                        self.onAppleMusicSelection?(appleMusicID)
+                    } else {
+                        self.onLocalLyricsSelection?()
+                    }
                     Logger.shared.log("[LyricsSearch] Fetched lyrics from \(result.service.displayName)")
                     self.lyrics = fetchedLyrics
                     self.isPresented = false
@@ -332,6 +461,83 @@ if "AppleMusicSyncedLyricsLoginSheet" not in ls:
     ls = replace_once(ls, sheet_marker, sheet_new, "Apple lyrics selector sheet")
 lyrics.write_text(ls)
 
+ed = editor.read_text()
+if "@State private var appleSyncedLyricsStoreID: Int64 = 0" not in ed:
+    ed = replace_once(
+        ed,
+        '    @State private var lyrics: String = ""\n',
+        '    @State private var lyrics: String = ""\n    @State private var appleSyncedLyricsStoreID: Int64 = 0\n',
+        "manual editor Apple lyric ID state"
+    )
+
+if "onAppleMusicSelection:" not in ed:
+    ed = replace_once(
+        ed,
+        '                LyricsSearchSheet(lyrics: $lyrics, isPresented: $showingLyricsSearchSheet, songTitle: title, songArtist: artist)\n',
+        '''                LyricsSearchSheet(
+                    lyrics: $lyrics,
+                    isPresented: $showingLyricsSearchSheet,
+                    songTitle: title,
+                    songArtist: artist,
+                    onAppleMusicSelection: { appleMusicID in
+                        if let storeID = Int64(appleMusicID) {
+                            appleSyncedLyricsStoreID = storeID
+                            song.storeId = storeID
+                            if song.storefrontId == 0 {
+                                let region = (UserDefaults.standard.string(forKey: "storeRegion") ?? "US").lowercased()
+                                song.storefrontId = SongMetadata.storefrontMap[region] ?? 0
+                            }
+                        }
+                    },
+                    onLocalLyricsSelection: {
+                        appleSyncedLyricsStoreID = 0
+                    }
+                )
+''',
+        "manual editor lyric selector callbacks"
+    )
+
+if "appleSyncedLyricsStoreID = song.appleSyncedLyricsStoreID" not in ed:
+    ed = replace_once(
+        ed,
+        '        lyrics = song.lyrics ?? ""\n',
+        '        lyrics = song.lyrics ?? ""\n        appleSyncedLyricsStoreID = song.appleSyncedLyricsStoreID\n',
+        "manual editor load Apple lyric ID"
+    )
+
+if "updatedSong.appleSyncedLyricsStoreID = appleSyncedLyricsStoreID" not in ed:
+    ed = replace_once(
+        ed,
+        "        updatedSong.lyrics = lyrics.isEmpty ? nil : lyrics\n",
+        "        updatedSong.lyrics = lyrics.isEmpty ? nil : lyrics\n        updatedSong.appleSyncedLyricsStoreID = appleSyncedLyricsStoreID\n",
+        "manual editor save Apple lyric ID"
+    )
+
+editor.write_text(ed)
+
+qs = queue.read_text()
+if "var appleSyncedLyricsStoreID: Int64?" not in qs:
+    qs = replace_once(
+        qs,
+        "    var lyrics: String?\n    var explicitRating: Int\n",
+        "    var lyrics: String?\n    var appleSyncedLyricsStoreID: Int64?\n    var explicitRating: Int\n",
+        "queue Apple lyric ID field"
+    )
+    qs = replace_once(
+        qs,
+        "        self.lyrics = song.lyrics\n        self.explicitRating = song.explicitRating\n",
+        "        self.lyrics = song.lyrics\n        self.appleSyncedLyricsStoreID = song.appleSyncedLyricsStoreID\n        self.explicitRating = song.explicitRating\n",
+        "queue persist Apple lyric ID"
+    )
+    qs = replace_once(
+        qs,
+        "        song.explicitRating = explicitRating\n",
+        "        song.explicitRating = explicitRating\n        song.appleSyncedLyricsStoreID = appleSyncedLyricsStoreID ?? 0\n",
+        "queue restore Apple lyric ID"
+    )
+
+queue.write_text(qs)
+
 it = itunes.read_text()
 apple_row_start = it.find("struct AppleMusicRow: View {")
 if apple_row_start < 0:
@@ -392,7 +598,9 @@ lyrics_block_old = '''            let appleSubscriptionLyrics = UserDefaults.sta
             }
 '''
 lyrics_block_new = '''            let appleSubscriptionLyrics = UserDefaults.standard.bool(forKey: "appleSubscriptionLyrics")
-            let appleSongID = song.storeId > 0 ? String(song.storeId) : ""
+            let appleSongID = song.appleSyncedLyricsStoreID > 0
+                ? String(song.appleSyncedLyricsStoreID)
+                : ""
             let appleSyncedLyricsConfirmed =
                 appleSubscriptionLyrics &&
                 !appleSongID.isEmpty &&
@@ -432,6 +640,10 @@ grep -Fq 'fetchLyricsEnabled || appleSubscriptionLyrics' "$SONG"
 grep -Fq 'AppleMusicSyncedLyricsAvailabilityBadge' "$ITUNES"
 grep -Fq 'AppleMusicSyncedLyricsConnectionRow' "$SETTINGS"
 grep -Fq 'appleSyncedLyricsConfirmed' "$MEDIA"
+grep -Fq 'appleSyncedLyricsStoreID' "$SONG"
+grep -Fq 'onAppleMusicSelection' "$LYRICS"
+grep -Fq 'appleSyncedLyricsStoreID' "$EDITOR"
+grep -Fq 'appleSyncedLyricsStoreID' "$QUEUE"
 ! grep -Fq "VALUES (\(itemPid), '\(lyricsContent)', 1, 1" "$MEDIA"
 
 echo "Verified Apple Music selector + direct TTML + truthful library sync flags"
