@@ -9,41 +9,105 @@ enum AppleMusicSyncedLyricsCredentialStore {
     private static let userTokenAccount = "media-user-token"
     private static let storefrontAccount = "storefront"
 
+    private struct ProtectedCredential: Codable {
+        let userToken: String
+        let storefront: String?
+    }
+
     static var isConnected: Bool {
-        guard let token = load(account: userTokenAccount) else { return false }
+        guard let token = userToken else { return false }
         return !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     static var userToken: String? {
-        load(account: userTokenAccount)
+        if let token = loadKeychain(account: userTokenAccount),
+           !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return token
+        }
+        return loadProtectedFallback()?.userToken
     }
 
     static var storefront: String? {
-        load(account: storefrontAccount)
-    }
-
-    static func save(userToken: String, storefront: String?) {
-        save(value: userToken, account: userTokenAccount)
-        if let storefront {
-            let trimmed = storefront.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            if !trimmed.isEmpty {
-                save(value: trimmed, account: storefrontAccount)
-            }
+        if let storefront = loadKeychain(account: storefrontAccount),
+           !storefront.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return storefront
         }
+        return loadProtectedFallback()?.storefront
     }
 
-    static func save(storefront: String) {
-        let trimmed = storefront.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !trimmed.isEmpty else { return }
-        save(value: trimmed, account: storefrontAccount)
+    @discardableResult
+    static func save(userToken: String, storefront: String?) -> Bool {
+        let token = userToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else { return false }
+
+        let normalizedStorefront = storefront?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        let tokenKeychainSaved = saveKeychain(value: token, account: userTokenAccount)
+        var storefrontKeychainSaved = true
+        if let normalizedStorefront, !normalizedStorefront.isEmpty {
+            storefrontKeychainSaved = saveKeychain(
+                value: normalizedStorefront,
+                account: storefrontAccount
+            )
+        }
+
+        let fallbackSaved = saveProtectedFallback(
+            ProtectedCredential(
+                userToken: token,
+                storefront: normalizedStorefront?.isEmpty == false ? normalizedStorefront : nil
+            )
+        )
+
+        guard tokenKeychainSaved || fallbackSaved else {
+            Logger.shared.log("[AppleLyrics] credential persistence failed")
+            return false
+        }
+
+        guard let persistedToken = self.userToken,
+              persistedToken == token else {
+            Logger.shared.log("[AppleLyrics] credential read-back verification failed")
+            return false
+        }
+
+        if let normalizedStorefront, !normalizedStorefront.isEmpty,
+           self.storefront != normalizedStorefront {
+            Logger.shared.log("[AppleLyrics] storefront read-back verification failed")
+            return false
+        }
+
+        if !tokenKeychainSaved || !storefrontKeychainSaved {
+            Logger.shared.log("[AppleLyrics] Keychain unavailable; protected credential-file fallback active")
+        } else {
+            Logger.shared.log("[AppleLyrics] credential persistence verified in Keychain")
+        }
+        return true
+    }
+
+    @discardableResult
+    static func save(storefront: String) -> Bool {
+        let normalized = storefront.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+
+        let keychainSaved = saveKeychain(value: normalized, account: storefrontAccount)
+        if let token = userToken {
+            _ = saveProtectedFallback(
+                ProtectedCredential(userToken: token, storefront: normalized)
+            )
+        }
+        return keychainSaved || self.storefront == normalized
     }
 
     static func clear() {
-        delete(account: userTokenAccount)
-        delete(account: storefrontAccount)
+        deleteKeychain(account: userTokenAccount)
+        deleteKeychain(account: storefrontAccount)
+        if let url = protectedFallbackURL {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 
-    private static func load(account: String) -> String? {
+    private static func loadKeychain(account: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -53,7 +117,8 @@ enum AppleMusicSyncedLyricsCredentialStore {
         ]
 
         var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess,
               let data = result as? Data,
               let value = String(data: data, encoding: .utf8) else {
             return nil
@@ -61,30 +126,98 @@ enum AppleMusicSyncedLyricsCredentialStore {
         return value
     }
 
-    private static func save(value: String, account: String) {
-        guard let data = value.data(using: .utf8) else { return }
+    @discardableResult
+    private static func saveKeychain(value: String, account: String) -> Bool {
+        guard let data = value.data(using: .utf8) else { return false }
         let key: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
         let update: [String: Any] = [kSecValueData as String: data]
-        let status = SecItemUpdate(key as CFDictionary, update as CFDictionary)
-        if status == errSecItemNotFound {
-            var insert = key
-            insert[kSecValueData as String] = data
-            insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            SecItemAdd(insert as CFDictionary, nil)
+        let updateStatus = SecItemUpdate(key as CFDictionary, update as CFDictionary)
+        if updateStatus == errSecSuccess {
+            return true
         }
+
+        if updateStatus != errSecItemNotFound {
+            Logger.shared.log("[AppleLyrics] Keychain update failed status=\(updateStatus)")
+        }
+
+        var insert = key
+        insert[kSecValueData as String] = data
+        insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        let insertStatus = SecItemAdd(insert as CFDictionary, nil)
+        if insertStatus != errSecSuccess {
+            Logger.shared.log("[AppleLyrics] Keychain insert failed status=\(insertStatus)")
+        }
+        return insertStatus == errSecSuccess
     }
 
-    private static func delete(account: String) {
+    private static func deleteKeychain(account: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
         SecItemDelete(query as CFDictionary)
+    }
+
+    private static var protectedFallbackURL: URL? {
+        let base =
+            FileManager.default.containerURL(
+                forSecurityApplicationGroupIdentifier: DeviceManager.appGroupID
+            ) ??
+            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+
+        guard let base else { return nil }
+        let directory = base.appendingPathComponent(".byetunes-credentials", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700],
+                ofItemAtPath: directory.path
+            )
+            return directory.appendingPathComponent("apple-music.json")
+        } catch {
+            Logger.shared.log("[AppleLyrics] protected credential directory unavailable: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private static func saveProtectedFallback(_ credential: ProtectedCredential) -> Bool {
+        guard let url = protectedFallbackURL,
+              let data = try? JSONEncoder().encode(credential) else {
+            return false
+        }
+
+        do {
+            try data.write(to: url, options: [.atomic])
+            try FileManager.default.setAttributes(
+                [
+                    .posixPermissions: 0o600,
+                    .protectionKey: FileProtectionType.completeUntilFirstUserAuthentication
+                ],
+                ofItemAtPath: url.path
+            )
+            return true
+        } catch {
+            Logger.shared.log("[AppleLyrics] protected credential fallback write failed: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private static func loadProtectedFallback() -> ProtectedCredential? {
+        guard let url = protectedFallbackURL,
+              let data = try? Data(contentsOf: url),
+              let credential = try? JSONDecoder().decode(ProtectedCredential.self, from: data),
+              !credential.userToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return credential
     }
 }
 
@@ -203,6 +336,83 @@ final class AppleMusicSyncedLyricsClient {
         return nil
     }
 
+    func validateStoredCredentials() async -> Bool {
+        guard let userToken = AppleMusicSyncedLyricsCredentialStore.userToken,
+              !userToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let developerToken = await developerToken() else {
+            return false
+        }
+
+        guard let storefront = await validatedStorefront(
+            developerToken: developerToken,
+            userToken: userToken
+        ) else {
+            return false
+        }
+
+        _ = AppleMusicSyncedLyricsCredentialStore.save(
+            userToken: userToken,
+            storefront: storefront
+        )
+        return true
+    }
+
+    func validateAndPersistUserToken(_ rawToken: String) async -> Bool {
+        let token = (rawToken.removingPercentEncoding ?? rawToken)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else { return false }
+
+        guard let developerToken = await developerToken() else {
+            Logger.shared.log("[AppleLyrics] cannot validate user token because developer token is unavailable")
+            return false
+        }
+
+        guard let storefront = await validatedStorefront(
+            developerToken: developerToken,
+            userToken: token
+        ) else {
+            Logger.shared.log("[AppleLyrics] Apple rejected captured media-user-token")
+            return false
+        }
+
+        guard AppleMusicSyncedLyricsCredentialStore.save(
+            userToken: token,
+            storefront: storefront
+        ) else {
+            return false
+        }
+
+        Logger.shared.log("[AppleLyrics] Apple Music token validated and persisted for storefront \(storefront)")
+        return true
+    }
+
+    private func validatedStorefront(
+        developerToken: String,
+        userToken: String
+    ) async -> String? {
+        guard let url = URL(string: "\(apiRoot)/v1/me/storefront") else { return nil }
+        var request = URLRequest(url: url)
+        addCommonHeaders(to: &request, developerToken: developerToken)
+        request.setValue(userToken, forHTTPHeaderField: "Media-User-Token")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            guard status == 200,
+                  let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let item = (root["data"] as? [[String: Any]])?.first,
+                  let storefront = item["id"] as? String,
+                  !storefront.isEmpty else {
+                Logger.shared.log("[AppleLyrics] credential validation failed HTTP \(status)")
+                return nil
+            }
+            return storefront.lowercased()
+        } catch {
+            Logger.shared.log("[AppleLyrics] credential validation request failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     private func resolvedStorefront(
         preferred: String?,
         developerToken: String,
@@ -213,19 +423,12 @@ final class AppleMusicSyncedLyricsClient {
             return saved
         }
 
-        if let url = URL(string: "\(apiRoot)/v1/me/storefront") {
-            var request = URLRequest(url: url)
-            addCommonHeaders(to: &request, developerToken: developerToken)
-            request.setValue(userToken, forHTTPHeaderField: "Media-User-Token")
-            if let (data, response) = try? await URLSession.shared.data(for: request),
-               (response as? HTTPURLResponse)?.statusCode == 200,
-               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let item = (root["data"] as? [[String: Any]])?.first,
-               let storefront = item["id"] as? String,
-               !storefront.isEmpty {
-                AppleMusicSyncedLyricsCredentialStore.save(storefront: storefront)
-                return storefront.lowercased()
-            }
+        if let storefront = await validatedStorefront(
+            developerToken: developerToken,
+            userToken: userToken
+        ) {
+            _ = AppleMusicSyncedLyricsCredentialStore.save(storefront: storefront)
+            return storefront
         }
 
         return normalizedStorefront(preferred)
@@ -540,11 +743,14 @@ struct AppleMusicSyncedLyricsConnectionRow: View {
         .padding(.horizontal, 16)
         .sheet(isPresented: $showingLogin) {
             AppleMusicSyncedLyricsLoginSheet { success in
-                connected = success || AppleMusicSyncedLyricsCredentialStore.isConnected
+                connected = success
                 if success {
                     UserDefaults.standard.set(true, forKey: "appleSubscriptionLyrics")
                 }
             }
+        }
+        .task {
+            connected = await AppleMusicSyncedLyricsClient.shared.validateStoredCredentials()
         }
     }
 }
@@ -674,13 +880,21 @@ private final class AppleMusicSyncedLyricsLoginViewController: UIViewController,
                       !token.isEmpty else {
                     return
                 }
-                let storefront = cookies.first(where: { $0.name == "itua" })?.value
-                AppleMusicSyncedLyricsCredentialStore.save(userToken: token, storefront: storefront)
+
                 self.completed = true
                 self.pollTimer?.invalidate()
                 self.pollTimer = nil
-                Logger.shared.log("[AppleLyrics] captured Apple Music user token locally")
-                self.completion(true)
+                Logger.shared.log("[AppleLyrics] captured Apple Music token candidate; validating with Apple")
+
+                let success = await AppleMusicSyncedLyricsClient.shared
+                    .validateAndPersistUserToken(token)
+
+                if success {
+                    Logger.shared.log("[AppleLyrics] Apple Music user token is saved and usable")
+                } else {
+                    Logger.shared.log("[AppleLyrics] captured token was not usable; reconnect required")
+                }
+                self.completion(success)
             }
         }
     }
