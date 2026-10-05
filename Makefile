@@ -131,6 +131,7 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/patch-byetunes-background-provider-parity.sh
 	@bash scripts/patch-byetunes-download-provider-parity.sh
 	@bash scripts/patch-byetunes-device-library-save.sh
+	@bash scripts/patch-byetunes-public-metadata-stack.sh
 	@test -s "$(IDEVICE_STATIC)" || (echo "Missing $(IDEVICE_STATIC). Run: bash scripts/build-idevice.sh" >&2; exit 1)
 	@test -d "$(BYETUNES_ROOT)" || (echo "Missing ByeTunes submodule. Run: git submodule update --init --recursive" >&2; exit 1)
 	@test -f "$(BYETUNES_ROOT)/ContentView.swift" || (echo "Incomplete ByeTunes submodule" >&2; exit 1)
@@ -143,6 +144,11 @@ before-FilzaApplySandboxExt-all::
 	@test -f "scripts/patch-byetunes-background-provider-parity.sh" || (echo "Missing ByeTunes background-provider parity patch" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-download-provider-parity.sh" || (echo "Missing ByeTunes download-provider parity patch" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-device-library-save.sh" || (echo "Missing ByeTunes device-library save verifier" >&2; exit 1)
+	@test -f "scripts/patch-byetunes-public-metadata-stack.sh" || (echo "Missing ByeTunes public metadata policy patch" >&2; exit 1)
+	@! grep -Fq '/api/metadata' "$(BYETUNES_ROOT)/DownloadView.swift" || (echo "Private ByeTunes metadata backend remains" >&2; exit 1)
+	@! grep -Fq '/api/download' "$(BYETUNES_ROOT)/DownloadView.swift" || (echo "Private ByeTunes download backend remains" >&2; exit 1)
+	@! grep -Fq 'ByeTunesApiUrl' "$(BYETUNES_ROOT)/Config.swift" || (echo "ByeTunes Config.plist key remains" >&2; exit 1)
+	@grep -Fq 'static func cleanSyncedLyrics' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "LRCLIB synced lyric preservation missing" >&2; exit 1)
 	@test -f "scripts/patch-3105-embedded-compat.sh" || (echo "Missing 3105 embedded compatibility transform" >&2; exit 1)
 	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.c" || (echo "Missing pinned bad_query submodule" >&2; exit 1)
 	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.h" || (echo "Incomplete bad_query submodule" >&2; exit 1)

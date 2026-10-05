@@ -28,7 +28,7 @@ struct MetadataProviderSettings {
     static let legacySourceKey = "metadataSource"
 
     static var defaultSources: [MetadataProviderID] {
-        [.local, .youtube, .itunes, .deezer, .apple]
+        [.local, .itunes, .deezer, .apple]
     }
 
     static func selectedSources() -> [MetadataProviderID] {

@@ -108,6 +108,24 @@ for resource in meriyah.umd.js astring.umd.js yt_ejs_helper.js; do
   [[ -s "$APP/$resource" ]] || { echo "YouTubeKit app resource missing: $resource" >&2; exit 70; }
 done
 
+# Enforce the public-source ByeTunes policy on the actual packaged binary.
+# Config.plist and private ByeTunes metadata/download routes must never return.
+[[ ! -e "$APP/Config.plist" ]] || {
+  echo "forbidden ByeTunes Config.plist present in packaged app" >&2
+  exit 70
+}
+BYETUNES_BINARY="$APP/Frameworks/FilzaApplySandboxExt.dylib"
+[[ -s "$BYETUNES_BINARY" ]] || {
+  echo "packaged FilzaApplySandboxExt.dylib missing" >&2
+  exit 70
+}
+for forbidden in '/api/metadata' '/api/download' 'ByeTunesApiUrl'; do
+  if LC_ALL=C grep -aFq "$forbidden" "$BYETUNES_BINARY"; then
+    echo "forbidden ByeTunes private-backend marker in packaged binary: $forbidden" >&2
+    exit 70
+  fi
+done
+
 NETWORK_DESCRIPTION="$(plutil -extract NSLocalNetworkUsageDescription raw -o - "$APP/Info.plist")"
 [[ "$NETWORK_DESCRIPTION" == *"WebDAV"* && "$NETWORK_DESCRIPTION" == *"SSH/SFTP"* ]] || {
   echo "local-network usage description missing WebDAV/SSH coverage" >&2
