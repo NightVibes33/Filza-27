@@ -69,6 +69,15 @@ jobs:
           set -euxo pipefail
           bash scripts/build-idevice.sh "$GITHUB_WORKSPACE/Vendor/idevice"
 
+      - name: Verify idevice pairing-host API
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -s "$GITHUB_WORKSPACE/Vendor/idevice/lib/libidevice_ffi.a"
+          test -s "$GITHUB_WORKSPACE/Vendor/idevice/include/idevice.h"
+          grep -Fq 'pairable_host_accept' "$GITHUB_WORKSPACE/Vendor/idevice/include/idevice.h"
+          grep -Fq 'rp_pairing_file_write' "$GITHUB_WORKSPACE/Vendor/idevice/include/idevice.h"
+
       - name: Restore pinned SSH stack cache
         id: ssh-cache
         uses: actions/cache@v4
@@ -140,11 +149,14 @@ jobs:
           grep -aFq 'syllable-lyrics' "$DYLIB"
           grep -aFq 'media-user-token' "$DYLIB"
           grep -aFq 'Apple Music Synced' "$DYLIB"
+          grep -aFq 'Pair with ByeTunes' "$DYLIB"
+          grep -aFq 'LocalDevVPN Remote Pairing connected via' "$DYLIB"
+          ! grep -aFq '127.0.0.1:41337' "$DYLIB"
+          ! grep -aFq 'ByeTunesYoink.bundle' "$DYLIB"
+          ! grep -aFq 'NodeMobile' "$DYLIB"
           ! grep -aFq '/api/metadata' "$DYLIB"
           ! grep -aFq '/api/download' "$DYLIB"
           ! grep -aFq 'ByeTunesApiUrl' "$DYLIB"
-          grep -aFq 'Pair with ByeTunes' "$DYLIB"
-          grep -aFq 'LocalDevVPN Remote Pairing connected via' "$DYLIB"
 
       - name: Stage release resources
         shell: bash
@@ -218,29 +230,7 @@ jobs:
           test -s "$OUTPUT"
           unzip -tq "$OUTPUT"
           unzip -l "$OUTPUT" | grep -F 'Frameworks/FilzaApplySandboxExt.dylib'
-          ! unzip -l "$OUTPUT" | grep -E 'Payload/[^/]+\.app/Config\.plist
-
-      - name: Upload modern unsigned IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: Filza-27-modern-unsigned-arm64
-          path: |
-            .theos/Filza-27-modern-*-unsigned.ipa
-            .theos/IPA-SHA256.txt
-            .theos/obj/FilzaApplySandboxExt.dylib
-          if-no-files-found: error
-          include-hidden-files: true
-          retention-days: 14
-
-      - name: Upload complete build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: filza-full-build-log-${{ github.run_id }}
-          path: .theos/full-build.log
-          if-no-files-found: warn
-          retention-days: 7
-
+          ! unzip -l "$OUTPUT" | grep -E 'Payload/[^/]+\.app/Config\.plist$'
           BONJOUR_JSON="$(plutil -extract NSBonjourServices json -o - "$APP/Info.plist")"
           [[ "$BONJOUR_JSON" == *'"_remotepairing._tcp"'* ]]
           [[ "$BONJOUR_JSON" == *'"_remotepairing-pairable-host._tcp"'* ]]
