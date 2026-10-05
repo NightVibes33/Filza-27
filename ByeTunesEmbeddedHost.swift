@@ -49,9 +49,7 @@ private enum ByeTunesEmbeddedStateRepair {
 private struct ByeTunesEmbeddedModalRoot: View {
     var body: some View {
         FilzaEmbeddedPanel {
-            AppleMusicSyncedLyricsBootstrapView {
-                ContentView()
-            }
+            ContentView()
         }
     }
 }
@@ -59,9 +57,7 @@ private struct ByeTunesEmbeddedModalRoot: View {
 private func makeMusicLibraryHost() -> UIViewController {
     FilzaDiagnosticsWriteByeTunesStage("before direct Music Library ContentView construction")
     ByeTunesEmbeddedStateRepair.runIfNeeded()
-    let root = AppleMusicSyncedLyricsBootstrapView {
-        ContentView()
-    }
+    let root = ContentView()
     FilzaDiagnosticsWriteByeTunesStage("direct Music Library ContentView constructed")
     let host = UIHostingController(rootView: root)
     host.view.backgroundColor = .systemGroupedBackground

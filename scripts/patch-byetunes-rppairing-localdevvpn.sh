@@ -50,30 +50,22 @@ def replace_function(source: str, signature: str, replacement: str) -> str:
     end = balanced_end(source, start)
     return source[:start] + replacement.rstrip() + "\n" + source[end:]
 
-# LocalDevVPN/SideStore loopback setups do not guarantee that Remote Pairing
-# is reachable specifically through 10.7.0.1. NFCARD already probes the three
-# LocalDevVPN peers; use the same contract here while retaining Bonjour's live
-# port when iOS advertises one.
+# The working temp AirCard/NFCARD implementation does not probe arbitrary
+# loopback peers. It discovers Apple's live _remotepairing._tcp port and talks
+# to LocalDevVPN's device peer at 10.7.0.1. Mirror that behavior exactly.
 socket_replacement = r'''    private func makeSocketAddress(port: UInt16) -> sockaddr_in {
-        makeSocketAddress(host: DEVICE_HOST, port: port)
-    }
-
-    private func makeSocketAddress(host: String, port: UInt16) -> sockaddr_in {
         var addr = sockaddr_in()
         memset(&addr, 0, MemoryLayout<sockaddr_in>.size)
         addr.sin_family = sa_family_t(AF_INET)
         addr.sin_port = CFSwapInt16HostToBig(port)
-        host.withCString { hostCString in
-            inet_pton(AF_INET, hostCString, &addr.sin_addr)
-        }
+        inet_pton(AF_INET, DEVICE_HOST, &addr.sin_addr)
         return addr
     }'''
-if "private func makeSocketAddress(host: String, port: UInt16)" not in text:
-    text = replace_function(
-        text,
-        "    private func makeSocketAddress(port: UInt16)",
-        socket_replacement,
-    )
+text = replace_function(
+    text,
+    "    private func makeSocketAddress(port: UInt16)",
+    socket_replacement,
+)
 
 tunnel_replacement = r'''    private func establishRPPairingTunnel() -> Bool {
         var rpPairingPtr: RpPairingFileHandle?
@@ -84,73 +76,97 @@ tunnel_replacement = r'''    private func establishRPPairingTunnel() -> Bool {
         }
         defer { rp_pairing_file_free(rpPairingHandle) }
 
-        let discoveredPort = RemotePairingDiscovery.resolvePort()
+        let discoveredPort = ByeTunesRemotePairingPortDiscovery.resolveSynchronously(timeout: 3.0)
         var ports: [UInt16] = []
         if let discoveredPort {
             ports.append(discoveredPort)
-            if discoveredPort != RP_PAIRING_PORT {
-                Logger.shared.log("[DeviceManager] Remote Pairing Bonjour port=\(discoveredPort)")
-            }
+            Logger.shared.log("[DeviceManager] LocalDevVPN discovered live Remote Pairing port=\(discoveredPort)")
+        } else {
+            Logger.shared.log("[DeviceManager] LocalDevVPN Remote Pairing Bonjour discovery returned no port; using fallback \(RP_PAIRING_PORT)")
         }
         if !ports.contains(RP_PAIRING_PORT) {
             ports.append(RP_PAIRING_PORT)
         }
 
-        let hosts = ["10.7.0.1", "10.7.0.2", "10.7.0.3", "127.0.0.1"]
         var lastFailure = "no endpoint attempted"
-
         for port in ports {
-            for host in hosts {
-                resetConnectionHandles()
-                var addr = makeSocketAddress(host: host, port: port)
-                let addrLen = socklen_t(MemoryLayout<sockaddr_in>.size)
-                let tunnelErr = withUnsafePointer(to: &addr) {
-                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
-                        tunnel_create_rppairing(
-                            sockaddrPointer,
-                            addrLen,
-                            "Music-Provider",
-                            rpPairingHandle,
-                            nil,
-                            nil,
-                            &rpAdapter,
-                            &rpHandshake
-                        )
-                    }
+            resetConnectionHandles()
+            var addr = makeSocketAddress(port: port)
+            let addrLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let tunnelErr = withUnsafePointer(to: &addr) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                    tunnel_create_rppairing(
+                        sockaddrPointer,
+                        addrLen,
+                        "Music-Provider",
+                        rpPairingHandle,
+                        nil,
+                        nil,
+                        &rpAdapter,
+                        &rpHandshake
+                    )
                 }
-
-                if tunnelErr == nil, rpAdapter != nil, rpHandshake != nil {
-                    Logger.shared.log("[DeviceManager] LocalDevVPN Remote Pairing connected via \(host):\(port)")
-                    return true
-                }
-
-                if let err = tunnelErr {
-                    let msg = err.pointee.message != nil ? String(cString: err.pointee.message!) : "No message"
-                    lastFailure = "\(host):\(port) code=\(err.pointee.code) sub=\(err.pointee.sub_code) \(msg)"
-                    idevice_error_free(err)
-                } else {
-                    lastFailure = "\(host):\(port) returned no adapter/handshake"
-                }
-                resetConnectionHandles()
             }
+
+            if tunnelErr == nil, rpAdapter != nil, rpHandshake != nil {
+                Logger.shared.log("[DeviceManager] LocalDevVPN Remote Pairing connected via \(DEVICE_HOST):\(port)")
+                return true
+            }
+
+            if let err = tunnelErr {
+                let msg = err.pointee.message != nil ? String(cString: err.pointee.message!) : "No message"
+                lastFailure = "\(DEVICE_HOST):\(port) code=\(err.pointee.code) sub=\(err.pointee.sub_code) \(msg)"
+                idevice_error_free(err)
+            } else {
+                lastFailure = "\(DEVICE_HOST):\(port) returned no adapter/handshake"
+            }
+            resetConnectionHandles()
         }
 
         self.logOnce(
-            "[DeviceManager] ERROR: Remote Pairing unavailable across LocalDevVPN endpoints. Last: \(lastFailure)",
+            "[DeviceManager] ERROR: LocalDevVPN Remote Pairing unavailable. Last: \(lastFailure)",
             key: "connection_status"
         )
         return false
     }'''
-if "LocalDevVPN Remote Pairing connected via" not in text:
-    text = replace_function(
-        text,
-        "    private func establishRPPairingTunnel()",
-        tunnel_replacement,
+text = replace_function(
+    text,
+    "    private func establishRPPairingTunnel()",
+    tunnel_replacement,
+)
+
+# Pairing host and heartbeat transport must never compete for the old pairing
+# session. ByeTunesOnDevicePairing suspends reconnect before advertising and
+# resumes after the fresh RP pairing file has been persisted.
+if "private var autoReconnectSuspended = false" not in text:
+    anchor = "    private var autoReconnectTimer: DispatchSourceTimer?\n"
+    if anchor not in text:
+        raise SystemExit("autoReconnectTimer anchor missing")
+    text = text.replace(
+        anchor,
+        anchor + "    private var autoReconnectSuspended = false\n",
+        1,
     )
 
-# Never overlap a still-live RPPairing attempt. The old 2-second watcher
-# declared Connecting stale after 6 seconds even though the heartbeat worker
-# is allowed 20 seconds, creating multiple competing tunnels after a reset.
+if "func setAutoReconnectSuspended(_ suspended: Bool)" not in text:
+    anchor = "    private func installAutoReconnectWatcher() {"
+    pos = text.find(anchor)
+    if pos < 0:
+        raise SystemExit("auto reconnect watcher missing")
+    method = '''    func setAutoReconnectSuspended(_ suspended: Bool) {
+        autoReconnectSuspended = suspended
+        if suspended {
+            Logger.shared.log("[DeviceManager] Auto-reconnect suspended for on-device pairing")
+            stopHeartbeat()
+        } else {
+            lastHeartbeatAttemptStartedAt = .distantPast
+            Logger.shared.log("[DeviceManager] Auto-reconnect resumed after on-device pairing")
+        }
+    }
+
+'''
+    text = text[:pos] + method + text[pos:]
+
 watcher_replacement = r'''    private func installAutoReconnectWatcher() {
         guard autoReconnectTimer == nil else { return }
 
@@ -161,6 +177,11 @@ watcher_replacement = r'''    private func installAutoReconnectWatcher() {
         timer.setEventHandler { [weak self] in
             guard let self else { return }
             guard UIApplication.shared.applicationState == .active else { return }
+
+            if self.autoReconnectSuspended {
+                self.logOnce("[DeviceManager] Auto-reconnect paused while on-device pairing is active", key: "auto_reconnect")
+                return
+            }
 
             self.refreshExpectedPairingFileState()
             guard self.hasValidExpectedPairingFile else {
@@ -187,22 +208,20 @@ watcher_replacement = r'''    private func installAutoReconnectWatcher() {
             let timeSinceLastAttempt = Date().timeIntervalSince(self.lastHeartbeatAttemptStartedAt)
             guard timeSinceLastAttempt >= 10.0 else { return }
 
-            self.logOnce("[DeviceManager] Auto-reconnect retrying Remote Pairing", key: "auto_reconnect")
+            self.logOnce("[DeviceManager] Auto-reconnect retrying LocalDevVPN Remote Pairing", key: "auto_reconnect")
             self.startHeartbeat(forceReconnect: false)
         }
         timer.resume()
         autoReconnectTimer = timer
     }'''
-if "Auto-reconnect retrying Remote Pairing" not in text:
-    text = replace_function(
-        text,
-        "    private func installAutoReconnectWatcher()",
-        watcher_replacement,
-    )
+text = replace_function(
+    text,
+    "    private func installAutoReconnectWatcher()",
+    watcher_replacement,
+)
 
-# Keep isReconnecting held for at least as long as the heartbeat worker's
-# 20-second establishment timeout. Also finish early when the worker explicitly
-# reports failure instead of leaving the UI stuck in Connecting.
+# Keep isReconnecting held for the full establishment window so the watcher
+# cannot launch a second tunnel while the first is still resolving/handshaking.
 old_poll = '''        DispatchQueue.global().async {
             for _ in 0..<20 {
                 if self.heartbeatReady && self.hasActiveTransport {
@@ -244,8 +263,6 @@ if "for _ in 0..<48" not in text:
         raise SystemExit(f"heartbeat completion poll: expected one match, found {count}")
     text = text.replace(old_poll, new_poll, 1)
 
-# Slow the watcher slightly; endpoint probing is now deliberate rather than a
-# 2-second busy loop.
 text = text.replace(
     "    private let autoReconnectCheckInterval: TimeInterval = 2\n",
     "    private let autoReconnectCheckInterval: TimeInterval = 4\n",
@@ -255,13 +272,15 @@ text = text.replace(
 path.write_text(text)
 PY
 
-grep -Fq 'private func makeSocketAddress(host: String, port: UInt16)' "$DEVICE"
-grep -Fq '"10.7.0.2"' "$DEVICE"
-grep -Fq '"10.7.0.3"' "$DEVICE"
-grep -Fq 'LocalDevVPN Remote Pairing connected via' "$DEVICE"
-grep -Fq 'Auto-reconnect retrying Remote Pairing' "$DEVICE"
-grep -Fq 'connection attempt still active' "$DEVICE"
+grep -Fq 'ByeTunesRemotePairingPortDiscovery.resolveSynchronously' "$DEVICE"
+grep -Fq 'LocalDevVPN discovered live Remote Pairing port=' "$DEVICE"
+grep -Fq 'LocalDevVPN Remote Pairing connected via \(DEVICE_HOST):\(port)' "$DEVICE"
+grep -Fq 'private var autoReconnectSuspended = false' "$DEVICE"
+grep -Fq 'func setAutoReconnectSuspended(_ suspended: Bool)' "$DEVICE"
+grep -Fq 'Auto-reconnect paused while on-device pairing is active' "$DEVICE"
 grep -Fq 'for _ in 0..<48' "$DEVICE"
-! grep -Fq 'Auto-reconnect detected stale connecting state; forcing refresh' "$DEVICE"
+! grep -Fq '"10.7.0.2"' "$DEVICE"
+! grep -Fq '"10.7.0.3"' "$DEVICE"
+! grep -Fq '"127.0.0.1"' "$DEVICE"
 
-echo "Applied LocalDevVPN Remote Pairing endpoint/backoff repair"
+echo "Applied AirCard-parity LocalDevVPN Remote Pairing transport"

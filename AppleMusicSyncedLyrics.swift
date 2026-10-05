@@ -551,33 +551,16 @@ struct AppleMusicSyncedLyricsConnectionRow: View {
 
 struct AppleMusicSyncedLyricsBootstrapView<Content: View>: View {
     private let content: Content
-    @State private var showingLogin = false
-    @State private var didPrompt = false
 
     init(@ViewBuilder content: () -> Content) {
         self.content = content()
     }
 
     var body: some View {
+        // Never force Apple authentication when ByeTunes opens.
+        // Sign-in is user initiated from the Apple Music Lyrics connection row
+        // or when Apple Music Synced is explicitly selected in the lyric picker.
         content
-            .onAppear {
-                guard !didPrompt else { return }
-                didPrompt = true
-                guard !AppleMusicSyncedLyricsCredentialStore.isConnected else {
-                    return
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                    showingLogin = true
-                }
-            }
-            .sheet(isPresented: $showingLogin) {
-                AppleMusicSyncedLyricsLoginSheet { success in
-                    if success {
-                        UserDefaults.standard.set(true, forKey: "appleSubscriptionLyrics")
-                        Logger.shared.log("[AppleLyrics] Apple-first synced lyrics enabled after sign-in")
-                    }
-                }
-            }
     }
 }
 

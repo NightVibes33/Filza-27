@@ -113,7 +113,7 @@ MOND_ZIP_SWIFT_FILES := \
     $(MOND_GEN)/ZIPFoundation/FileManager+ZIPDeprecated.swift \
     $(MOND_GEN)/ZIPFoundation/URL+ZIP.swift
 
-FilzaApplySandboxExt_SWIFT_FILES = FilzaNFCARDHost.swift $(NFCARD_SWIFT_FILES) ByeTunesEmbeddedHost.swift AppleMusicSyncedLyrics.swift ByeTunesOnDevicePairing.swift ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift FilzaMondCurrentHost.swift Filza3105Host.swift $(MOND_SWIFT_FILES) $(MOND_PARTYUI_SWIFT_FILES) $(MOND_ZIP_SWIFT_FILES) $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
+FilzaApplySandboxExt_SWIFT_FILES = FilzaNFCARDHost.swift $(NFCARD_SWIFT_FILES) ByeTunesEmbeddedHost.swift AppleMusicSyncedLyrics.swift ByeTunesRemotePairingPortDiscovery.swift ByeTunesOnDevicePairing.swift ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift FilzaMondCurrentHost.swift Filza3105Host.swift $(MOND_SWIFT_FILES) $(MOND_PARTYUI_SWIFT_FILES) $(MOND_ZIP_SWIFT_FILES) $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
 
 FilzaApplySandboxExt_CFLAGS = -I$(PWD)/compat -I$(PWD) -I$(PWD)/XPF/src -I$(PWD)/XPF/external/ChOma/include -I$(IDEVICE_VENDOR)/include -I$(PWD)/$(BAD_QUERY_ROOT)/bad_query -I$(PWD)/$(THREEONE_ROOT)/Sources -I$(PWD)/$(MOND_GEN) \
     -I$(PWD)/$(NFCARD_IOS) -I$(PWD)/$(NFCARD_FFI)/include -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Core -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Requests -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Responses -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebDAVServer \
@@ -186,6 +186,8 @@ before-FilzaApplySandboxExt-all::
 	@test -f "scripts/patch-byetunes-apple-synced-lyrics.sh" || (echo "Missing Apple Music synced-lyrics patch" >&2; exit 1)
 	@test -f "AppleMusicSyncedLyrics.swift" || (echo "Missing Apple Music synced-lyrics runtime" >&2; exit 1)
 	@test -f "ByeTunesOnDevicePairing.swift" || (echo "Missing ByeTunes on-device pairing runtime" >&2; exit 1)
+	@test -f "ByeTunesRemotePairingPortDiscovery.swift" || (echo "Missing AirCard-parity Remote Pairing discovery" >&2; exit 1)
+	@grep -Fq '_remotepairing._tcp.' "ByeTunesRemotePairingPortDiscovery.swift" || (echo "Remote Pairing Bonjour discovery missing" >&2; exit 1)
 	@grep -Fq 'al_pairing_run_host' "ByeTunesOnDevicePairing.swift" || (echo "ByeTunes is not using NFCARD/Airlift pairing host" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-rppairing-localdevvpn.sh" || (echo "Missing LocalDevVPN Remote Pairing repair" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-pairing-and-tabs.sh" || (echo "Missing ByeTunes pairing/tab UI patch" >&2; exit 1)
@@ -198,6 +200,8 @@ before-FilzaApplySandboxExt-all::
 	@grep -Fq 'appleSyncedLyricsStoreID' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "per-song Apple synced lyric identity missing" >&2; exit 1)
 	@grep -Fq 'onAppleMusicSelection' "$(BYETUNES_ROOT)/LyricsSearchSheet.swift" || (echo "lyrics picker Apple catalog callback missing" >&2; exit 1)
 	@grep -Fq 'LocalDevVPN Remote Pairing connected via' "$(BYETUNES_ROOT)/iDeviceManager.swift" || (echo "LocalDevVPN endpoint repair missing" >&2; exit 1)
+	@grep -Fq 'ByeTunesRemotePairingPortDiscovery.resolveSynchronously' "$(BYETUNES_ROOT)/iDeviceManager.swift" || (echo "AirCard live Remote Pairing discovery not wired" >&2; exit 1)
+	@! grep -Fq 'AppleMusicSyncedLyricsBootstrapView {' "ByeTunesEmbeddedHost.swift" || (echo "Apple Music login bootstrap still wraps ByeTunes" >&2; exit 1)
 	@grep -Fq 'Pair with ByeTunes' "$(BYETUNES_ROOT)/OnboardingView.swift" || (echo "on-device pairing UI missing" >&2; exit 1)
 	@! grep -Fq 'Label("Download", systemImage: "arrow.down.circle")' "$(BYETUNES_ROOT)/TabViews.swift" || (echo "Download tab still visible" >&2; exit 1)
 	@grep -Fq 'appleSyncedLyricsStoreID' "$(BYETUNES_ROOT)/QueuePersistence.swift" || (echo "Apple synced lyric identity persistence missing" >&2; exit 1)

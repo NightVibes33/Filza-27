@@ -93,6 +93,7 @@ final class ByeTunesOnDevicePairingController: ObservableObject {
         }
 
         stopAdvertising()
+        manager.setAutoReconnectSuspended(true)
         isPairing = true
         pin = nil
         status = "Advertising ByeTunes… Open Settings › Privacy & Security › Developer Mode › Pair with ByeTunes"
@@ -145,6 +146,7 @@ final class ByeTunesOnDevicePairingController: ObservableObject {
                 self.stopAdvertising()
 
                 guard rc == 0 else {
+                    manager.setAutoReconnectSuspended(false)
                     self.finishFailure(errorMessage ?? "Pairing failed (rc=\(rc)).")
                     return
                 }
@@ -160,6 +162,7 @@ final class ByeTunesOnDevicePairingController: ObservableObject {
                     manager.refreshExpectedPairingFileState()
 
                     guard manager.hasValidExpectedPairingFile else {
+                        manager.setAutoReconnectSuspended(false)
                         self.finishFailure("ByeTunes created a pairing record, but it did not validate.")
                         return
                     }
@@ -168,10 +171,14 @@ final class ByeTunesOnDevicePairingController: ObservableObject {
                     self.pin = nil
                     self.isPairing = false
                     Logger.shared.log("[PairingHost] ByeTunes on-device RP pairing completed")
-                    manager.startHeartbeat(forceReconnect: true)
+                    manager.setAutoReconnectSuspended(false)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
+                        manager.startHeartbeat(forceReconnect: true)
+                    }
                     self.stopKeepAliveSoon()
                 } catch {
                     try? FileManager.default.removeItem(at: producedURL)
+                    manager.setAutoReconnectSuspended(false)
                     self.finishFailure(error.localizedDescription)
                 }
             }
