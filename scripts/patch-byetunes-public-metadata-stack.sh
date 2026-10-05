@@ -335,14 +335,23 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
         raise SystemExit(f"{label}: expected one match, found {count}")
     return text.replace(old, new, 1)
 
-field_anchor = "    var lyrics: String?\n"
-field_block = """    var lyrics: String?
+field_anchor = """    var trackNumber: Int?
+    var trackCount: Int?
+    var discNumber: Int?
+    var discCount: Int?
+    var lyrics: String?
+"""
+field_block = """    var trackNumber: Int?
+    var trackCount: Int?
+    var discNumber: Int?
+    var discCount: Int?
+    var lyrics: String?
     var syncedLyricsTTML: String? = nil
     var syncedLyricsSource: String? = nil
     var syncedLyricsTiming: String? = nil
 """
 if "var syncedLyricsTTML: String?" not in sm:
-    sm = replace_once(sm, field_anchor, field_block, "rich lyric fields")
+    sm = replace_once(sm, field_anchor, field_block, "SongMetadata rich lyric fields")
 
 helper_marker = "    static func fetchLyricsFromLRCLIB(title: String, artist: String, album: String, durationMs: Int) async -> String? {"
 if "static func resolveFreeSyncedLyrics(for song: SongMetadata)" not in sm:
