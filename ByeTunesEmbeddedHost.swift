@@ -6,7 +6,7 @@ import UIKit
 /// visible metadataSource picker. Reconcile that known contamination once,
 /// then leave the original ByeTunes state machine completely in control.
 private enum ByeTunesEmbeddedStateRepair {
-    private static let completedKey = "filzaByeTunesMetadataParityStateRepairV1"
+    private static let completedKey = "filzaByeTunesMetadataParityStateRepairV2"
 
     static func runIfNeeded() {
         let defaults = UserDefaults.standard
@@ -30,6 +30,12 @@ private enum ByeTunesEmbeddedStateRepair {
         }
 
         MetadataProviderSettings.saveSources(repaired)
+        if defaults.object(forKey: "appleSubscriptionLyrics") == nil {
+            defaults.set(true, forKey: "appleSubscriptionLyrics")
+        }
+        if defaults.object(forKey: "fetchLyrics") == nil {
+            defaults.set(true, forKey: "fetchLyrics")
+        }
         defaults.set(true, forKey: completedKey)
         Logger.shared.log(
             "[MetadataParity] Reconciled legacy embedded provider state once: picker=\(selected), sources=\(repaired.map(\.rawValue).joined(separator: ","))"
@@ -43,7 +49,9 @@ private enum ByeTunesEmbeddedStateRepair {
 private struct ByeTunesEmbeddedModalRoot: View {
     var body: some View {
         FilzaEmbeddedPanel {
-            ContentView()
+            AppleMusicSyncedLyricsBootstrapView {
+                ContentView()
+            }
         }
     }
 }
@@ -51,7 +59,9 @@ private struct ByeTunesEmbeddedModalRoot: View {
 private func makeMusicLibraryHost() -> UIViewController {
     FilzaDiagnosticsWriteByeTunesStage("before direct Music Library ContentView construction")
     ByeTunesEmbeddedStateRepair.runIfNeeded()
-    let root = ContentView()
+    let root = AppleMusicSyncedLyricsBootstrapView {
+        ContentView()
+    }
     FilzaDiagnosticsWriteByeTunesStage("direct Music Library ContentView constructed")
     let host = UIHostingController(rootView: root)
     host.view.backgroundColor = .systemGroupedBackground

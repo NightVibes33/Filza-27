@@ -94,7 +94,7 @@ MOND_ZIP_SWIFT_FILES := \
     $(MOND_GEN)/ZIPFoundation/FileManager+ZIPDeprecated.swift \
     $(MOND_GEN)/ZIPFoundation/URL+ZIP.swift
 
-FilzaApplySandboxExt_SWIFT_FILES = ByeTunesEmbeddedHost.swift ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift FilzaMondCurrentHost.swift Filza3105Host.swift $(MOND_SWIFT_FILES) $(MOND_PARTYUI_SWIFT_FILES) $(MOND_ZIP_SWIFT_FILES) $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
+FilzaApplySandboxExt_SWIFT_FILES = ByeTunesEmbeddedHost.swift AppleMusicSyncedLyrics.swift ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift FilzaMondCurrentHost.swift Filza3105Host.swift $(MOND_SWIFT_FILES) $(MOND_PARTYUI_SWIFT_FILES) $(MOND_ZIP_SWIFT_FILES) $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
 
 FilzaApplySandboxExt_CFLAGS = -I$(PWD)/compat -I$(PWD) -I$(PWD)/XPF/src -I$(PWD)/XPF/external/ChOma/include -I$(IDEVICE_VENDOR)/include -I$(PWD)/$(BAD_QUERY_ROOT)/bad_query -I$(PWD)/$(THREEONE_ROOT)/Sources -I$(PWD)/$(MOND_GEN) \
     -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Core -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Requests -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Responses -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebDAVServer \
@@ -132,6 +132,7 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/patch-byetunes-download-provider-parity.sh
 	@bash scripts/patch-byetunes-device-library-save.sh
 	@bash scripts/patch-byetunes-public-metadata-stack.sh
+	@bash scripts/patch-byetunes-apple-synced-lyrics.sh
 	@test -s "$(IDEVICE_STATIC)" || (echo "Missing $(IDEVICE_STATIC). Run: bash scripts/build-idevice.sh" >&2; exit 1)
 	@test -d "$(BYETUNES_ROOT)" || (echo "Missing ByeTunes submodule. Run: git submodule update --init --recursive" >&2; exit 1)
 	@test -f "$(BYETUNES_ROOT)/ContentView.swift" || (echo "Incomplete ByeTunes submodule" >&2; exit 1)
@@ -145,10 +146,14 @@ before-FilzaApplySandboxExt-all::
 	@test -f "scripts/patch-byetunes-download-provider-parity.sh" || (echo "Missing ByeTunes download-provider parity patch" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-device-library-save.sh" || (echo "Missing ByeTunes device-library save verifier" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-public-metadata-stack.sh" || (echo "Missing ByeTunes public metadata policy patch" >&2; exit 1)
+	@test -f "scripts/patch-byetunes-apple-synced-lyrics.sh" || (echo "Missing Apple Music synced-lyrics patch" >&2; exit 1)
+	@test -f "AppleMusicSyncedLyrics.swift" || (echo "Missing Apple Music synced-lyrics runtime" >&2; exit 1)
 	@! grep -Fq '/api/metadata' "$(BYETUNES_ROOT)/DownloadView.swift" || (echo "Private ByeTunes metadata backend remains" >&2; exit 1)
 	@! grep -Fq '/api/download' "$(BYETUNES_ROOT)/DownloadView.swift" || (echo "Private ByeTunes download backend remains" >&2; exit 1)
 	@! grep -Fq 'ByeTunesApiUrl' "$(BYETUNES_ROOT)/Config.swift" || (echo "ByeTunes Config.plist key remains" >&2; exit 1)
 	@grep -Fq 'static func cleanSyncedLyrics' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "LRCLIB synced lyric preservation missing" >&2; exit 1)
+	@grep -Fq 'AppleMusicSyncedLyricsClient.shared.fetchSyncedLyrics' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "Apple Music synced lyric provider missing" >&2; exit 1)
+	@grep -Fq 'appleSyncedLyricsConfirmed' "$(BYETUNES_ROOT)/MediaLibraryBuilder.swift" || (echo "truthful Apple synced lyric DB flags missing" >&2; exit 1)
 	@test -f "scripts/patch-3105-embedded-compat.sh" || (echo "Missing 3105 embedded compatibility transform" >&2; exit 1)
 	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.c" || (echo "Missing pinned bad_query submodule" >&2; exit 1)
 	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.h" || (echo "Incomplete bad_query submodule" >&2; exit 1)
