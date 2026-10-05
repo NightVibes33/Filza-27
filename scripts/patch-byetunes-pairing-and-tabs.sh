@@ -102,17 +102,22 @@ download_index = '''    private var downloadTabIndex: Int {
 '''
 s = replace_once(s, download_index, "", "ContentView download index")
 
-tutorial_marker = "            if !showSplash && hasCompletedOnboarding && !tutorialComplete {"
-tutorial_start = s.find(tutorial_marker)
-if tutorial_start >= 0:
-    tutorial_end = balanced_end(s, tutorial_start)
-    while tutorial_end < len(s) and s[tutorial_end] in " \t":
-        tutorial_end += 1
-    if tutorial_end < len(s) and s[tutorial_end] == "\n":
-        tutorial_end += 1
-    if tutorial_end < len(s) and s[tutorial_end] == "\n":
-        tutorial_end += 1
-    s = s[:tutorial_start] + s[tutorial_end:]
+tutorial_call = s.find("TutorialOverlayView(")
+if tutorial_call >= 0:
+    tutorial_if = s.rfind("            if ", 0, tutorial_call)
+    if tutorial_if < 0:
+        raise SystemExit("download tutorial enclosing condition missing")
+    tutorial_end = balanced_end(s, tutorial_if)
+    tutorial_block = s[tutorial_if:tutorial_end]
+    if "downloadTabIndex:" in tutorial_block:
+        while tutorial_end < len(s) and s[tutorial_end] in " \t":
+            tutorial_end += 1
+        if tutorial_end < len(s) and s[tutorial_end] == "\n":
+            tutorial_end += 1
+        if tutorial_end < len(s) and s[tutorial_end] == "\n":
+            tutorial_end += 1
+        s = s[:tutorial_if] + s[tutorial_end:]
+
 
 old_open_url = '''        .onOpenURL { url in
             if url.scheme?.lowercased() == "byetunes" {
