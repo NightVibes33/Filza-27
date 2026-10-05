@@ -6,6 +6,7 @@
 #import "Filza3105Bridge.h"
 #import "FilzaDiagnostics.h"
 #import "FilzaMondBridge.h"
+#import "FilzaNFCARDBridge.h"
 
 @interface FMTWeakMainView : NSObject
 @property(nonatomic, weak) id owner;
@@ -27,7 +28,9 @@ static NSHashTable *gFMTKnownMainViews;
 static char kFMTToolbarOwnerKey;
 static NSString *const FMTGestaltIdentifier =
     @"com.nightvibes33.filzaslop.toolbar.gestalt";
-static NSString *const FMTPatchesIdentifier =
+static NSString *const FMTNFCARDIdentifier =
+    @"com.nightvibes33.filzaslop.toolbar.nfcard";
+static NSString *const FMTLegacyPatchesIdentifier =
     @"com.nightvibes33.filzaslop.toolbar.patches";
 static NSString *const FMTAppsIdentifier =
     @"com.nightvibes33.filzaslop.toolbar.apps";
@@ -44,8 +47,10 @@ static BOOL FMTIsUtilityItem(UIBarButtonItem *item)
 {
     NSString *identifier = item.accessibilityIdentifier;
     return [identifier isEqualToString:FMTGestaltIdentifier] ||
-        [identifier isEqualToString:FMTPatchesIdentifier] ||
+        [identifier isEqualToString:FMTNFCARDIdentifier] ||
+        [identifier isEqualToString:FMTLegacyPatchesIdentifier] ||
         item.action == NSSelectorFromString(@"fz_openMondGestalt") ||
+        item.action == NSSelectorFromString(@"fz_openNFCARD") ||
         item.action == NSSelectorFromString(@"fz_open3105Patches");
 }
 
@@ -97,12 +102,12 @@ static void FMTOpenApps(id self, SEL _cmd)
     Filza3105PresentAppsFromController(controller);
 }
 
-static void FMTOpenPatches(id self, SEL _cmd)
+static void FMTOpenNFCARD(id self, SEL _cmd)
 {
     UIViewController *controller = [self isKindOfClass:UIViewController.class]
         ? self : nil;
-    FilzaDiagnosticsAppend(@"Toolbar", @"persistent Patches button tapped");
-    Filza3105PresentPatchesFromController(controller);
+    FilzaDiagnosticsAppend(@"Toolbar", @"persistent NFCARD button tapped");
+    FilzaNFCARDPresentFromController(controller);
 }
 
 static void FMTEnsureUtilityItems(id mainView)
@@ -142,9 +147,9 @@ static void FMTEnsureUtilityItems(id mainView)
     UIBarButtonItem *gestalt = FMTImageItem(@"slider.horizontal.3",
         @"Gestalt Editor", FMTGestaltIdentifier, mainView,
         NSSelectorFromString(@"fz_openMondGestalt"));
-    UIBarButtonItem *patches = FMTImageItem(@"shippingbox",
-        @"Patches", FMTPatchesIdentifier, mainView,
-        NSSelectorFromString(@"fz_open3105Patches"));
+    UIBarButtonItem *nfcard = FMTImageItem(@"creditcard.fill",
+        @"NFCARD", FMTNFCARDIdentifier, mainView,
+        NSSelectorFromString(@"fz_openNFCARD"));
 
     NSInteger insertion = items.count;
     if (appsIndex != NSNotFound || musicIndex != NSNotFound) {
@@ -153,13 +158,13 @@ static void FMTEnsureUtilityItems(id mainView)
         insertion = MIN((NSInteger)items.count, last + 1);
     }
     [items insertObject:gestalt atIndex:(NSUInteger)insertion];
-    [items insertObject:patches atIndex:(NSUInteger)insertion + 1];
+    [items insertObject:nfcard atIndex:(NSUInteger)insertion + 1];
 
     gFMTMutatingToolbar = YES;
     [toolbar setItems:items animated:NO];
     gFMTMutatingToolbar = NO;
     FilzaDiagnosticsAppend(@"Toolbar", [NSString stringWithFormat:
-        @"ensured persistent Apps/Music/Gestalt/Patches bottom toolbar apps=%ld music=%ld",
+        @"ensured persistent Apps/Music/Gestalt/NFCARD bottom toolbar apps=%ld music=%ld",
         (long)appsIndex, (long)musicIndex]);
 }
 
@@ -257,8 +262,8 @@ static void FMTInstallHooks(void)
                     (IMP)FMTOpenMond, "v@:");
     class_addMethod(cls, NSSelectorFromString(@"fz_open3105Apps"),
                     (IMP)FMTOpenApps, "v@:");
-    class_addMethod(cls, NSSelectorFromString(@"fz_open3105Patches"),
-                    (IMP)FMTOpenPatches, "v@:");
+    class_addMethod(cls, NSSelectorFromString(@"fz_openNFCARD"),
+                    (IMP)FMTOpenNFCARD, "v@:");
     gFMTOriginalCreateMainToolBar = FMTHook(cls,
         NSSelectorFromString(@"createMainToolBar"), (IMP)FMTCreateMainToolBar);
     gFMTOriginalViewDidLoad = FMTHook(cls, @selector(viewDidLoad),
@@ -273,7 +278,7 @@ static void FMTInstallHooks(void)
 
     if (gFMTMainHooksInstalled)
         FilzaDiagnosticsAppend(@"Toolbar",
-            @"TGMainView persistent 3105 Apps/Gestalt/Patches toolbar hooks installed");
+            @"TGMainView persistent Apps/Gestalt/NFCARD toolbar hooks installed");
 }
 
 static void FMTRefreshKnownMainViews(void)

@@ -111,6 +111,18 @@ jobs:
           test -s Vendor/wolfssh/lib/libwolfssh.a
           test -s Vendor/wolfssh/lib/libwolfssl.a
 
+      - name: Verify NFCARD integration pins
+        shell: bash
+        run: |
+          set -euxo pipefail
+          grep -Fq '4dbacf6b503d861dba605286f9ee6f7904c8a81f' scripts/stage-nfcard.sh
+          grep -Fq '097a058c984ffc33ccb697b9dfe8058be3e86244' scripts/stage-nfcard.sh
+          grep -Fq 'FilzaNFCARDHost.swift' Makefile
+          grep -Fq 'FilzaNFCARDBridge.m' Makefile
+          grep -Fq 'libairlift_ffi.a' Makefile
+          grep -Fq 'controller.isModalInPresentation = true' ThirdParty/3105/Sources/FilzaEmbeddedPanel.swift
+          grep -Fq 'DragGesture(minimumDistance: 12' ThirdParty/3105/Sources/FilzaEmbeddedPanel.swift
+
       - name: Capture complete Theos build
         id: full-build
         shell: bash
@@ -151,6 +163,11 @@ jobs:
           grep -aFq 'Apple Music Synced' "$DYLIB"
           grep -aFq 'Pair with ByeTunes' "$DYLIB"
           grep -aFq 'LocalDevVPN Remote Pairing connected via' "$DYLIB"
+          grep -aFq 'NFCARDEmbeddedHostFactory' "$DYLIB"
+          grep -aFq 'Pair with NFCARD' "$DYLIB"
+          grep -aFq 'cardmaker-omega.vercel.app' "$DYLIB"
+          grep -aFq 'Apps/Music/Gestalt/NFCARD' "$DYLIB"
+          ! grep -aFq 'AirCardEmbeddedHostFactory' "$DYLIB"
           ! grep -aFq '127.0.0.1:41337' "$DYLIB"
           ! grep -aFq 'ByeTunesYoink.bundle' "$DYLIB"
           ! grep -aFq 'NodeMobile' "$DYLIB"
@@ -206,10 +223,20 @@ jobs:
           plutil -replace CFBundleVersion -string "$GITHUB_RUN_NUMBER" "$APP/Info.plist"
           plutil -replace UIFileSharingEnabled -bool YES "$APP/Info.plist"
           plutil -replace LSSupportsOpeningDocumentsInPlace -bool YES "$APP/Info.plist"
-          plutil -replace NSLocalNetworkUsageDescription -string "Filza 27 uses your local network for WebDAV, SSH/SFTP, LocalDevVPN Remote Pairing, and ByeTunes on-device pairing." "$APP/Info.plist"
-          plutil -replace NSBonjourServices -json '["_http._tcp","_ssh._tcp","_remotepairing._tcp","_remotepairing-pairable-host._tcp"]' "$APP/Info.plist"
+          plutil -replace NSLocalNetworkUsageDescription -string "Filza 27 uses your local network for WebDAV, SSH/SFTP, LocalDevVPN Remote Pairing, ByeTunes pairing, and NFCARD." "$APP/Info.plist"
+          plutil -replace NSBonjourServices -json '["_http._tcp","_ssh._tcp","_remotepairing._tcp","_remotepairing-pairable-host._tcp","_aircardprobe._tcp"]' "$APP/Info.plist"
+          plutil -replace NSPhotoLibraryUsageDescription -string "Filza 27 NFCARD needs photo access so you can choose artwork for Wallet cards." "$APP/Info.plist"
           plutil -remove UIBackgroundModes "$APP/Info.plist" 2>/dev/null || true
           plutil -insert UIBackgroundModes -json '["audio"]' "$APP/Info.plist"
+          plutil -remove WKAppBoundDomains "$APP/Info.plist" 2>/dev/null || true
+          plutil -insert WKAppBoundDomains -json '["cardmaker-omega.vercel.app"]' "$APP/Info.plist"
+          plutil -remove UIApplicationShortcutItems "$APP/Info.plist" 2>/dev/null || true
+          plutil -insert UIApplicationShortcutItems -json '[
+            {"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemIconType":"UIApplicationShortcutIconTypeFavorite"},
+            {"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music","UIApplicationShortcutItemIconType":"UIApplicationShortcutIconTypeAudio"},
+            {"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt","UIApplicationShortcutItemIconType":"UIApplicationShortcutIconTypeTask"},
+            {"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.nfcard","UIApplicationShortcutItemTitle":"NFCARD","UIApplicationShortcutItemIconType":"UIApplicationShortcutIconTypeShare"}
+          ]' "$APP/Info.plist"
           bash scripts/merge-3105-app-metadata.sh "$APP/Info.plist"
           plutil -remove CFBundleURLTypes "$APP/Info.plist" 2>/dev/null || true
 
@@ -234,7 +261,16 @@ jobs:
           BONJOUR_JSON="$(plutil -extract NSBonjourServices json -o - "$APP/Info.plist")"
           [[ "$BONJOUR_JSON" == *'"_remotepairing._tcp"'* ]]
           [[ "$BONJOUR_JSON" == *'"_remotepairing-pairable-host._tcp"'* ]]
+          [[ "$BONJOUR_JSON" == *'"_aircardprobe._tcp"'* ]]
           [[ "$(plutil -extract UIBackgroundModes json -o - "$APP/Info.plist")" == *'"audio"'* ]]
+          [[ "$(plutil -extract WKAppBoundDomains json -o - "$APP/Info.plist")" == *'"cardmaker-omega.vercel.app"'* ]]
+          SHORTCUTS_JSON="$(plutil -extract UIApplicationShortcutItems json -o - "$APP/Info.plist")"
+          [[ "$SHORTCUTS_JSON" == *'apps-manager'* ]]
+          [[ "$SHORTCUTS_JSON" == *'music-library'* ]]
+          [[ "$SHORTCUTS_JSON" == *'gestalt-manager'* ]]
+          [[ "$SHORTCUTS_JSON" == *'nfcard'* ]]
+          [[ "$SHORTCUTS_JSON" != *'"patches"'* ]]
+          [[ "$SHORTCUTS_JSON" != *'"aircard"'* ]]
           shasum -a 256 "$OUTPUT" | tee .theos/IPA-SHA256.txt
 
       - name: Upload modern unsigned IPA

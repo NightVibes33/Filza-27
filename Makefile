@@ -8,6 +8,9 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = FilzaApplySandboxExt
 IDEVICE_VENDOR ?= $(PWD)/Vendor/idevice
 IDEVICE_STATIC := $(IDEVICE_VENDOR)/lib/libidevice_ffi.a
+NFCARD_ROOT := ThirdParty/NFCARD
+NFCARD_IOS := $(NFCARD_ROOT)/ios-app
+NFCARD_FFI := $(NFCARD_ROOT)/AirliftFFI
 BYETUNES_ROOT := ByeTunes/MusicManager
 BYETUNES_ACTIVITY_SHARED := ByeTunes/MusicManagerActivityShared/DownloadLiveActivityAttributes.swift
 BAD_QUERY_ROOT := ThirdParty/bad_query
@@ -16,11 +19,12 @@ THREEONE_ROOT := ThirdParty/3105
 MOND_CURRENT_ROOT := ThirdParty/mond-current
 MOND_GEN := $(MOND_CURRENT_ROOT)/Generated
 
-FilzaApplySandboxExt_FILES = Tweak.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataRetryFix.m AppIconResourceProxyFix.m VirtualBackendFix.m SystemPathDiagnostics.m BadQuerySystemProbe.m GestaltManager.m FilzaMondBridge.m FilzaMainToolbarGestalt.m Filza3105Bridge.m Filza3105IPAExportBridge.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ByeTunesFullAppLauncher.m FilzaDiagnostics.m FilzaQuickActions.m WebDAVRuntimeFix.m WebDAVToggleStateFix.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m CVE43724RieCompatibility.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
+FilzaApplySandboxExt_FILES = Tweak.m FilzaNFCARDBridge.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataRetryFix.m AppIconResourceProxyFix.m VirtualBackendFix.m SystemPathDiagnostics.m BadQuerySystemProbe.m GestaltManager.m FilzaMondBridge.m FilzaMainToolbarGestalt.m Filza3105Bridge.m Filza3105IPAExportBridge.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ByeTunesFullAppLauncher.m FilzaDiagnostics.m FilzaQuickActions.m WebDAVRuntimeFix.m WebDAVToggleStateFix.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m CVE43724RieCompatibility.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
 FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/AppIconHelper.m
 FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/wallpaper_zip.c
 FilzaApplySandboxExt_FILES += $(BAD_QUERY_ROOT)/bad_query/bad_query.c
 FilzaApplySandboxExt_FILES += $(MOND_GEN)/mond_bad_query.c
+FilzaApplySandboxExt_FILES += $(NFCARD_IOS)/GrappaHelper.m
 
 GCDWEBSERVER_OBJC_FILES := $(shell find $(GCDWEBSERVER_ROOT)/GCDWebServer $(GCDWEBSERVER_ROOT)/GCDWebDAVServer -type f -name '*.m' -print)
 FilzaApplySandboxExt_FILES += $(GCDWEBSERVER_OBJC_FILES)
@@ -36,6 +40,21 @@ FilzaApplySandboxExt_FILES += XPF/external/ChOma/src/arm64.c XPF/external/ChOma/
 # by explicit build-time parity patches. MusicManagerApp.swift is omitted
 # because Filza already owns UIApplication lifecycle.
 BYETUNES_SWIFT_FILES := $(shell find $(BYETUNES_ROOT) -type f -name '*.swift' ! -name 'MusicManagerApp.swift' ! -name 'SplashView.swift' -print)
+
+NFCARD_SWIFT_FILES := \
+    $(NFCARD_IOS)/AppViewModel.swift \
+    $(NFCARD_IOS)/NFCARDContentView.swift \
+    $(NFCARD_IOS)/Models.swift \
+    $(NFCARD_IOS)/NetworkStatus.swift \
+    $(NFCARD_IOS)/PairingController.swift \
+    $(NFCARD_IOS)/Utilities.swift \
+    $(NFCARD_IOS)/RespringHelper.swift \
+    $(NFCARD_IOS)/TendiesEngine.swift \
+    $(NFCARD_IOS)/TendiesModel.swift \
+    $(NFCARD_IOS)/TendiesView.swift \
+    $(NFCARD_IOS)/AirCardLibrary.swift \
+    $(NFCARD_IOS)/RemotePairingPortDiscovery.swift \
+    $(NFCARD_IOS)/NFCARDNativeShell.swift
 
 # stage-3105-v1.sh now stages immutable upstream 3105 1.1.1 directly while
 # preserving only Filza lifecycle/pairing/presentation adapters.
@@ -94,10 +113,10 @@ MOND_ZIP_SWIFT_FILES := \
     $(MOND_GEN)/ZIPFoundation/FileManager+ZIPDeprecated.swift \
     $(MOND_GEN)/ZIPFoundation/URL+ZIP.swift
 
-FilzaApplySandboxExt_SWIFT_FILES = ByeTunesEmbeddedHost.swift AppleMusicSyncedLyrics.swift ByeTunesOnDevicePairing.swift ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift FilzaMondCurrentHost.swift Filza3105Host.swift $(MOND_SWIFT_FILES) $(MOND_PARTYUI_SWIFT_FILES) $(MOND_ZIP_SWIFT_FILES) $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
+FilzaApplySandboxExt_SWIFT_FILES = FilzaNFCARDHost.swift $(NFCARD_SWIFT_FILES) ByeTunesEmbeddedHost.swift AppleMusicSyncedLyrics.swift ByeTunesOnDevicePairing.swift ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift FilzaMondCurrentHost.swift Filza3105Host.swift $(MOND_SWIFT_FILES) $(MOND_PARTYUI_SWIFT_FILES) $(MOND_ZIP_SWIFT_FILES) $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
 
 FilzaApplySandboxExt_CFLAGS = -I$(PWD)/compat -I$(PWD) -I$(PWD)/XPF/src -I$(PWD)/XPF/external/ChOma/include -I$(IDEVICE_VENDOR)/include -I$(PWD)/$(BAD_QUERY_ROOT)/bad_query -I$(PWD)/$(THREEONE_ROOT)/Sources -I$(PWD)/$(MOND_GEN) \
-    -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Core -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Requests -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Responses -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebDAVServer \
+    -I$(PWD)/$(NFCARD_IOS) -I$(PWD)/$(NFCARD_FFI)/include -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Core -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Requests -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Responses -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebDAVServer \
     -I$(shell xcrun --sdk iphoneos --show-sdk-path 2>/dev/null)/usr/include/libxml2 \
     -fobjc-arc -include errno.h -include math.h \
     -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable \
@@ -109,8 +128,11 @@ FilzaApplySandboxExt_OBJCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 FilzaApplySandboxExt_OBJCCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 # Build-only compiler allowance for ByeTunes' existing large SwiftUI expressions.
 # This does not patch or alter Mond/ByeTunes runtime source or behavior.
-FilzaApplySandboxExt_SWIFTFLAGS += -swift-version 5 -default-isolation MainActor -Xfrontend -solver-expression-time-threshold=300 -Xcc -I$(IDEVICE_VENDOR)/include -Xcc -I$(PWD)/$(MOND_GEN)
-FilzaApplySandboxExt_LDFLAGS += $(IDEVICE_STATIC)
+FilzaApplySandboxExt_SWIFTFLAGS += -swift-version 5 -default-isolation MainActor -Xfrontend -solver-expression-time-threshold=300 -Xcc -I$(IDEVICE_VENDOR)/include -Xcc -I$(PWD)/$(MOND_GEN) -Xcc -I$(PWD)/$(NFCARD_FFI)/include
+# NFCARD's Airlift static runtime already contains its pinned idevice-ffi
+# implementation. Keep Filza's separate idevice build for headers/ABI checks,
+# but link only the NFCARD runtime to avoid duplicate no_mangle symbols.
+FilzaApplySandboxExt_LDFLAGS += $(NFCARD_FFI)/lib/libairlift_ffi.a -lc++
 
 FilzaApplySandboxExt_FRAMEWORKS = UIKit Foundation SwiftUI Combine AVFoundation AVKit CoreMedia AudioToolbox CryptoKit Security UniformTypeIdentifiers PhotosUI JavaScriptCore AppIntents ActivityKit SafariServices CFNetwork MobileCoreServices WebKit QuickLook ImageIO
 FilzaApplySandboxExt_PRIVATE_FRAMEWORKS = IOSurface
@@ -123,6 +145,8 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/stage-mond-current.sh
 	@bash scripts/stage-mond-22-overlay.sh
 	@bash scripts/stage-3105-v1.sh
+	@bash scripts/stage-nfcard.sh
+	@bash scripts/build-nfcard-ffi.sh "$(NFCARD_ROOT)" "$(NFCARD_FFI)"
 	@bash scripts/patch-3105-embedded-compat.sh
 	@bash scripts/patch-access-map-provenance.sh
 	@bash scripts/patch-byetunes-upstream-parity-v2.sh
@@ -136,8 +160,17 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/patch-byetunes-rppairing-localdevvpn.sh
 	@bash scripts/patch-byetunes-pairing-and-tabs.sh
 	@test -s "$(IDEVICE_STATIC)" || (echo "Missing $(IDEVICE_STATIC). Run: bash scripts/build-idevice.sh" >&2; exit 1)
-	@grep -Fq 'pairable_host_accept' "$(IDEVICE_VENDOR)/include/idevice.h" || (echo "idevice pairable-host API missing" >&2; exit 1)
-	@grep -Fq 'rp_pairing_file_write' "$(IDEVICE_VENDOR)/include/idevice.h" || (echo "idevice RP pairing writer missing" >&2; exit 1)
+	@test -s "$(NFCARD_FFI)/lib/libairlift_ffi.a" || (echo "Missing NFCARD AirliftFFI runtime" >&2; exit 1)
+	@grep -Fq 'al_pairing_run_host' "$(NFCARD_FFI)/include/AirliftFFI/airlift.h" || (echo "NFCARD pairing-host API missing" >&2; exit 1)
+	@grep -Fq 'al_connection_endpoint_set' "$(NFCARD_FFI)/include/AirliftFFI/airlift.h" || (echo "NFCARD endpoint API missing" >&2; exit 1)
+	@test -f "$(NFCARD_IOS)/NFCARDContentView.swift" || (echo "Missing staged NFCARD root" >&2; exit 1)
+	@grep -Fq 'NFCARDPairingTab()' "$(NFCARD_IOS)/NFCARDContentView.swift" || (echo "NFCARD Pairing tab missing" >&2; exit 1)
+	@grep -Fq 'NFCARDWalletCardsTab()' "$(NFCARD_IOS)/NFCARDContentView.swift" || (echo "NFCARD Wallet tab missing" >&2; exit 1)
+	@grep -Fq 'case cardLibrary = "Library"' "$(NFCARD_IOS)/Models.swift" || (echo "NFCARD Library tab missing" >&2; exit 1)
+	@! grep -Fq 'case passcodeThemes = "Passcode"' "$(NFCARD_IOS)/Models.swift" || (echo "obsolete NFCARD Passcode tab returned" >&2; exit 1)
+	@! grep -Fq 'case wallpapers = "Wallpapers"' "$(NFCARD_IOS)/Models.swift" || (echo "obsolete NFCARD Wallpapers tab returned" >&2; exit 1)
+	@test -f "FilzaNFCARDHost.swift" || (echo "Missing NFCARD embedded host" >&2; exit 1)
+	@test -f "FilzaNFCARDBridge.m" || (echo "Missing NFCARD presentation bridge" >&2; exit 1)
 	@test -d "$(BYETUNES_ROOT)" || (echo "Missing ByeTunes submodule. Run: git submodule update --init --recursive" >&2; exit 1)
 	@test -f "$(BYETUNES_ROOT)/ContentView.swift" || (echo "Incomplete ByeTunes submodule" >&2; exit 1)
 	@test -f "$(BYETUNES_ROOT)/BackgroundAudioDownloadManager.swift" || (echo "Incomplete ByeTunes 2.4 sources" >&2; exit 1)
@@ -153,6 +186,7 @@ before-FilzaApplySandboxExt-all::
 	@test -f "scripts/patch-byetunes-apple-synced-lyrics.sh" || (echo "Missing Apple Music synced-lyrics patch" >&2; exit 1)
 	@test -f "AppleMusicSyncedLyrics.swift" || (echo "Missing Apple Music synced-lyrics runtime" >&2; exit 1)
 	@test -f "ByeTunesOnDevicePairing.swift" || (echo "Missing ByeTunes on-device pairing runtime" >&2; exit 1)
+	@grep -Fq 'al_pairing_run_host' "ByeTunesOnDevicePairing.swift" || (echo "ByeTunes is not using NFCARD/Airlift pairing host" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-rppairing-localdevvpn.sh" || (echo "Missing LocalDevVPN Remote Pairing repair" >&2; exit 1)
 	@test -f "scripts/patch-byetunes-pairing-and-tabs.sh" || (echo "Missing ByeTunes pairing/tab UI patch" >&2; exit 1)
 	@! grep -Fq '/api/metadata' "$(BYETUNES_ROOT)/DownloadView.swift" || (echo "Private ByeTunes metadata backend remains" >&2; exit 1)

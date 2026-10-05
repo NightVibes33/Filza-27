@@ -7,11 +7,14 @@
 #import "Filza3105Bridge.h"
 #import "FilzaDiagnostics.h"
 #import "FilzaMondBridge.h"
+#import "FilzaNFCARDBridge.h"
 
 static NSString *const FQAppsType = @"com.nightvibes33.filzaslop.apps-manager";
 static NSString *const FQMusicType = @"com.nightvibes33.filzaslop.music-library";
 static NSString *const FQGestaltType = @"com.nightvibes33.filzaslop.gestalt-manager";
-static NSString *const FQPatchesType = @"com.nightvibes33.filzaslop.patches";
+static NSString *const FQNFCARDType = @"com.nightvibes33.filzaslop.nfcard";
+static NSString *const FQLegacyAirCardType = @"com.nightvibes33.filzaslop.aircard";
+static NSString *const FQLegacyPatchesType = @"com.nightvibes33.filzaslop.patches";
 
 static IMP gFQPreviousShortcutHandler = NULL;
 static IMP gFQPreviousSetShortcutItems = NULL;
@@ -23,7 +26,13 @@ static NSString *FQCanonicalShortcutType(NSString *type)
     if ([type isEqualToString:@"apps-manager"]) return FQAppsType;
     if ([type isEqualToString:@"music-library"]) return FQMusicType;
     if ([type isEqualToString:@"gestalt-manager"]) return FQGestaltType;
-    if ([type isEqualToString:@"patches"]) return FQPatchesType;
+    if ([type isEqualToString:@"nfcard"] ||
+        [type isEqualToString:@"aircard"] ||
+        [type isEqualToString:FQLegacyAirCardType])
+        return FQNFCARDType;
+    if ([type isEqualToString:@"patches"] ||
+        [type isEqualToString:FQLegacyPatchesType])
+        return FQLegacyPatchesType;
     return type ?: @"";
 }
 
@@ -33,7 +42,7 @@ static BOOL FQIsStaticShortcutType(NSString *type)
     return [canonical isEqualToString:FQAppsType] ||
            [canonical isEqualToString:FQMusicType] ||
            [canonical isEqualToString:FQGestaltType] ||
-           [canonical isEqualToString:FQPatchesType];
+           [canonical isEqualToString:FQNFCARDType];
 }
 
 static UIViewController *FQActiveController(void)
@@ -134,10 +143,10 @@ static void FQOpenWithRetry(NSString *type, NSUInteger attempts)
             opened = YES;
         }
     }
-    else if ([type isEqualToString:FQPatchesType]) {
-        opened = Filza3105PresentPatchesFromController(FQActiveController());
+    else if ([type isEqualToString:FQNFCARDType]) {
+        opened = FilzaNFCARDPresentFromController(FQActiveController());
         if (opened)
-            FilzaDiagnosticsAppend(@"QuickAction", @"opened complete 3105 Patches");
+            FilzaDiagnosticsAppend(@"QuickAction", @"opened embedded NFCARD");
     }
 
     if (!opened) {
@@ -198,7 +207,9 @@ static void FQSetShortcutItems(id self, SEL _cmd, NSArray<UIApplicationShortcutI
 {
     NSMutableArray *filtered = [NSMutableArray array];
     for (UIApplicationShortcutItem *item in items ?: @[]) {
-        if (FQIsStaticShortcutType(item.type ?: @"")) {
+        NSString *canonical = FQCanonicalShortcutType(item.type ?: @"");
+        if (FQIsStaticShortcutType(canonical) ||
+            [canonical isEqualToString:FQLegacyPatchesType]) {
             FilzaDiagnosticsAppend(@"QuickAction",
                 [NSString stringWithFormat:@"blocked dynamic duplicate %@", item.type ?: @"unknown"]);
             continue;

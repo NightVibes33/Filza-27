@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import AVFoundation
+import AirliftFFI
 
 @MainActor
 private final class ByeTunesPairingKeepAlive {
@@ -45,10 +46,10 @@ private final class ByeTunesPairingKeepAlive {
             player.scheduleBuffer(buffer, at: nil, options: .loops)
             player.play()
             running = true
-            Logger.shared.log("[PairingHost] Background keepalive started")
+            Logger.shared.log("[PairingHost] background keepalive started")
         } catch {
             running = false
-            Logger.shared.log("[PairingHost] Background keepalive unavailable: \(error.localizedDescription)")
+            Logger.shared.log("[PairingHost] background keepalive unavailable: \(error.localizedDescription)")
         }
     }
 
@@ -63,7 +64,7 @@ private final class ByeTunesPairingKeepAlive {
             engine.detach(player)
         }
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
-        Logger.shared.log("[PairingHost] Background keepalive stopped")
+        Logger.shared.log("[PairingHost] background keepalive stopped")
     }
 }
 
@@ -76,6 +77,9 @@ final class ByeTunesOnDevicePairingController: ObservableObject {
     @Published private(set) var pin: String?
 
     private let keepAlive = ByeTunesPairingKeepAlive()
+    private var netService: NetService?
+
+    private static let altIRKKey = "filzaByeTunesPairingHostAltIRK"
 
     private init() {}
 
@@ -88,6 +92,7 @@ final class ByeTunesOnDevicePairingController: ObservableObject {
             return
         }
 
+        stopAdvertising()
         isPairing = true
         pin = nil
         status = "Advertising ByeTunes… Open Settings › Privacy & Security › Developer Mode › Pair with ByeTunes"
@@ -97,78 +102,61 @@ final class ByeTunesOnDevicePairingController: ObservableObject {
             .appendingPathComponent("byetunes-rp-pairing-\(UUID().uuidString).plist")
         try? FileManager.default.removeItem(at: outputURL)
 
+        let altIRK = UserDefaults.standard.string(forKey: Self.altIRKKey) ?? ""
         nonisolated(unsafe) let context = UnsafeMutableRawPointer(
             Unmanaged.passRetained(self).toOpaque()
         )
 
         DispatchQueue.global(qos: .userInitiated).async {
-            var pairingHandle: RpPairingFileHandle?
-            let err = "ByeTunes".withCString { nameC in
-                "Mac17,7".withCString { modelC in
-                    pairable_host_accept(
-                        nameC,
-                        modelC,
-                        0,
-                        byeTunesPairingPinCallback,
-                        context,
-                        nil,
-                        &pairingHandle
-                    )
-                }
-            }
-
-            var errorMessage: String?
-            if let err {
-                let message = err.pointee.message != nil
-                    ? String(cString: err.pointee.message!)
-                    : "Unknown pairing error"
-                errorMessage = "Pairing failed (\(err.pointee.code)/\(err.pointee.sub_code)): \(message)"
-                idevice_error_free(err)
-            }
-
-            var writeError: String?
-            if errorMessage == nil {
-                guard let pairingHandle else {
-                    DispatchQueue.main.async {
-                        Unmanaged<ByeTunesOnDevicePairingController>
-                            .fromOpaque(context)
-                            .release()
-                        self.finishFailure("Pairing completed without a pairing record.")
+            var result = ALPairResult()
+            let rc = "0.0.0.0".withCString { bindC in
+                "ByeTunes".withCString { nameC in
+                    "Mac17,7".withCString { modelC in
+                        outputURL.path.withCString { outputC in
+                            altIRK.withCString { irkC in
+                                al_pairing_run_host(
+                                    bindC,
+                                    0,
+                                    nameC,
+                                    modelC,
+                                    outputC,
+                                    irkC,
+                                    byeTunesAirliftReadyCallback,
+                                    byeTunesAirliftPinCallback,
+                                    context,
+                                    &result
+                                )
+                            }
+                        }
                     }
-                    return
-                }
-
-                let writeResult = outputURL.path.withCString { pathC in
-                    rp_pairing_file_write(pairingHandle, pathC)
-                }
-                rp_pairing_file_free(pairingHandle)
-
-                if let writeResult {
-                    let message = writeResult.pointee.message != nil
-                        ? String(cString: writeResult.pointee.message!)
-                        : "Unknown pairing-file error"
-                    writeError = "Could not save pairing record (\(writeResult.pointee.code)/\(writeResult.pointee.sub_code)): \(message)"
-                    idevice_error_free(writeResult)
                 }
             }
+
+            let errorMessage = result.error.map { String(cString: $0) }
+            let producedPath = result.pairing_file_path.map { String(cString: $0) } ?? outputURL.path
+            let issuedAltIRK = result.host_alt_irk_hex.map { String(cString: $0) } ?? ""
+            al_pairing_result_free(&result)
 
             DispatchQueue.main.async {
                 Unmanaged<ByeTunesOnDevicePairingController>
                     .fromOpaque(context)
                     .release()
 
-                if let errorMessage {
-                    self.finishFailure(errorMessage)
-                    return
-                }
-                if let writeError {
-                    self.finishFailure(writeError)
+                self.stopAdvertising()
+
+                guard rc == 0 else {
+                    self.finishFailure(errorMessage ?? "Pairing failed (rc=\(rc)).")
                     return
                 }
 
+                if !issuedAltIRK.isEmpty {
+                    UserDefaults.standard.set(issuedAltIRK, forKey: Self.altIRKKey)
+                }
+
+                let producedURL = URL(fileURLWithPath: producedPath)
                 do {
-                    try manager.importPairingFile(from: outputURL)
-                    try? FileManager.default.removeItem(at: outputURL)
+                    try manager.importPairingFile(from: producedURL)
+                    try? FileManager.default.removeItem(at: producedURL)
                     manager.refreshExpectedPairingFileState()
 
                     guard manager.hasValidExpectedPairingFile else {
@@ -179,24 +167,45 @@ final class ByeTunesOnDevicePairingController: ObservableObject {
                     self.status = "Paired. Connecting through LocalDevVPN…"
                     self.pin = nil
                     self.isPairing = false
-                    Logger.shared.log("[PairingHost] On-device RP pairing completed; starting LocalDevVPN Remote Pairing")
+                    Logger.shared.log("[PairingHost] ByeTunes on-device RP pairing completed")
                     manager.startHeartbeat(forceReconnect: true)
                     self.stopKeepAliveSoon()
                 } catch {
-                    try? FileManager.default.removeItem(at: outputURL)
+                    try? FileManager.default.removeItem(at: producedURL)
                     self.finishFailure(error.localizedDescription)
                 }
             }
         }
     }
 
-    private func receivePIN(_ value: String) {
+    fileprivate func startAdvertising(serviceID: String, port: Int32, txt: [String: Data]) {
+        stopAdvertising()
+        let service = NetService(
+            domain: "",
+            type: "_remotepairing-pairable-host._tcp.",
+            name: serviceID,
+            port: port
+        )
+        service.setTXTRecord(NetService.data(fromTXTRecord: txt))
+        service.publish()
+        netService = service
+        status = "Open Settings › Privacy & Security › Developer Mode › Pair with ByeTunes"
+        Logger.shared.log("[PairingHost] advertised ByeTunes pairable host port=\(port)")
+    }
+
+    fileprivate func receivePIN(_ value: String) {
         pin = value
         status = "Enter PIN \(value) in Settings › Privacy & Security › Developer Mode › Pair with ByeTunes"
-        Logger.shared.log("[PairingHost] PIN ready; approve Pair with ByeTunes in Developer Mode")
+        Logger.shared.log("[PairingHost] ByeTunes PIN ready")
+    }
+
+    private func stopAdvertising() {
+        netService?.stop()
+        netService = nil
     }
 
     private func finishFailure(_ message: String) {
+        stopAdvertising()
         isPairing = false
         pin = nil
         status = message
@@ -209,22 +218,42 @@ final class ByeTunesOnDevicePairingController: ObservableObject {
             self?.keepAlive.stop()
         }
     }
+}
 
-    fileprivate nonisolated static func deliverPIN(_ value: String, context: UnsafeMutableRawPointer) {
-        let controller = Unmanaged<ByeTunesOnDevicePairingController>
-            .fromOpaque(context)
-            .takeUnretainedValue()
-        Task { @MainActor in
-            controller.receivePIN(value)
+private let byeTunesAirliftReadyCallback: ALPairReadyCb = {
+    context, serviceID, port, keys, values, count in
+
+    guard let context, let serviceID else { return }
+    let controller = Unmanaged<ByeTunesOnDevicePairingController>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+
+    var txt: [String: Data] = [:]
+    if let keys, let values {
+        for index in 0..<Int(count) {
+            guard let key = keys[index], let value = values[index] else { continue }
+            txt[String(cString: key)] = Data(String(cString: value).utf8)
         }
+    }
+
+    let identifier = String(cString: serviceID)
+    DispatchQueue.main.async {
+        controller.startAdvertising(
+            serviceID: identifier,
+            port: Int32(port),
+            txt: txt
+        )
     }
 }
 
-private let byeTunesPairingPinCallback: @convention(c) (
-    UnsafePointer<CChar>?,
-    UnsafeMutableRawPointer?
-) -> Void = { pinPointer, context in
+private let byeTunesAirliftPinCallback: ALPairPinCb = { pinPointer, context in
     guard let pinPointer, let context else { return }
+    let controller = Unmanaged<ByeTunesOnDevicePairingController>
+        .fromOpaque(context)
+        .takeUnretainedValue()
     let value = String(cString: pinPointer)
-    ByeTunesOnDevicePairingController.deliverPIN(value, context: context)
+
+    DispatchQueue.main.async {
+        controller.receivePIN(value)
+    }
 }

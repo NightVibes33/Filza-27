@@ -87,11 +87,21 @@ bash "$REPO_ROOT/scripts/merge-3105-app-metadata.sh" "$APP/Info.plist"
 # with the verified modern Actions IPA so iOS can present Local Network
 # permission and permit both advertised service types.
 plutil -replace NSLocalNetworkUsageDescription -string \
-  "Filza 27 uses your local network for WebDAV, SSH/SFTP, LocalDevVPN Remote Pairing, and ByeTunes on-device pairing." \
+  "Filza 27 uses your local network for WebDAV, SSH/SFTP, LocalDevVPN Remote Pairing, ByeTunes pairing, and NFCARD." \
   "$APP/Info.plist"
-plutil -replace NSBonjourServices -json '["_http._tcp","_ssh._tcp","_remotepairing._tcp","_remotepairing-pairable-host._tcp"]' "$APP/Info.plist"
+plutil -replace NSBonjourServices -json '["_http._tcp","_ssh._tcp","_remotepairing._tcp","_remotepairing-pairable-host._tcp","_aircardprobe._tcp"]' "$APP/Info.plist"
+plutil -replace NSPhotoLibraryUsageDescription -string "Filza 27 NFCARD needs photo access so you can choose artwork for Wallet cards." "$APP/Info.plist"
 plutil -remove UIBackgroundModes "$APP/Info.plist" 2>/dev/null || true
 plutil -insert UIBackgroundModes -json '["audio"]' "$APP/Info.plist"
+plutil -remove WKAppBoundDomains "$APP/Info.plist" 2>/dev/null || true
+plutil -insert WKAppBoundDomains -json '["cardmaker-omega.vercel.app"]' "$APP/Info.plist"
+plutil -remove UIApplicationShortcutItems "$APP/Info.plist" 2>/dev/null || true
+plutil -insert UIApplicationShortcutItems -json '[
+  {"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.apps-manager","UIApplicationShortcutItemTitle":"Apps Manager","UIApplicationShortcutItemIconType":"UIApplicationShortcutIconTypeFavorite"},
+  {"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.music-library","UIApplicationShortcutItemTitle":"Music","UIApplicationShortcutItemIconType":"UIApplicationShortcutIconTypeAudio"},
+  {"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.gestalt-manager","UIApplicationShortcutItemTitle":"Gestalt","UIApplicationShortcutItemIconType":"UIApplicationShortcutIconTypeTask"},
+  {"UIApplicationShortcutItemType":"com.nightvibes33.filzaslop.nfcard","UIApplicationShortcutItemTitle":"NFCARD","UIApplicationShortcutItemIconType":"UIApplicationShortcutIconTypeShare"}
+]' "$APP/Info.plist"
 
 if [[ -n "$CATALOG" ]]; then
   cp "$CATALOG" "$APP/MCMIdentifiers.plist"
@@ -113,7 +123,7 @@ BYETUNES_BINARY="$APP/Frameworks/FilzaApplySandboxExt.dylib"
   echo "packaged FilzaApplySandboxExt.dylib missing" >&2
   exit 70
 }
-for required in 'syllable-lyrics' 'media-user-token' 'Apple Music Synced' 'Pair with ByeTunes' 'LocalDevVPN Remote Pairing connected via'; do
+for required in 'syllable-lyrics' 'media-user-token' 'Apple Music Synced' 'Pair with ByeTunes' 'LocalDevVPN Remote Pairing connected via' 'NFCARDEmbeddedHostFactory' 'Pair with NFCARD' 'cardmaker-omega.vercel.app'; do
   if ! LC_ALL=C grep -aFq "$required" "$BYETUNES_BINARY"; then
     echo "required Apple Music synced-lyrics marker missing from packaged binary: $required" >&2
     exit 70
@@ -132,13 +142,29 @@ NETWORK_DESCRIPTION="$(plutil -extract NSLocalNetworkUsageDescription raw -o - "
   exit 70
 }
 BONJOUR_JSON="$(plutil -extract NSBonjourServices json -o - "$APP/Info.plist")"
-[[ "$BONJOUR_JSON" == *'"_http._tcp"'* && "$BONJOUR_JSON" == *'"_ssh._tcp"'* && "$BONJOUR_JSON" == *'"_remotepairing._tcp"'* && "$BONJOUR_JSON" == *'"_remotepairing-pairable-host._tcp"'* ]] || {
+[[ "$BONJOUR_JSON" == *'"_http._tcp"'* && "$BONJOUR_JSON" == *'"_ssh._tcp"'* && "$BONJOUR_JSON" == *'"_remotepairing._tcp"'* && "$BONJOUR_JSON" == *'"_remotepairing-pairable-host._tcp"'* && "$BONJOUR_JSON" == *'"_aircardprobe._tcp"'* ]] || {
   echo "required Bonjour service declarations missing" >&2
   exit 70
 }
 BACKGROUND_JSON="$(plutil -extract UIBackgroundModes json -o - "$APP/Info.plist")"
 [[ "$BACKGROUND_JSON" == *'"audio"'* ]] || {
   echo "background audio mode missing for on-device pairing" >&2
+  exit 70
+}
+BOUND_DOMAINS="$(plutil -extract WKAppBoundDomains json -o - "$APP/Info.plist")"
+[[ "$BOUND_DOMAINS" == *'"cardmaker-omega.vercel.app"'* ]] || {
+  echo "NFCARD Card Library app-bound domain missing" >&2
+  exit 70
+}
+SHORTCUTS_JSON="$(plutil -extract UIApplicationShortcutItems json -o - "$APP/Info.plist")"
+for shortcut in apps-manager music-library gestalt-manager nfcard; do
+  [[ "$SHORTCUTS_JSON" == *"$shortcut"* ]] || {
+    echo "missing top-level shortcut: $shortcut" >&2
+    exit 70
+  }
+done
+[[ "$SHORTCUTS_JSON" != *'"patches"'* && "$SHORTCUTS_JSON" != *'"aircard"'* ]] || {
+  echo "legacy Patches/AirCard top-level shortcut still present" >&2
   exit 70
 }
 
