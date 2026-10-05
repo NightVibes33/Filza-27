@@ -302,3 +302,443 @@ grep -Fq 'static func cleanSyncedLyrics' "$SONG"
 grep -Fq 'static var allCases: [LyricsSearchService] { [.lrclib] }' "$SONG"
 
 echo "Verified public metadata providers and LRCLIB synced/plain lyrics"
+
+
+# Filza's free rich-lyrics layer.  iOS 26.2+ / iOS 27 MusicKitInternal has a
+# custom-lyrics path distinct from subscription/catalog lyrics.  Keep AMLL or
+# LRCLIB timing as TTML in the custom library lyric field rather than claiming
+# Apple store lyrics are available.
+BUILDER="$ROOT/MediaLibraryBuilder.swift"
+SETTINGS="$ROOT/SettingsView.swift"
+for file in "$BUILDER" "$SETTINGS"; do
+  test -s "$file" || {
+    echo "missing ByeTunes rich-lyrics source: $file" >&2
+    exit 1
+  }
+done
+
+python3 - "$SONG" "$BUILDER" "$SETTINGS" <<'PY'
+from pathlib import Path
+import sys
+
+song_path = Path(sys.argv[1])
+builder_path = Path(sys.argv[2])
+settings_path = Path(sys.argv[3])
+
+sm = song_path.read_text()
+mb = builder_path.read_text()
+sv = settings_path.read_text()
+
+def replace_once(text: str, old: str, new: str, label: str) -> str:
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f"{label}: expected one match, found {count}")
+    return text.replace(old, new, 1)
+
+field_anchor = "    var lyrics: String?\n"
+field_block = """    var lyrics: String?
+    var syncedLyricsTTML: String? = nil
+    var syncedLyricsSource: String? = nil
+    var syncedLyricsTiming: String? = nil
+"""
+if "var syncedLyricsTTML: String?" not in sm:
+    sm = replace_once(sm, field_anchor, field_block, "rich lyric fields")
+
+helper_marker = "    static func fetchLyricsFromLRCLIB(title: String, artist: String, album: String, durationMs: Int) async -> String? {"
+if "static func resolveFreeSyncedLyrics(for song: SongMetadata)" not in sm:
+    helper = r'''    static func resolveFreeSyncedLyrics(for song: SongMetadata) async -> (ttml: String?, text: String?, source: String, timing: String)? {
+        if song.storeId > 0,
+           let rich = await fetchAMLLTTML(appleMusicID: song.storeId) {
+            return (rich.ttml, song.lyrics, "amll", rich.timing)
+        }
+
+        if let existing = song.lyrics?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !existing.isEmpty,
+           isSyncedLRC(existing),
+           let ttml = customTTMLFromLRC(existing, durationMs: song.durationMs) {
+            return (ttml, plainTextFromLRC(existing), "embedded-lrc", "line")
+        }
+
+        if let fetched = await fetchLyrics(
+            title: song.title,
+            artist: song.artist,
+            album: song.album,
+            durationMs: song.durationMs
+        )?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !fetched.isEmpty {
+            if isSyncedLRC(fetched),
+               let ttml = customTTMLFromLRC(fetched, durationMs: song.durationMs) {
+                Logger.shared.log("[ByeTunesRichLyrics] LRCLIB synced LRC converted to custom TTML")
+                return (ttml, plainTextFromLRC(fetched), "lrclib", "line")
+            }
+            Logger.shared.log("[ByeTunesRichLyrics] LRCLIB plain lyrics fallback")
+            return (nil, fetched, "lrclib", "plain")
+        }
+
+        if let existing = song.lyrics?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !existing.isEmpty {
+            return (nil, existing, "embedded", "plain")
+        }
+        return nil
+    }
+
+    private static func fetchAMLLTTML(appleMusicID: Int64) async -> (ttml: String, timing: String)? {
+        let base = "https://raw.githubusercontent.com/amll-dev/amll-ttml-db/refs/heads/main/am-lyrics"
+        guard let url = URL(string: "\(base)/\(appleMusicID).ttml") else { return nil }
+
+        var request = URLRequest(url: url, cachePolicy: .reloadRevalidatingCacheData, timeoutInterval: 8)
+        request.setValue("text/xml, application/xml, text/plain;q=0.9, */*;q=0.5", forHTTPHeaderField: "Accept")
+        request.setValue("ByeTunes/2.5 (Filza-27; synced-lyrics)", forHTTPHeaderField: "User-Agent")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse,
+                  http.statusCode == 200,
+                  !data.isEmpty,
+                  data.count <= 2 * 1024 * 1024,
+                  let raw = String(data: data, encoding: .utf8) else {
+                return nil
+            }
+
+            let ttml = normalizeCustomTTML(raw)
+            guard isValidCustomTTML(ttml) else {
+                Logger.shared.log("[ByeTunesRichLyrics] AMLL response rejected appleMusicId=\(appleMusicID)")
+                return nil
+            }
+
+            let wordTimed = ttml.range(
+                of: #"itunes:timing\s*=\s*[\"']Word[\"']"#,
+                options: [.regularExpression, .caseInsensitive]
+            ) != nil
+            let timing = wordTimed ? "word" : "line"
+            Logger.shared.log("[ByeTunesRichLyrics] AMLL TTML hit appleMusicId=\(appleMusicID) timing=\(timing) bytes=\(data.count)")
+            return (ttml, timing)
+        } catch {
+            Logger.shared.log("[ByeTunesRichLyrics] AMLL miss appleMusicId=\(appleMusicID): \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    static func normalizeCustomTTML(_ source: String) -> String {
+        var text = source
+            .replacingOccurrences(of: "\u{feff}", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.hasPrefix("<?xml"), let end = text.range(of: "?>") {
+            text = String(text[end.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return text
+    }
+
+    static func isValidCustomTTML(_ source: String) -> Bool {
+        let text = normalizeCustomTTML(source)
+        return (text.hasPrefix("<tt ") || text.hasPrefix("<tt>"))
+            && text.range(of: "</tt>", options: .caseInsensitive) != nil
+            && text.range(of: "<body", options: .caseInsensitive) != nil
+            && text.range(of: "<p", options: .caseInsensitive) != nil
+            && text.range(of: "begin=", options: .caseInsensitive) != nil
+    }
+
+    static func isSyncedLRC(_ source: String) -> Bool {
+        source.range(
+            of: #"(?m)^\s*(?:\[\d{1,3}:\d{2}(?:\.\d{1,3})?\])+"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    static func customTTMLFromLRC(_ lrc: String, durationMs: Int) -> String? {
+        struct TimedLine {
+            let start: Double
+            let text: String
+        }
+
+        let prefixPattern = #"^\s*((?:\[\d{1,3}:\d{2}(?:\.\d{1,3})?\]\s*)+)(.*)$"#
+        let timestampPattern = #"\[(\d{1,3}):(\d{2})(?:\.(\d{1,3}))?\]"#
+        guard let prefixRegex = try? NSRegularExpression(pattern: prefixPattern),
+              let timestampRegex = try? NSRegularExpression(pattern: timestampPattern) else {
+            return nil
+        }
+
+        var lines: [TimedLine] = []
+        for rawLine in lrc.components(separatedBy: .newlines) {
+            let full = NSRange(rawLine.startIndex..<rawLine.endIndex, in: rawLine)
+            guard let match = prefixRegex.firstMatch(in: rawLine, range: full),
+                  let prefixRange = Range(match.range(at: 1), in: rawLine),
+                  let textRange = Range(match.range(at: 2), in: rawLine) else {
+                continue
+            }
+
+            let lyric = rawLine[textRange].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !lyric.isEmpty else { continue }
+
+            let prefix = String(rawLine[prefixRange])
+            let prefixNS = NSRange(prefix.startIndex..<prefix.endIndex, in: prefix)
+            for timestamp in timestampRegex.matches(in: prefix, range: prefixNS) {
+                guard let minuteRange = Range(timestamp.range(at: 1), in: prefix),
+                      let secondRange = Range(timestamp.range(at: 2), in: prefix) else {
+                    continue
+                }
+
+                let minutes = Double(prefix[minuteRange]) ?? 0
+                let seconds = Double(prefix[secondRange]) ?? 0
+                var fraction = 0.0
+                if timestamp.range(at: 3).location != NSNotFound,
+                   let fractionRange = Range(timestamp.range(at: 3), in: prefix) {
+                    let digits = String(prefix[fractionRange])
+                    if let value = Double(digits) {
+                        if digits.count == 1 { fraction = value / 10 }
+                        else if digits.count == 2 { fraction = value / 100 }
+                        else { fraction = value / 1000 }
+                    }
+                }
+                lines.append(TimedLine(start: minutes * 60 + seconds + fraction, text: lyric))
+            }
+        }
+
+        lines.sort {
+            if $0.start == $1.start { return $0.text < $1.text }
+            return $0.start < $1.start
+        }
+        guard !lines.isEmpty else { return nil }
+
+        let trackEnd = max(Double(durationMs) / 1000, (lines.last?.start ?? 0) + 4)
+        var paragraphs: [String] = []
+        for index in lines.indices {
+            let line = lines[index]
+            let next = index + 1 < lines.count ? lines[index + 1].start : trackEnd
+            let end = max(line.start + 0.05, next)
+            paragraphs.append(
+                #"<p begin="\#(formatTTMLTime(line.start))" end="\#(formatTTMLTime(end))" itunes:key="L\#(index + 1)">\#(escapeTTMLText(line.text))</p>"#
+            )
+        }
+
+        return #"<tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xml:lang="und" itunes:timing="Line"><head><metadata/></head><body><div>"#
+            + paragraphs.joined()
+            + "</div></body></tt>"
+    }
+
+    static func plainTextFromLRC(_ source: String) -> String {
+        let timestampPattern = #"(?:\[\d{1,3}:\d{2}(?:\.\d{1,3})?\])+"#
+        let metadataPattern = #"^\s*\[(?:ar|ti|al|by|offset|re|ve|length):[^\]]*\]\s*$"#
+        let metadataRegex = try? NSRegularExpression(pattern: metadataPattern, options: [.caseInsensitive])
+
+        return source.components(separatedBy: .newlines).compactMap { raw -> String? in
+            let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty else { return nil }
+            let range = NSRange(line.startIndex..<line.endIndex, in: line)
+            if metadataRegex?.firstMatch(in: line, range: range) != nil { return nil }
+            let stripped = line.replacingOccurrences(
+                of: timestampPattern,
+                with: "",
+                options: .regularExpression
+            ).trimmingCharacters(in: .whitespaces)
+            return stripped.isEmpty ? nil : stripped
+        }.joined(separator: "\n")
+    }
+
+    private static func formatTTMLTime(_ seconds: Double) -> String {
+        let safe = max(0, seconds)
+        let minutes = Int(safe) / 60
+        let remainder = safe - Double(minutes * 60)
+        return String(format: "%d:%06.3f", minutes, remainder)
+    }
+
+    private static func escapeTTMLText(_ source: String) -> String {
+        source
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&apos;")
+    }
+
+'''
+    if helper_marker not in sm:
+        raise SystemExit("LRCLIB helper marker missing")
+    sm = sm.replace(helper_marker, helper + helper_marker, 1)
+
+enrichment_old = '''        let fetchLyricsEnabled = UserDefaults.standard.bool(forKey: "fetchLyrics")
+        let appleSubscriptionLyrics = UserDefaults.standard.bool(forKey: "appleSubscriptionLyrics")
+        if fetchLyricsEnabled && !appleSubscriptionLyrics && (song.lyrics == nil || song.lyrics?.isEmpty == true) {
+            if let fetchedLyrics = await SongMetadata.fetchLyrics(
+                title: song.title,
+                artist: song.artist,
+                album: song.album,
+                durationMs: song.durationMs
+            ) {
+                song.lyrics = fetchedLyrics
+            }
+        }
+'''
+enrichment_new = '''        let fetchLyricsEnabled = (UserDefaults.standard.object(forKey: "fetchLyrics") as? Bool) ?? true
+        if fetchLyricsEnabled,
+           let resolved = await SongMetadata.resolveFreeSyncedLyrics(for: song) {
+            if let text = resolved.text, !text.isEmpty {
+                song.lyrics = text
+            }
+            song.syncedLyricsTTML = resolved.ttml
+            song.syncedLyricsSource = resolved.source
+            song.syncedLyricsTiming = resolved.timing
+            Logger.shared.log("[ByeTunesRichLyrics] resolved source=\(resolved.source) timing=\(resolved.timing) nativeCustomTTML=\(resolved.ttml != nil)")
+        }
+'''
+if "resolveFreeSyncedLyrics(for: song)" not in sm:
+    sm = replace_once(sm, enrichment_old, enrichment_new, "rich lyric enrichment")
+
+builder_old = '''            let appleSubscriptionLyrics = UserDefaults.standard.bool(forKey: "appleSubscriptionLyrics")
+            let resolvedLyricsText = appleSubscriptionLyrics ? "" : SongMetadata.cleanLyrics(song.lyrics ?? "", title: song.title, artist: song.artist)
+            let lyricsContent = resolvedLyricsText.replacingOccurrences(of: "'", with: "''")
+
+            if columnExists(db: db, tableName: "lyrics", columnName: "downloaded_catalog_lyrics_available") {
+                try executeSQL(db, """
+                    INSERT OR REPLACE INTO lyrics (item_pid, lyrics, store_lyrics_available, time_synced_lyrics_available, downloaded_catalog_lyrics_available)
+                    VALUES (\(itemPid), '\(lyricsContent)', 1, 1, 0)
+                """)
+            } else {
+                try executeSQL(db, """
+                    INSERT OR REPLACE INTO lyrics (item_pid, lyrics, store_lyrics_available, time_synced_lyrics_available)
+                    VALUES (\(itemPid), '\(lyricsContent)', 1, 1)
+                """)
+            }
+'''
+builder_new = '''            // Community timing is custom/library TTML, not Apple subscription/store lyrics.
+            let fallbackTimedTTML = SongMetadata.customTTMLFromLRC(song.lyrics ?? "", durationMs: song.durationMs)
+            let customTimedTTML = song.syncedLyricsTTML ?? fallbackTimedTTML
+            let hasCustomTimedLyrics = customTimedTTML != nil
+            let resolvedLyricsText = customTimedTTML
+                ?? SongMetadata.cleanLyrics(song.lyrics ?? "", title: song.title, artist: song.artist)
+            let lyricsContent = resolvedLyricsText.replacingOccurrences(of: "'", with: "''")
+            let storeLyricsAvailable = 0
+            let timeSyncedLyricsAvailable = hasCustomTimedLyrics ? 1 : 0
+
+            Logger.shared.log("[ByeTunesRichLyrics] library write source=\(song.syncedLyricsSource ?? (hasCustomTimedLyrics ? "lrc" : "plain")) timing=\(song.syncedLyricsTiming ?? (hasCustomTimedLyrics ? "line" : "plain")) customTTML=\(hasCustomTimedLyrics)")
+
+            if columnExists(db: db, tableName: "lyrics", columnName: "downloaded_catalog_lyrics_available") {
+                try executeSQL(db, """
+                    INSERT OR REPLACE INTO lyrics (item_pid, lyrics, store_lyrics_available, time_synced_lyrics_available, downloaded_catalog_lyrics_available)
+                    VALUES (\(itemPid), '\(lyricsContent)', \(storeLyricsAvailable), \(timeSyncedLyricsAvailable), 0)
+                """)
+            } else {
+                try executeSQL(db, """
+                    INSERT OR REPLACE INTO lyrics (item_pid, lyrics, store_lyrics_available, time_synced_lyrics_available)
+                    VALUES (\(itemPid), '\(lyricsContent)', \(storeLyricsAvailable), \(timeSyncedLyricsAvailable))
+                """)
+            }
+'''
+if "let hasCustomTimedLyrics = customTimedTTML != nil" not in mb:
+    mb = replace_once(mb, builder_old, builder_new, "custom TTML database write")
+
+settings_start = '                        if !appleSubscriptionLyrics {\n'
+settings_end = '                        if metadataSource == "itunes" || metadataSource == "apple" || (metadataSource == "local" && appleRichMetadata) {\n'
+if "Free synced lyric pipeline" not in sv:
+    start = sv.find(settings_start)
+    end = sv.find(settings_end, start)
+    if start < 0 or end < 0 or end <= start:
+        raise SystemExit("settings lyric section anchors missing")
+    replacement = '''                        Divider().padding(.leading, 56)
+
+                        Toggle(isOn: $fetchLyrics) {
+                            HStack {
+                                Image(systemName: "quote.bubble.fill")
+                                    .font(.body)
+                                    .foregroundColor(.primary)
+                                    .frame(width: 28)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Synced Lyrics")
+                                        .font(.body)
+                                    Text("AMLL word-sync with LRCLIB fallback.")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+
+                                Spacer()
+
+                                Button {
+                                    showInfo(
+                                        "Synced Lyrics",
+                                        "Free lyric pipeline: AMLL TTML by Apple Music catalog ID first, then LRCLIB synced LRC, then plain lyrics. No Apple Music subscription, Apple login, media-user-token, or music.apple.com cookie is used."
+                                    )
+                                } label: {
+                                    infoButton
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 16)
+
+                        Divider().padding(.leading, 56)
+
+                        HStack {
+                            Image(systemName: "waveform.badge.magnifyingglass")
+                                .font(.body)
+                                .foregroundColor(.primary)
+                                .frame(width: 28)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Free synced lyric pipeline")
+                                    .font(.body)
+                                Text("AMLL → LRCLIB → plain lyrics")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                        }
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 16)
+
+'''
+    sv = sv[:start] + replacement + sv[end:]
+
+sv = sv.replace(
+    '@AppStorage("fetchLyrics") private var fetchLyrics = false',
+    '@AppStorage("fetchLyrics") private var fetchLyrics = true',
+    1,
+)
+sv = sv.replace(
+    '    @AppStorage("appleSubscriptionLyrics") private var appleSubscriptionLyrics = false\n',
+    '',
+    1,
+)
+
+required = (
+    ("var syncedLyricsTTML: String?", sm),
+    ("resolveFreeSyncedLyrics(for: song)", sm),
+    ("https://raw.githubusercontent.com/amll-dev/amll-ttml-db/refs/heads/main/am-lyrics", sm),
+    ('itunes:timing="Line"', sm),
+    ("let hasCustomTimedLyrics = customTimedTTML != nil", mb),
+    ("let storeLyricsAvailable = 0", mb),
+    ("Free synced lyric pipeline", sv),
+    ("AMLL → LRCLIB → plain lyrics", sv),
+)
+for needle, text in required:
+    if needle not in text:
+        raise SystemExit(f"required rich synced lyric marker missing: {needle}")
+
+if "Apple Music Subscription Lyrics" in sv:
+    raise SystemExit("subscription lyrics UI remains")
+if "appleSubscriptionLyrics" in sv:
+    raise SystemExit("legacy appleSubscriptionLyrics setting remains")
+if "appleSubscriptionLyrics" in sm:
+    raise SystemExit("legacy appleSubscriptionLyrics routing remains")
+if "resolvedLyricsText = appleSubscriptionLyrics" in mb:
+    raise SystemExit("subscription lyrics database branch remains")
+
+song_path.write_text(sm)
+builder_path.write_text(mb)
+settings_path.write_text(sv)
+print("Applied free AMLL/LRCLIB custom-TTML pipeline")
+PY
+
+grep -Fq 'var syncedLyricsTTML: String?' "$SONG"
+grep -Fq 'resolveFreeSyncedLyrics(for: song)' "$SONG"
+grep -Fq 'https://raw.githubusercontent.com/amll-dev/amll-ttml-db/refs/heads/main/am-lyrics' "$SONG"
+grep -Fq 'itunes:timing="Line"' "$SONG"
+grep -Fq 'let hasCustomTimedLyrics = customTimedTTML != nil' "$BUILDER"
+grep -Fq 'let storeLyricsAvailable = 0' "$BUILDER"
+grep -Fq 'Free synced lyric pipeline' "$SETTINGS"
+! grep -Fq 'Apple Music Subscription Lyrics' "$SETTINGS"
+! grep -Fq 'appleSubscriptionLyrics' "$SETTINGS"
+! grep -Fq 'appleSubscriptionLyrics' "$SONG"
+
+echo "Verified free rich synced-lyrics integration"
