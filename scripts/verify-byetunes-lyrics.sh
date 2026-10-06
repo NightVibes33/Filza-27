@@ -14,6 +14,10 @@ for name in methods:
     if marker not in source: marker=f'    private static func {name}('
     start=source.index(marker);end=source.index('\n    }',start)+len('\n    }')
     blocks.append(source[start:end])
+if 'static func plainTextFromTTML(' in source:
+    for marker in ['    static func plainTextFromTTML(', '    private final class AMLLTextParser:']:
+        start=source.index(marker);end=source.index('\n    }',start)+len('\n    }')
+        blocks.append(source[start:end])
 tests=r'''
 let lrc = "[00:20.13] Stay\n[00:24.46] It's [still] you & me\n[00:29.06]\n[00:33.21] Stay"
 let payload = SongMetadata.libraryLyricsPayload(text: lrc, timedTTML: nil, durationMs: 40000)
@@ -36,6 +40,14 @@ let repeated = SongMetadata.customTTMLFromLRC("[00:01.00][00:03.00] Stay", durat
 precondition(repeated.contains("begin=\"00:00:01.000\""))
 precondition(repeated.contains("begin=\"00:00:03.000\""))
 print("PASS: timed save payloads, TTML XML/clock times, silent gaps, repeats, Unicode-safe text, and plain/empty flags")
+'''
+if 'static func plainTextFromTTML(' in source:
+    tests += r'''
+let rich = "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div><p begin=\"00:01.000\" end=\"00:03.000\"><span begin=\"00:01.000\" end=\"00:02.000\">Stay </span><span begin=\"00:02.000\" end=\"00:03.000\">[here] &amp; sing</span></p><p begin=\"00:04.000\" end=\"00:05.000\">Again</p></div></body></tt>"
+precondition(SongMetadata.plainTextFromTTML(rich) == "Stay [here] & sing\nAgain")
+precondition(SongMetadata.plainTextFromTTML("<tt><body>") == nil)
+precondition(SongMetadata.libraryLyricsPayload(text: "Stay [here] & sing\nAgain", timedTTML: rich, durationMs: 5000).text == rich)
+print("PASS: AMLL text extraction and preservation of selected word-timed TTML")
 '''
 Path(sys.argv[2]).write_text('import Foundation\n#if canImport(FoundationXML)\nimport FoundationXML\n#endif\nstruct SongMetadata {\n'+'\n'.join(blocks)+'\n}\n'+tests)
 PY

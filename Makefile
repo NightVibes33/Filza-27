@@ -160,6 +160,7 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/patch-byetunes-pairing-and-tabs.sh
 	@bash scripts/patch-byetunes-settings-cleanup.sh
 	@bash scripts/patch-byetunes-lyric-integrity.sh
+	@bash scripts/patch-byetunes-amll-picker.sh
 	@bash scripts/verify-byetunes-lyrics.sh
 	@test -s "$(IDEVICE_STATIC)" || (echo "Missing $(IDEVICE_STATIC). Run: bash scripts/build-idevice.sh" >&2; exit 1)
 	@test -s "$(NFCARD_FFI)/lib/libairlift_ffi.a" || (echo "Missing NFCARD AirliftFFI runtime" >&2; exit 1)
@@ -202,7 +203,7 @@ before-FilzaApplySandboxExt-all::
 	@grep -Fq 'itunes:timing="Line"' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "LRC to Apple TTML conversion missing" >&2; exit 1)
 	@grep -Fq 'let hasCustomTimedLyrics = lyricPayload.timed' "$(BYETUNES_ROOT)/MediaLibraryBuilder.swift" || (echo "custom timed lyric DB routing missing" >&2; exit 1)
 	@grep -Fq 'let storeLyricsAvailable = 0' "$(BYETUNES_ROOT)/MediaLibraryBuilder.swift" || (echo "community lyrics incorrectly marked as Apple store lyrics" >&2; exit 1)
-	@grep -Fq 'Free synced lyric pipeline' "$(BYETUNES_ROOT)/SettingsView.swift" || (echo "free synced lyrics UI missing" >&2; exit 1)
+	@grep -Fq 'Picker("Lyrics Provider"' "$(BYETUNES_ROOT)/SettingsView.swift" || (echo "free synced lyrics UI missing" >&2; exit 1)
 	@! grep -Fq 'Apple Music Subscription Lyrics' "$(BYETUNES_ROOT)/SettingsView.swift" || (echo "subscription-only lyrics UI returned" >&2; exit 1)
 	@! grep -Fq 'appleSubscriptionLyrics' "$(BYETUNES_ROOT)/SettingsView.swift" || (echo "legacy subscription lyrics setting returned" >&2; exit 1)
 	@! grep -Fq 'appleSubscriptionLyrics' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "legacy subscription lyrics routing returned" >&2; exit 1)
