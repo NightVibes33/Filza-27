@@ -48,7 +48,7 @@ if 'static func plainTextFromTTML(' in source:
 let rich = "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div><p begin=\"00:01.000\" end=\"00:03.000\"><span begin=\"00:01.000\" end=\"00:02.000\">Stay </span><span begin=\"00:02.000\" end=\"00:03.000\">[here] &amp; sing</span></p><p begin=\"00:04.000\" end=\"00:05.000\">Again</p></div></body></tt>"
 precondition(SongMetadata.plainTextFromTTML(rich) == "Stay [here] & sing\nAgain")
 precondition(SongMetadata.plainTextFromTTML("<tt><body>") == nil)
-precondition(SongMetadata.libraryLyricsPayload(text: "Stay [here] & sing\nAgain", timedTTML: rich, durationMs: 5000).text == rich)
+precondition(SongMetadata.libraryLyricsPayload(text: "Stay [here] & sing\nAgain", timedTTML: rich, durationMs: 5000).text == SongMetadata.normalizeCustomTTML(rich))
 print("PASS: AMLL text extraction and preservation of selected word-timed TTML")
 '''
 if 'static func parsePublicWordLyrics(' in source:
