@@ -164,6 +164,7 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/patch-byetunes-free-providers.sh
 	@bash scripts/patch-byetunes-album-color-save.sh
 	@bash scripts/patch-byetunes-lyric-roundtrip.sh
+	@bash scripts/patch-byetunes-native-lyric-text.sh
 	@bash scripts/verify-byetunes-lyrics.sh
 	@bash scripts/verify-byetunes-album-color.sh
 	@test -s "$(IDEVICE_STATIC)" || (echo "Missing $(IDEVICE_STATIC). Run: bash scripts/build-idevice.sh" >&2; exit 1)

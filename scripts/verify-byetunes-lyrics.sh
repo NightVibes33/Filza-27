@@ -12,6 +12,8 @@ if 'static func parsePublicWordLyrics(' in source:
     methods += ['parsePublicWordLyrics', 'lyricIdentity']
 if 'static func editorLyricsState(' in source:
     methods += ['editorLyricsState']
+if 'static func nativeLibraryLyricsPayload(' in source:
+    methods += ['nativeLibraryLyricsPayload']
 blocks=[]
 for name in methods:
     marker=f'    static func {name}('
@@ -79,6 +81,17 @@ precondition(savedAgain.text == restored.ttml)
 precondition(SongMetadata.editorLyricsState(text: savedAgain.text, timedTTML: nil).text == restored.text)
 precondition(SongMetadata.editorLyricsState(text: rich, timedTTML: nil).timing == "word")
 print("PASS: saved TTML reopens as readable lyrics, timing survives repeated saves, decimal seconds and accurate line/word classification")
+'''
+if 'static func nativeLibraryLyricsPayload(' in source:
+    tests += r'''
+let metadataTTML = "<tt xmlns=\"http://www.w3.org/ns/ttml\"><head><metadata><songwriter>Credit Name</songwriter></metadata></head><body><div><p begin=\"1.0\" end=\"2.0\">Lost in the fog</p><p begin=\"2.0\" end=\"3.0\">I fear what comes next</p></div></body></tt>"
+let nativeText = SongMetadata.nativeLibraryLyricsPayload(text: nil, timedTTML: metadataTTML, durationMs: 4000)
+precondition(nativeText.text == "Lost in the fog\nI fear what comes next")
+precondition(!nativeText.timed && !nativeText.text.contains("Credit Name") && !nativeText.text.contains("<"))
+let nativeLRC = SongMetadata.nativeLibraryLyricsPayload(text: "[00:01.00] One\n[00:02.00] Two", timedTTML: nil, durationMs: 3000)
+precondition(nativeLRC.text == "One\nTwo" && !nativeLRC.timed)
+precondition(SongMetadata.editorLyricsState(text: nil, timedTTML: metadataTTML).ttml != nil)
+print("PASS: native display text preserves line breaks, excludes credits/XML, and avoids unsupported timed flag while retaining rich documents")
 '''
 Path(sys.argv[2]).write_text('import Foundation\n#if canImport(FoundationXML)\nimport FoundationXML\n#endif\nstruct SongMetadata {\n'+'\n'.join(blocks)+'\n}\n'+tests)
 PY
