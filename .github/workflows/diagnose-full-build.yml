@@ -21,6 +21,9 @@ jobs:
       MBEDTLS_COMMIT: 068ff080b369adfac81509f9b57b2afabaf82dc5
       WOLFSSH_COMMIT: e7c8dc2c2c54e5f0f2986be592e2243725a4dd33
       WOLFSSL_COMMIT: 9ab8a4b19debdade06b10d30cf70167de8f9b915
+      NFCARD_PIN: 4dbacf6b503d861dba605286f9ee6f7904c8a81f
+      AIRCARD_PIN: 097a058c984ffc33ccb697b9dfe8058be3e86244
+      NFCARD_CACHE_SCHEMA: v1
       BASE_IPA_SHA256: b11ce30a2db6f6bc77773ed30bdb855d7c847830891b14d21230f2d893d5f223
       BASE_IPA_URL: https://github.com/0xjohnnydev/FilzaSlop/releases/download/v1.0.2/FilzaSlop-v1.0.2-unsigned.ipa
 
@@ -110,6 +113,50 @@ jobs:
           test -s Vendor/wolfssh/include/wolfssl/wolfcrypt/ecc.h
           test -s Vendor/wolfssh/lib/libwolfssh.a
           test -s Vendor/wolfssh/lib/libwolfssl.a
+
+      - name: Restore staged NFCARD + AirliftFFI cache
+        id: nfcard-runtime-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ThirdParty/NFCARD/ios-app
+            ThirdParty/NFCARD/AirliftFFI
+            ThirdParty/NFCARD/NFCARD_PINNED_REVISION
+            ThirdParty/NFCARD/AIRCARD_PINNED_REVISION
+          key: nfcard-runtime-${{ env.NFCARD_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-xcode26.2-ios17-${{ env.NFCARD_PIN }}-${{ env.AIRCARD_PIN }}-${{ hashFiles('scripts/stage-nfcard.sh', 'scripts/build-nfcard-ffi.sh') }}
+
+      - name: Build staged NFCARD + AirliftFFI cache
+        if: steps.nfcard-runtime-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          bash scripts/stage-nfcard.sh
+          bash scripts/build-nfcard-ffi.sh "$GITHUB_WORKSPACE/ThirdParty/NFCARD" "$GITHUB_WORKSPACE/ThirdParty/NFCARD/AirliftFFI"
+
+      - name: Verify staged NFCARD + AirliftFFI cache
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test "$(cat ThirdParty/NFCARD/NFCARD_PINNED_REVISION)" = "$NFCARD_PIN"
+          test "$(cat ThirdParty/NFCARD/AIRCARD_PINNED_REVISION)" = "$AIRCARD_PIN"
+          test -s ThirdParty/NFCARD/ios-app/NFCARDContentView.swift
+          test -s ThirdParty/NFCARD/ios-app/AppViewModel.swift
+          test -s ThirdParty/NFCARD/AirliftFFI/lib/libairlift_ffi.a
+          test -s ThirdParty/NFCARD/AirliftFFI/include/AirliftFFI/airlift.h
+          grep -Fq 'al_pairing_run_host' ThirdParty/NFCARD/AirliftFFI/include/AirliftFFI/airlift.h
+          grep -Fq 'al_connection_endpoint_set' ThirdParty/NFCARD/AirliftFFI/include/AirliftFFI/airlift.h
+          grep -Fq 'al_syslog_stream_start' ThirdParty/NFCARD/AirliftFFI/include/AirliftFFI/airlift.h
+
+      - name: Save staged NFCARD + AirliftFFI cache
+        if: steps.nfcard-runtime-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ThirdParty/NFCARD/ios-app
+            ThirdParty/NFCARD/AirliftFFI
+            ThirdParty/NFCARD/NFCARD_PINNED_REVISION
+            ThirdParty/NFCARD/AIRCARD_PINNED_REVISION
+          key: ${{ steps.nfcard-runtime-cache.outputs.cache-primary-key }}
 
       - name: Verify NFCARD integration pins
         shell: bash
