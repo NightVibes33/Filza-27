@@ -717,6 +717,16 @@ sv = sv.replace(
     '',
     1,
 )
+sv = sv.replace(
+    '                                appleSubscriptionLyrics: $appleSubscriptionLyrics,\n',
+    '',
+    1,
+)
+sv = sv.replace(
+    '    @Binding var appleSubscriptionLyrics: Bool\n',
+    '',
+    1,
+)
 
 required = (
     ("var syncedLyricsTTML: String?", sm),
