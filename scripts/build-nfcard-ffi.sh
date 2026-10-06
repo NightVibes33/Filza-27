@@ -4,6 +4,16 @@ set -euo pipefail
 ROOT="${1:?NFCARD source root required}"
 OUT="${2:?output root required}"
 
+if [[ -s "$OUT/lib/libairlift_ffi.a" &&
+      -s "$OUT/include/AirliftFFI/airlift.h" &&
+      -s "$OUT/include/AirliftFFI/module.modulemap" ]]; then
+  grep -Fq 'al_pairing_run_host' "$OUT/include/AirliftFFI/airlift.h"
+  grep -Fq 'al_connection_endpoint_set' "$OUT/include/AirliftFFI/airlift.h"
+  grep -Fq 'al_syslog_stream_start' "$OUT/include/AirliftFFI/airlift.h"
+  echo "Reused cached NFCARD AirliftFFI runtime"
+  exit 0
+fi
+
 export IPHONEOS_DEPLOYMENT_TARGET=17.0
 source "$HOME/.cargo/env" 2>/dev/null || true
 rustup target add aarch64-apple-ios >/dev/null 2>&1 || true
