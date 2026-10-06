@@ -37,6 +37,6 @@ precondition(repeated.contains("begin=\"00:00:01.000\""))
 precondition(repeated.contains("begin=\"00:00:03.000\""))
 print("PASS: timed save payloads, TTML XML/clock times, silent gaps, repeats, Unicode-safe text, and plain/empty flags")
 '''
-Path(sys.argv[2]).write_text('import Foundation\nimport FoundationXML\nstruct SongMetadata {\n'+'\n'.join(blocks)+'\n}\n'+tests)
+Path(sys.argv[2]).write_text('import Foundation\n#if canImport(FoundationXML)\nimport FoundationXML\n#endif\nstruct SongMetadata {\n'+'\n'.join(blocks)+'\n}\n'+tests)
 PY
 swift -swift-version 5 "$TEST_SOURCE"
