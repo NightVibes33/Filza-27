@@ -335,13 +335,19 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
         raise SystemExit(f"{label}: expected one match, found {count}")
     return text.replace(old, new, 1)
 
-field_anchor = """    var trackNumber: Int?
+field_anchor = """    var localFileHasSpatialAudio: Bool = false
+    
+    var trackNumber: Int?
     var trackCount: Int?
     var discNumber: Int?
     var discCount: Int?
     var lyrics: String?
+    
+    var storeId: Int64 = 0
 """
-field_block = """    var trackNumber: Int?
+field_block = """    var localFileHasSpatialAudio: Bool = false
+    
+    var trackNumber: Int?
     var trackCount: Int?
     var discNumber: Int?
     var discCount: Int?
@@ -349,6 +355,8 @@ field_block = """    var trackNumber: Int?
     var syncedLyricsTTML: String? = nil
     var syncedLyricsSource: String? = nil
     var syncedLyricsTiming: String? = nil
+    
+    var storeId: Int64 = 0
 """
 if "var syncedLyricsTTML: String?" not in sm:
     sm = replace_once(sm, field_anchor, field_block, "SongMetadata rich lyric fields")
