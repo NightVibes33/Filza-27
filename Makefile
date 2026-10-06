@@ -159,6 +159,8 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/patch-byetunes-rppairing-localdevvpn.sh
 	@bash scripts/patch-byetunes-pairing-and-tabs.sh
 	@bash scripts/patch-byetunes-settings-cleanup.sh
+	@bash scripts/patch-byetunes-lyric-integrity.sh
+	@bash scripts/verify-byetunes-lyrics.sh
 	@test -s "$(IDEVICE_STATIC)" || (echo "Missing $(IDEVICE_STATIC). Run: bash scripts/build-idevice.sh" >&2; exit 1)
 	@test -s "$(NFCARD_FFI)/lib/libairlift_ffi.a" || (echo "Missing NFCARD AirliftFFI runtime" >&2; exit 1)
 	@grep -Fq 'al_pairing_run_host' "$(NFCARD_FFI)/include/AirliftFFI/airlift.h" || (echo "NFCARD pairing-host API missing" >&2; exit 1)
@@ -198,7 +200,7 @@ before-FilzaApplySandboxExt-all::
 	@grep -Fq 'resolveFreeSyncedLyrics(for: song)' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "free synced lyric resolver missing" >&2; exit 1)
 	@grep -Fq 'https://raw.githubusercontent.com/amll-dev/amll-ttml-db/refs/heads/main/am-lyrics' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "AMLL Apple-ID provider missing" >&2; exit 1)
 	@grep -Fq 'itunes:timing="Line"' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "LRC to Apple TTML conversion missing" >&2; exit 1)
-	@grep -Fq 'let hasCustomTimedLyrics = customTimedTTML != nil' "$(BYETUNES_ROOT)/MediaLibraryBuilder.swift" || (echo "custom timed lyric DB routing missing" >&2; exit 1)
+	@grep -Fq 'let hasCustomTimedLyrics = lyricPayload.timed' "$(BYETUNES_ROOT)/MediaLibraryBuilder.swift" || (echo "custom timed lyric DB routing missing" >&2; exit 1)
 	@grep -Fq 'let storeLyricsAvailable = 0' "$(BYETUNES_ROOT)/MediaLibraryBuilder.swift" || (echo "community lyrics incorrectly marked as Apple store lyrics" >&2; exit 1)
 	@grep -Fq 'Free synced lyric pipeline' "$(BYETUNES_ROOT)/SettingsView.swift" || (echo "free synced lyrics UI missing" >&2; exit 1)
 	@! grep -Fq 'Apple Music Subscription Lyrics' "$(BYETUNES_ROOT)/SettingsView.swift" || (echo "subscription-only lyrics UI returned" >&2; exit 1)
