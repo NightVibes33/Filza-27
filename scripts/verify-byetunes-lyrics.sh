@@ -8,6 +8,8 @@ from pathlib import Path
 import sys
 source=Path(sys.argv[1]).read_text()
 methods=['cleanLyrics','plainTextFromLRC','normalizeCustomTTML','isValidCustomTTML','isSyncedLRC','libraryLyricsPayload','customTTMLFromLRC','formatTTMLTime','escapeTTMLText']
+if 'static func parsePublicWordLyrics(' in source:
+    methods += ['parsePublicWordLyrics', 'lyricIdentity']
 blocks=[]
 for name in methods:
     marker=f'    static func {name}('
@@ -48,6 +50,19 @@ precondition(SongMetadata.plainTextFromTTML(rich) == "Stay [here] & sing\nAgain"
 precondition(SongMetadata.plainTextFromTTML("<tt><body>") == nil)
 precondition(SongMetadata.libraryLyricsPayload(text: "Stay [here] & sing\nAgain", timedTTML: rich, durationMs: 5000).text == rich)
 print("PASS: AMLL text extraction and preservation of selected word-timed TTML")
+'''
+if 'static func parsePublicWordLyrics(' in source:
+    tests += r'''
+let fixture = Data(#"{"type":"Word","processingTime":{"selectedSongMetadata":{"title":"Stay","artist":"Test","duration":4}},"lyrics":[{"time":1000,"duration":2000,"syllabus":[{"time":1000,"duration":1000,"text":"Stay "},{"time":2000,"duration":1000,"text":"& sing"}]}]}"#.utf8)
+let wordDocument = SongMetadata.parsePublicWordLyrics(data: fixture, title: "Stay", artist: "Test", durationMs: 4000)!
+precondition(wordDocument.timing == "word")
+precondition(SongMetadata.plainTextFromTTML(wordDocument.ttml) == "Stay & sing")
+precondition(wordDocument.ttml.contains("begin=\"00:00:02.000\""))
+precondition(SongMetadata.parsePublicWordLyrics(data: fixture, title: "Stay (Live)", artist: "Test", durationMs: 4000) == nil)
+precondition(SongMetadata.parsePublicWordLyrics(data: fixture, title: "Stay", artist: "Cover Artist", durationMs: 4000) == nil)
+precondition(SongMetadata.parsePublicWordLyrics(data: fixture, title: "Stay", artist: "Test", durationMs: 8000) == nil)
+precondition(SongMetadata.parsePublicWordLyrics(data: Data("{}".utf8), title: "Stay", artist: "Test", durationMs: 4000) == nil)
+print("PASS: public word timing, whitespace, recording identity, duration and malformed response rejection")
 '''
 Path(sys.argv[2]).write_text('import Foundation\n#if canImport(FoundationXML)\nimport FoundationXML\n#endif\nstruct SongMetadata {\n'+'\n'.join(blocks)+'\n}\n'+tests)
 PY
