@@ -93,6 +93,8 @@ precondition(nativeLRC.text == "One\nTwo" && !nativeLRC.timed)
 precondition(SongMetadata.editorLyricsState(text: nil, timedTTML: metadataTTML).ttml != nil)
 print("PASS: native display text preserves line breaks, excludes credits/XML, and avoids unsupported timed flag while retaining rich documents")
 '''
+if '// Provider audit: primary lyrics only' in source:
+    tests += Path('scripts/fixtures/lyric-provider-audit.swift').read_text()
 Path(sys.argv[2]).write_text('import Foundation\n#if canImport(FoundationXML)\nimport FoundationXML\n#endif\nstruct SongMetadata {\n'+'\n'.join(blocks)+'\n}\n'+tests)
 PY
 swift -swift-version 5 "$TEST_SOURCE"
