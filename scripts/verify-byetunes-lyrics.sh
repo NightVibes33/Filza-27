@@ -10,6 +10,8 @@ source=Path(sys.argv[1]).read_text()
 methods=['cleanLyrics','plainTextFromLRC','normalizeCustomTTML','isValidCustomTTML','isSyncedLRC','libraryLyricsPayload','customTTMLFromLRC','formatTTMLTime','escapeTTMLText']
 if 'static func parsePublicWordLyrics(' in source:
     methods += ['parsePublicWordLyrics', 'lyricIdentity']
+if 'static func editorLyricsState(' in source:
+    methods += ['editorLyricsState']
 blocks=[]
 for name in methods:
     marker=f'    static func {name}('
@@ -63,6 +65,20 @@ precondition(SongMetadata.parsePublicWordLyrics(data: fixture, title: "Stay", ar
 precondition(SongMetadata.parsePublicWordLyrics(data: fixture, title: "Stay", artist: "Test", durationMs: 8000) == nil)
 precondition(SongMetadata.parsePublicWordLyrics(data: Data("{}".utf8), title: "Stay", artist: "Test", durationMs: 4000) == nil)
 print("PASS: public word timing, whitespace, recording identity, duration and malformed response rejection")
+'''
+if 'static func editorLyricsState(' in source:
+    tests += r'''
+let secondsTTML = "<tt xmlns=\"http://www.w3.org/ns/ttml\" xmlns:lrc=\"http://lrc.red/lyric-ttml-internal\" lrc:timing=\"Line\"><body dur=\"3:41.107\"><div><p begin=\"23.978\" end=\"28.613\">I can't escape this hell</p><p begin=\"00:01:03.706\" end=\"00:01:07.039\">Help me believe</p></div></body></tt>"
+let restored = SongMetadata.editorLyricsState(text: secondsTTML, timedTTML: nil)
+precondition(restored.text == "I can't escape this hell\nHelp me believe")
+precondition(restored.timing == "line")
+precondition(restored.ttml!.contains("begin=\"00:00:23.978\""))
+precondition(restored.ttml!.contains("end=\"00:00:28.613\""))
+let savedAgain = SongMetadata.libraryLyricsPayload(text: restored.text, timedTTML: restored.ttml, durationMs: 221107)
+precondition(savedAgain.text == restored.ttml)
+precondition(SongMetadata.editorLyricsState(text: savedAgain.text, timedTTML: nil).text == restored.text)
+precondition(SongMetadata.editorLyricsState(text: rich, timedTTML: nil).timing == "word")
+print("PASS: saved TTML reopens as readable lyrics, timing survives repeated saves, decimal seconds and accurate line/word classification")
 '''
 Path(sys.argv[2]).write_text('import Foundation\n#if canImport(FoundationXML)\nimport FoundationXML\n#endif\nstruct SongMetadata {\n'+'\n'.join(blocks)+'\n}\n'+tests)
 PY
