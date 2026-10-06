@@ -161,7 +161,7 @@ jobs:
           grep -aFq 'https://raw.githubusercontent.com/amll-dev/amll-ttml-db/refs/heads/main/am-lyrics' "$DYLIB"
           grep -aFq 'itunes:timing="Line"' "$DYLIB"
           grep -aFq '[ByeTunesRichLyrics] AMLL TTML hit appleMusicId=' "$DYLIB"
-          grep -aFq 'Free synced lyric pipeline' "$DYLIB"
+          grep -aFq 'Lyrics Provider' "$DYLIB"
           ! grep -aFq 'Apple Music Subscription Lyrics' "$DYLIB"
           ! grep -aFq 'appleSubscriptionLyrics' "$DYLIB"
           ! grep -aFq 'media-user-token' "$DYLIB"
