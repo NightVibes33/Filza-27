@@ -208,7 +208,14 @@ jobs:
           grep -aFq 'https://raw.githubusercontent.com/amll-dev/amll-ttml-db/refs/heads/main/am-lyrics' "$DYLIB"
           grep -aFq 'itunes:timing="Line"' "$DYLIB"
           grep -aFq '[ByeTunesRichLyrics] AMLL TTML hit appleMusicId=' "$DYLIB"
-          grep -aFq 'Lyrics Provider' "$DYLIB"
+          # Short SwiftUI strings may use Swift's inline string representation.
+          # Verify generated picker source and the compiled provider implementation.
+          grep -Fq 'Picker("Lyrics Provider", selection: $freeLyricsProvider)' ByeTunes/MusicManager/SettingsView.swift
+          grep -Fq '.tag("lyricsplus")' ByeTunes/MusicManager/SettingsView.swift
+          grep -Fq '.tag("lrcred")' ByeTunes/MusicManager/SettingsView.swift
+          grep -Fq '.tag("amll")' ByeTunes/MusicManager/SettingsView.swift
+          grep -Fq '.tag("lrclib")' ByeTunes/MusicManager/SettingsView.swift
+          grep -aFq 'https://lyricsplus.prjktla.my.id/v2/lyrics/get' "$DYLIB"
           ! grep -aFq 'Apple Music Subscription Lyrics' "$DYLIB"
           ! grep -aFq 'appleSubscriptionLyrics' "$DYLIB"
           ! grep -aFq 'media-user-token' "$DYLIB"
