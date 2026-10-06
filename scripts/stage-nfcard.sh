@@ -7,6 +7,29 @@ PATCH_WORK="$ROOT/.theos/nfcard-patch-source"
 NFCARD_PIN="4dbacf6b503d861dba605286f9ee6f7904c8a81f"
 AIRCARD_PIN="097a058c984ffc33ccb697b9dfe8058be3e86244"
 
+# CI restores only the staged iOS sources + final AirliftFFI archive, not Cargo's
+# huge target directory. If those immutable pinned outputs are present and
+# self-consistent, do not reclone/repatch/rebuild them on every app build.
+if [[ -f "$DEST/NFCARD_PINNED_REVISION" &&
+      -f "$DEST/AIRCARD_PINNED_REVISION" &&
+      "$(cat "$DEST/NFCARD_PINNED_REVISION" 2>/dev/null)" == "$NFCARD_PIN" &&
+      "$(cat "$DEST/AIRCARD_PINNED_REVISION" 2>/dev/null)" == "$AIRCARD_PIN" &&
+      -s "$DEST/ios-app/NFCARDContentView.swift" &&
+      -s "$DEST/ios-app/AppViewModel.swift" &&
+      -s "$DEST/ios-app/PairingController.swift" &&
+      -s "$DEST/ios-app/AirCardLibrary.swift" &&
+      -s "$DEST/ios-app/RemotePairingPortDiscovery.swift" &&
+      -s "$DEST/AirliftFFI/lib/libairlift_ffi.a" &&
+      -s "$DEST/AirliftFFI/include/AirliftFFI/airlift.h" &&
+      -s "$DEST/AirliftFFI/include/AirliftFFI/module.modulemap" ]]; then
+  grep -Fq 'struct NFCARDContentView: View' "$DEST/ios-app/NFCARDContentView.swift"
+  grep -Fq 'al_pairing_run_host' "$DEST/AirliftFFI/include/AirliftFFI/airlift.h"
+  grep -Fq 'al_connection_endpoint_set' "$DEST/AirliftFFI/include/AirliftFFI/airlift.h"
+  grep -Fq 'al_syslog_stream_start' "$DEST/AirliftFFI/include/AirliftFFI/airlift.h"
+  echo "Reused cached staged NFCARD $NFCARD_PIN on AirCard upstream $AIRCARD_PIN"
+  exit 0
+fi
+
 rm -rf "$DEST" "$PATCH_WORK"
 mkdir -p "$ROOT/.theos"
 
