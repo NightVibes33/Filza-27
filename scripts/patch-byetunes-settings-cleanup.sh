@@ -37,7 +37,29 @@ if 'Text("Version")' in s:
     s = s[:start] + s[next_row:]
 for marker in ['Text("Music Formats")', 'Text("Ringtone Formats")']:
     if marker not in s: raise SystemExit(f'Preserved row missing: {marker}')
+# This host has no Download tab; keep only metadata settings.
+start = s.find('                    Text("DOWNLOADS")')
+if start >= 0:
+    end = s.index('                    }\n                    .frame(width: max(proxy.size.width', start)
+    s = s[:start] + s[end:]
+s = s.replace('Metadata & Downloads', 'Metadata').replace('Text("Metadata & Lyrics")', 'Text("Metadata")')
+# Local Files is already a source option. A separate persisted override could
+# silently disable the online provider selected by the user.
+marker = '                        Toggle(isOn: $keepLocalMetadataForLocalFiles) {'
+if marker in s:
+    start = s.rfind('                        Divider().padding(.leading, 56)', 0, s.index(marker))
+    end = s.index('                        if metadataSource != "apple" {', s.index(marker))
+    s = s[:start] + s[end:]
 p.write_text(s)
+
+music = root / 'MusicView.swift'
+ms = music.read_text()
+ms = ms.replace('if !UserDefaults.standard.bool(forKey: "keepLocalMetadataForLocalFiles") {', 'if (UserDefaults.standard.string(forKey: "metadataSource") ?? "apple") != "local" {')
+music.write_text(ms)
+metadata = root / 'SongMetadata.swift'
+ss = metadata.read_text()
+ss = ss.replace('let autofetch = UserDefaults.standard.bool(forKey: "autofetchMetadata")', 'let autofetch = (UserDefaults.standard.object(forKey: "autofetchMetadata") as? Bool) ?? true')
+metadata.write_text(ss)
 
 # File import must reset the old connection just as the on-device pairing
 # sheet does; otherwise startHeartbeat can reuse or skip an existing attempt.
