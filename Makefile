@@ -162,7 +162,9 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/patch-byetunes-lyric-integrity.sh
 	@bash scripts/patch-byetunes-amll-picker.sh
 	@bash scripts/patch-byetunes-free-providers.sh
+	@bash scripts/patch-byetunes-album-color-save.sh
 	@bash scripts/verify-byetunes-lyrics.sh
+	@bash scripts/verify-byetunes-album-color.sh
 	@test -s "$(IDEVICE_STATIC)" || (echo "Missing $(IDEVICE_STATIC). Run: bash scripts/build-idevice.sh" >&2; exit 1)
 	@test -s "$(NFCARD_FFI)/lib/libairlift_ffi.a" || (echo "Missing NFCARD AirliftFFI runtime" >&2; exit 1)
 	@grep -Fq 'al_pairing_run_host' "$(NFCARD_FFI)/include/AirliftFFI/airlift.h" || (echo "NFCARD pairing-host API missing" >&2; exit 1)
