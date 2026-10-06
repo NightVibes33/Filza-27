@@ -42,6 +42,8 @@ A jailed, sideloadable Filza fork combining Filza with app/container management,
 
 The application and integrated runtime build with a minimum deployment target of **iOS 17.0**.
 
+iOS **27.0.1** passes the app and ByeTunes pairing version checks. On iOS 27+, ByeTunes offers on-device code pairing and expects an RP pairing record for file import. Successful parsing of an imported record does not confirm that the device still trusts it. iOS 27.0.1 device testing remains unverified.
+
 UI availability and filesystem-access capability are separate. Mond's `bad_query`, `cmg`, private APIs, 3105 backend paths, and cross-container write paths remain OS/build-specific. Filza-27 validates what access is actually available on the running device rather than treating the UI as proof of unrestricted access.
 
 For iOS 27 research builds, useful `bad_query` behavior is associated with specific builds; do not infer unrestricted access merely because Mond loads.
