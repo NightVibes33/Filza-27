@@ -110,6 +110,8 @@ ByeTunes is embedded directly into Filza-27 and includes library browsing, downl
 
 The integration retains the known working pre-v2.4 YouTubeKit metadata path as the first free YouTube provider. Required JavaScript solver resources are packaged inside the IPA.
 
+LocalDevVPN connection uses the unchanged `RemotePairingDiscovery.swift` and Remote Pairing tunnel methods from `EduAlexxis/ByeTunes@c66b1923a537c957d3b90620824ff3eb19593b5d`: Bonjour port resolution, fallback port 49152, and the upstream device host `10.7.0.1`. Filza pauses automatic reconnection while its on-device pairing sheet is active.
+
 ### Mond 2.2 / Gestalt / PosterBoard
 
 Available Mond routes include:
