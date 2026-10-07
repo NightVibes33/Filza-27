@@ -56,6 +56,7 @@ url=r'''        var components = URLComponents(string: "https://lrclib.net/api/g
             components.queryItems?.append(URLQueryItem(name: "album_name", value: album))
         }
         guard let url = components.url else { return nil }
+        let request = URLRequest(url: url, timeoutInterval: 12)
 '''
 old=old[:start]+url+old[end:]
 old=old.replace('let (data, _) = try await URLSession.shared.data(from: url)','let (data, response) = try await URLSession.shared.data(for: URLRequest(url: url, timeoutInterval: 12))\n            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }')
