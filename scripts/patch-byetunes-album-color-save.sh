@@ -47,11 +47,11 @@ if '[AlbumColorSave]' not in s:
 '''
  assert marker in segment;segment=segment.replace(marker,color+marker,1)
  # Extend the existing post-upload verifier: Save succeeds only if the color survives readback.
- segment=segment.replace('explicitRating: explicitRating\n', 'explicitRating: explicitRating,\n                customAlbumBackgroundColor: updatedSong.customAlbumBackgroundColor\n')
+ segment=segment.replace('catalogID: MediaLibraryBuilder.shouldWriteAppleCatalogStoreFields(for: updatedSong) ? updatedSong.storeId : 0\n', 'catalogID: MediaLibraryBuilder.shouldWriteAppleCatalogStoreFields(for: updatedSong) ? updatedSong.storeId : 0,\n                customAlbumBackgroundColor: updatedSong.customAlbumBackgroundColor\n')
  s=s[:start]+segment+s[end:]
- anchor='        explicitRating expectedExplicitRating: Int\n    ) -> Bool {'
+ anchor='        catalogID expectedCatalogID: Int64\n    ) -> Bool {'
  assert anchor in s
- s=s.replace(anchor,'        explicitRating expectedExplicitRating: Int,\n        customAlbumBackgroundColor expectedColor: String? = nil\n    ) -> Bool {',1)
+ s=s.replace(anchor,'        catalogID expectedCatalogID: Int64,\n        customAlbumBackgroundColor expectedColor: String? = nil\n    ) -> Bool {',1)
  anchor='            let matches =\n'
  colorcheck=r'''            var colorMatches = true
             if let expectedColor {

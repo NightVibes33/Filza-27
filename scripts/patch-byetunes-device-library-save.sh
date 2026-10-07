@@ -89,7 +89,9 @@ new_commit_tail = '''        let activated = replaceRemoteMediaLibrary(tempDBPat
         genre expectedGenre: String,
         year expectedYear: Int,
         trackNumber expectedTrackNumber: Int,
-        explicitRating expectedExplicitRating: Int
+        explicitRating expectedExplicitRating: Int,
+        lyrics expectedLyrics: String,
+        catalogID expectedCatalogID: Int64
     ) -> Bool {
         let semDb = DispatchSemaphore(value: 0)
         var dbData: Data?
@@ -140,12 +142,17 @@ new_commit_tail = '''        let activated = replaceRemoteMediaLibrary(tempDBPat
                    g.genre,
                    ie.year,
                    i.track_number,
-                   ie.content_rating
+                   ie.content_rating,
+                   l.lyrics, l.store_lyrics_available, l.time_synced_lyrics_available,
+                   st.store_item_id, st.store_saga_id, st.match_redownload_params,
+                   st.cloud_in_my_library, st.cloud_playback_endpoint_type
             FROM item i
             JOIN item_extra ie ON ie.item_pid = i.item_pid
             LEFT JOIN item_artist ia ON ia.item_artist_pid = i.item_artist_pid
             LEFT JOIN album a ON a.album_pid = i.album_pid
             LEFT JOIN genre g ON g.genre_id = i.genre_id
+            LEFT JOIN lyrics l ON l.item_pid = i.item_pid
+            LEFT JOIN item_store st ON st.item_pid = i.item_pid
             WHERE i.item_pid = \\(itemPid)
             LIMIT 1
             """
@@ -179,7 +186,16 @@ new_commit_tail = '''        let activated = replaceRemoteMediaLibrary(tempDBPat
                 actualGenre == expectedGenre &&
                 actualYear == expectedYear &&
                 actualTrackNumber == expectedTrackNumber &&
-                actualExplicitRating == expectedExplicitRating
+                actualExplicitRating == expectedExplicitRating &&
+                stringColumn(7) == expectedLyrics &&
+                sqlite3_column_int(stmt, 8) == 1 &&
+                sqlite3_column_int(stmt, 9) == 1 &&
+                (expectedCatalogID == 0 || (
+                    sqlite3_column_int64(stmt, 10) == expectedCatalogID &&
+                    sqlite3_column_int64(stmt, 11) == expectedCatalogID &&
+                    stringColumn(12) == "sagaId=\\(expectedCatalogID)" &&
+                    sqlite3_column_int(stmt, 13) == 1 &&
+                    sqlite3_column_int(stmt, 14) == 3))
 
             if !matches {
                 Logger.shared.log(
@@ -228,7 +244,9 @@ new_update_tail = '''            guard self.commitStagedMediaLibrary(localDbURL:
                 genre: safeGenre,
                 year: year,
                 trackNumber: trackNumber,
-                explicitRating: explicitRating
+                explicitRating: explicitRating,
+                lyrics: resolvedLyrics,
+                catalogID: MediaLibraryBuilder.shouldWriteAppleCatalogStoreFields(for: updatedSong) ? updatedSong.storeId : 0
             )
 
             if !persisted {
@@ -251,7 +269,9 @@ new_update_tail = '''            guard self.commitStagedMediaLibrary(localDbURL:
                     genre: safeGenre,
                     year: year,
                     trackNumber: trackNumber,
-                    explicitRating: explicitRating
+                    explicitRating: explicitRating,
+                lyrics: resolvedLyrics,
+                catalogID: MediaLibraryBuilder.shouldWriteAppleCatalogStoreFields(for: updatedSong) ? updatedSong.storeId : 0
                 )
             }
 
