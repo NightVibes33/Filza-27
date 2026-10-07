@@ -205,14 +205,12 @@ jobs:
           grep -aFq 'https://api.deezer.com/search' "$DYLIB"
           grep -aFq 'https://lrclib.net/api/get' "$DYLIB"
           grep -aFq 'https://lrclib.net/api/search' "$DYLIB"
-          grep -aFq 'Musixmatch' "$DYLIB"
-          grep -aFq 'NetEase' "$DYLIB"
-          grep -aFq 'Apple Synced Lyrics' "$DYLIB"
-          ! grep -aFq 'AMLL' "$DYLIB"
-          ! grep -aFq 'LyricsPlus' "$DYLIB"
-          ! grep -aFq 'lrc.red' "$DYLIB"
-          ! grep -aFq 'syncedLyricsTTML' "$DYLIB"
-          ! grep -aFq 'Apple Music Subscription Lyrics' "$DYLIB"
+          grep -aFq 'https://lyricsplus.prjktla.my.id/v2/lyrics/get' "$DYLIB"
+          grep -Fq 'Text("Lyrics Provider")' ByeTunes/MusicManager/SettingsView.swift
+          grep -Fq 'case amll' ByeTunes/MusicManager/SongMetadata.swift
+          grep -Fq 'case lyricsplus' ByeTunes/MusicManager/SongMetadata.swift
+          grep -Fq 'case lrcred' ByeTunes/MusicManager/SongMetadata.swift
+          grep -Fq 'catalogAwareNativeLyricsPayload' ByeTunes/MusicManager/MediaLibraryBuilder.swift
           grep -aFq 'Pair with ByeTunes' "$DYLIB"
           grep -aFq 'Replay Onboarding' "$DYLIB"
           ! grep -aFq 'Import RP Pairing File' "$DYLIB"

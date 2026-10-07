@@ -160,6 +160,13 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/patch-byetunes-pairing-and-tabs.sh
 	@bash scripts/patch-byetunes-settings-cleanup.sh
 	@bash scripts/patch-byetunes-album-color-save.sh
+	@bash scripts/patch-byetunes-lyric-integrity.sh
+	@bash scripts/patch-byetunes-amll-picker.sh
+	@bash scripts/patch-byetunes-free-providers.sh
+	@bash scripts/patch-byetunes-lyric-roundtrip.sh
+	@bash scripts/patch-byetunes-native-lyric-text.sh
+	@bash scripts/patch-byetunes-lyric-provider-audit.sh
+	@bash scripts/patch-byetunes-catalog-and-onboarding.sh
 	@bash scripts/verify-byetunes-lyrics.sh
 	@bash scripts/verify-byetunes-album-color.sh
 	@test -s "$(IDEVICE_STATIC)" || (echo "Missing $(IDEVICE_STATIC). Run: bash scripts/build-idevice.sh" >&2; exit 1)
