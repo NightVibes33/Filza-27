@@ -344,6 +344,8 @@ text = replace_once(text, old_store, new_store, "verified catalog repair associa
 # Reuse the importer's exact eligibility policy for metadata fetched in the editor.
 builder = Path("ByeTunes/MusicManager/MediaLibraryBuilder.swift")
 b = builder.read_text().replace("private static func shouldWriteAppleCatalogStoreFields", "static func shouldWriteAppleCatalogStoreFields")
+# v2.5 accidentally escaped interpolation here; preserve its intended sagaId value.
+b = b.replace(r'"sagaId=\\(song.storeId)"', r'"sagaId=\(song.storeId)"')
 builder.write_text(b)
 anchor = '            ].allSatisfy { self.sqliteExec(db, $0) }'
 start = text.index('    func updateExportableSongMetadata(')
