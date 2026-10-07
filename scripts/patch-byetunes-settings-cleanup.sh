@@ -68,3 +68,8 @@ ss=metadata.read_text().replace(
 metadata.write_text(ss)
 print("Preserved upstream lyric services and native Apple synced lyric mode")
 PY
+grep -Fq 'Text("Fetch Lyrics")' "$ROOT/SettingsView.swift"
+grep -Fq 'Text("Apple Synced Lyrics")' "$ROOT/SettingsView.swift"
+grep -Fq 'Replay Onboarding' "$ROOT/SettingsView.swift"
+! grep -Fq 'Apple Music Subscription Lyrics' "$ROOT/SettingsView.swift"
+! grep -Fq 'showingPairingPicker' "$ROOT/SettingsView.swift"
