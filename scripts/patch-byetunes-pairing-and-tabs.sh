@@ -93,7 +93,7 @@ s=s.replace('''                TutorialOverlayView(
                     selectedTab: $selectedTab,
                     downloadTabIndex: downloadTabIndex
                 )
-''','''                TutorialOverlayView(isComplete: $tutorialComplete)
+''','''                TutorialOverlayView(isComplete: $tutorialComplete, songs: $songs, selectedTab: $selectedTab)
 ''',1)
 s=remove_block(s,"            if manager.shouldPromptForRPPairingUpgrade {")
 s=remove_block(s,"        .sheet(isPresented: $showingRPPairingUpgradePicker) {")
@@ -115,7 +115,9 @@ show_logs='''        .onReceive(NotificationCenter.default.publisher(for: NSNoti
 '''
 if "ReplayByeTunesOnboarding" not in s:
     s=replace_once(s,show_logs,show_logs+'''        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReplayByeTunesOnboarding"))) { _ in
+            hasCompletedOnboarding = false
             tutorialComplete = false
+            selectedTab = 0
         }
 ''',"replay receiver")
 
@@ -138,142 +140,67 @@ s=s[:open_start]+'''        .onOpenURL { url in
 s=s.replace("showing import flow","showing on-device pairing flow")
 content.write_text(s)
 
-onboarding.write_text(r'''import SwiftUI
-import Combine
-
-struct OnboardingView: View {
-    @ObservedObject var manager: DeviceManager
-    @ObservedObject private var onDevicePairing = ByeTunesOnDevicePairingController.shared
-    @Binding var isComplete: Bool
-
-    var body: some View {
-        ZStack {
-            Color(.systemGroupedBackground).ignoresSafeArea()
-            ScrollView {
-                VStack(spacing: 24) {
-                    Spacer(minLength: 24)
-                    Image(systemName: "iphone.and.arrow.forward")
-                        .font(.system(size: 52, weight: .semibold))
-                        .foregroundColor(.accentColor)
-                    VStack(spacing: 8) {
-                        Text("Music Library").font(.system(size: 32, weight: .bold))
-                        Text("Pair this iPhone directly. Manual pairing-file import is no longer used.")
-                            .font(.subheadline).foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    VStack(alignment: .leading, spacing: 14) {
-                        Label("Turn on LocalDevVPN.", systemImage: "1.circle.fill")
-                        Label("Open Settings › Privacy & Security › Developer Mode › Pair with ByeTunes.", systemImage: "2.circle.fill")
-                        Label("Approve the request and enter the PIN shown here.", systemImage: "3.circle.fill")
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(18)
-                    .background(Color(.systemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-
-                    Button { onDevicePairing.start(manager: manager) } label: {
-                        HStack(spacing: 10) {
-                            if onDevicePairing.isPairing { ProgressView().tint(.white) }
-                            else { Image(systemName: "link") }
-                            Text(onDevicePairing.isPairing ? "Pairing…" : "Pair This iPhone")
-                        }
-                        .font(.headline).foregroundColor(.white)
-                        .frame(maxWidth: .infinity).padding(.vertical, 16)
-                        .background(RoundedRectangle(cornerRadius: 16).fill(Color.accentColor))
-                    }
-                    .disabled(onDevicePairing.isPairing)
-
-                    if let pin = onDevicePairing.pin {
-                        VStack(spacing: 4) {
-                            Text("PAIRING PIN").font(.caption.weight(.semibold)).foregroundColor(.secondary)
-                            Text(pin).font(.system(size: 30, weight: .bold, design: .monospaced)).textSelection(.enabled)
-                        }
-                    }
-
-                    Text(onDevicePairing.status)
-                        .font(.caption)
-                        .foregroundColor(onDevicePairing.status.localizedCaseInsensitiveContains("fail") ? .red : .secondary)
-                        .multilineTextAlignment(.center)
+# Keep upstream's animated onboarding and replace only its connection controls.
+s=onboarding.read_text()
+s=replace_once(s,'    @ObservedObject var manager: DeviceManager\n','    @ObservedObject var manager: DeviceManager\n    @ObservedObject private var onDevicePairing = ByeTunesOnDevicePairingController.shared\n','onboarding pairing controller')
+s=s.replace('    @State private var showingPairingPicker = false\n','')
+s=remove_block(s,'        .sheet(isPresented: $showingPairingPicker) {')
+s=remove_block(s,'    func handlePairingImport(url: URL?) {')
+s=s.replace('    // MARK: - Pairing Import\n','    // MARK: - Reconnect\n')
+a=s.index('                StepRow(number: "1"');b=s.index('\n            }',a)
+s=s[:a]+'''                StepRow(number: "1", text: "Turn on LocalDevVPN", isLast: false)
+                StepRow(number: "2", text: "Tap Pair This iPhone below", isLast: false)
+                StepRow(number: "3", text: "Open Settings › Privacy & Security › Developer Mode › Pair with ByeTunes", isLast: false)
+                StepRow(number: "4", text: "Approve the request and enter the PIN shown here", isLast: true)'''+s[b:]
+s=replace_once(s,'                    showingPairingPicker = true','''                    isConnecting = true
+                    showError = false
+                    statusMessage = "Starting on-device pairing…"
+                    onDevicePairing.start(manager: manager)''','onboarding action')
+s=s.replace('Text("Import \\(manager.expectedPairingFileTitle)")','Text(onDevicePairing.isPairing ? "Pairing…" : "Pair This iPhone")')
+s=s.replace('Image(systemName: "arrow.up.doc.fill")','Image(systemName: "iphone.and.arrow.forward")')
+marker='                if showError && manager.hasValidExpectedPairingFile {'
+extra='''                if let pin = onDevicePairing.pin {
+                    Text("Pairing PIN: \\(pin)")
+                        .font(.system(.title3, design: .monospaced).weight(.bold))
+                        .textSelection(.enabled)
                 }
-                .padding(.horizontal, 24).padding(.bottom, 36)
-            }
-        }
-        .onAppear {
-            if manager.hasValidExpectedPairingFile { isComplete = true }
-        }
-        .onReceive(manager.$hasValidExpectedPairingFile.removeDuplicates()) { valid in
-            guard valid else { return }
-            manager.startHeartbeat(forceReconnect: true)
-            isComplete = true
-        }
-    }
-}
-''')
 
-tutorial.write_text(r'''import SwiftUI
-
-struct TutorialOverlayView: View {
-    @Binding var isComplete: Bool
-    @State private var showingImportStep = false
-    @AppStorage("appleRichMetadata") private var appleRichMetadata = true
-    @AppStorage("autofetchMetadata") private var autofetchMetadata = true
-    @AppStorage("fetchLyrics") private var fetchLyrics = false
-    @AppStorage("appleSubscriptionLyrics") private var appleSubscriptionLyrics = false
-    @AppStorage("metadataSource") private var metadataSource = "apple"
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.5).ignoresSafeArea()
-            VStack(spacing: 18) {
-                Image(systemName: showingImportStep ? "square.and.arrow.down" : "music.note")
-                    .font(.system(size: 34, weight: .semibold)).foregroundColor(.accentColor)
-                if showingImportStep {
-                    Text("Import and Inject").font(.title2.bold())
-                    Text("Add an MP3, FLAC, M4A, WAV, AIFF, or Opus file from Files or the share sheet. Review it in Music, then tap Inject.")
-                        .font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center)
-                    Button("Done") { finish() }.buttonStyle(.borderedProminent)
-                } else {
-                    Text("Choose your metadata style").font(.title2.bold())
-                    Text("You can change these options any time in Settings.")
-                        .font(.subheadline).foregroundColor(.secondary)
-                    Button {
-                        appleRichMetadata = true
-                        autofetchMetadata = true
-                        fetchLyrics = false
-                        appleSubscriptionLyrics = true
-                        metadataSource = "apple"
-                        showingImportStep = true
-                    } label: {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text("Apple Music Style").font(.headline)
-                            Text("Apple catalog metadata + native synced lyrics when a catalog match is available.")
-                                .font(.caption).foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading).padding()
-                        .background(Color(.secondarySystemBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                    }.buttonStyle(.plain)
-                    Button { showingImportStep = true } label: {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text("Custom").font(.headline)
-                            Text("Keep your current metadata and lyric settings.")
-                                .font(.caption).foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading).padding()
-                        .background(Color(.secondarySystemBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                    }.buttonStyle(.plain)
-                    Button("Skip tutorial") { finish() }.font(.subheadline).foregroundColor(.secondary)
+                if manager.heartbeatReady {
+                    Button("Continue") { withAnimation { isComplete = true } }
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
                 }
-            }
-            .padding(24).background(Color(.systemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 24)).padding(.horizontal, 20)
-        }
-    }
 
-    private func finish() { withAnimation { isComplete = true } }
-}
-''')
+'''
+s=replace_once(s,marker,extra+marker,'onboarding PIN and replay continuation')
+marker='        .onChange(of: manager.heartbeatReady, perform: { ready in'
+extra='''        .onChange(of: onDevicePairing.status, perform: { value in
+            statusMessage = value
+            if value.localizedCaseInsensitiveContains("fail") {
+                isConnecting = false
+                showError = true
+            }
+        })
+        .onChange(of: onDevicePairing.isPairing, perform: { active in
+            if !active && !manager.heartbeatReady { isConnecting = false }
+        })
+'''
+s=replace_once(s,marker,extra+marker,'onboarding pairing status')
+onboarding.write_text(s)
+
+# Preserve the real metadata cards, hint sheets, transitions and queue progression.
+# The removed Download tab's instruction becomes an import instruction on Music.
+s=tutorial.read_text()
+s=s.replace('    let downloadTabIndex: Int\n','')
+s=s.replace('downloadHint','importHint')
+s=s.replace('icon: "arrow.down.circle.fill"','icon: "square.and.arrow.down.fill"',1)
+s=s.replace('title: "Download your first song"','title: "Import your first song"',1)
+s=s.replace('body: "Open the Download tab, search for any song, and tap the download button next to it."','body: "Open the Music tab and import a song from Files or the share sheet."',1)
+s=s.replace('tabIcon: "arrow.down.circle"','tabIcon: "music.note"',1)
+s=s.replace('tabLabel: "Download tab"','tabLabel: "Music tab"',1)
+s=s.replace('selectedTab = downloadTabIndex','selectedTab = 0')
+tutorial.write_text(s)
 
 # Settings connection card.
 s=settings.read_text()
@@ -393,6 +320,10 @@ ds=ds.replace("Import the correct file before connecting.","Pair this iPhone bef
 device.write_text(ds)
 PY
 
+grep -Fq 'Image("AppIconImage")' "$ONBOARDING"
+grep -Fq 'struct StepRow: View' "$ONBOARDING"
+grep -Fq 'private func metadataOptionCard(' "$TUTORIAL"
+grep -Fq 'private func hintSheet(' "$TUTORIAL"
 grep -Fq 'Pair with ByeTunes' "$ONBOARDING"
 grep -Fq 'Pair This iPhone' "$ONBOARDING"
 grep -Fq 'Replay Onboarding' "$SETTINGS"
