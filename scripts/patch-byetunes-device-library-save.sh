@@ -278,6 +278,75 @@ for marker in required:
     if marker not in text:
         raise SystemExit(f"missing patched marker: {marker}")
 
+
+# Keep metadata edits consistent with upstream v2.5's importer. A saved local
+# lyric payload is not a native timed-lyrics transport.
+old_lyrics = 'let escapedLyrics = self.escapeSQLString((updatedSong.lyrics ?? "").trimmingCharacters(in: .whitespacesAndNewlines))'
+new_lyrics = """let nativeLyrics = UserDefaults.standard.bool(forKey: "appleSubscriptionLyrics")
+            let resolvedLyrics = nativeLyrics ? "" : SongMetadata.cleanLyrics(updatedSong.lyrics ?? "", title: safeTitle, artist: safeArtist)
+            let escapedLyrics = self.escapeSQLString(resolvedLyrics)"""
+text = replace_once(text, old_lyrics, new_lyrics, "upstream native lyric save selection")
+
+# Retain the staged, WAL-applied database as a recovery copy before edits.
+anchor = '            var db: OpaquePointer?'
+backup = """            let backupDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("LibraryEditBackups", isDirectory: true)
+            do {
+                try FileManager.default.createDirectory(at: backupDir, withIntermediateDirectories: true)
+                try FileManager.default.copyItem(at: context.tempDir,
+                    to: backupDir.appendingPathComponent("MediaLibrary-\(UUID().uuidString).sqlitedb"))
+            } catch {
+                completion(false, "Could not preserve a library backup before editing.")
+                return
+            }
+
+"""
+# Limit the backup insertion to the edit function, not other SQL helpers.
+edit_start = text.index('    func updateExportableSongMetadata(')
+edit_anchor = text.index(anchor, edit_start)
+if 'LibraryEditBackups' not in text:
+    text = text[:edit_anchor] + backup + text[edit_anchor:]
+
+# The optional catalog repair already resolves a real Apple song. Mirror the
+# importer associations there; never invent IDs or use lyric text as a match.
+old_store = '                store_item_id = \\(repair.storeItemId),'
+new_store = """                store_item_id = \(repair.storeItemId),
+                store_saga_id = \(repair.storeItemId),
+                match_redownload_params = 'sagaId=\(repair.storeItemId)',
+                cloud_status = 8,
+                cloud_asset_available = 1,
+                cloud_in_my_library = 1,
+                cloud_playback_endpoint_type = 3,
+                is_subscription = 1,"""
+text = replace_once(text, old_store, new_store, "verified catalog repair associations")
+
+
+# Reuse the importer's exact eligibility policy for metadata fetched in the editor.
+builder = Path("ByeTunes/MusicManager/MediaLibraryBuilder.swift")
+b = builder.read_text().replace("private static func shouldWriteAppleCatalogStoreFields", "static func shouldWriteAppleCatalogStoreFields")
+builder.write_text(b)
+anchor = '            ].allSatisfy { self.sqliteExec(db, $0) }'
+start = text.index('    func updateExportableSongMetadata(')
+pos = text.index(anchor, start) + len(anchor)
+store_edit = r'''
+
+            if success, MediaLibraryBuilder.shouldWriteAppleCatalogStoreFields(for: updatedSong) {
+                success = self.sqliteExec(db, """
+                    UPDATE item_store
+                    SET store_item_id = \(updatedSong.storeId),
+                        storefront_id = \(updatedSong.storefrontId),
+                        store_saga_id = \(updatedSong.storeId),
+                        match_redownload_params = 'sagaId=\(updatedSong.storeId)',
+                        cloud_status = 8, cloud_asset_available = 1,
+                        cloud_in_my_library = 1, cloud_playback_endpoint_type = 3,
+                        is_subscription = 1
+                    WHERE item_pid = \(itemPid)
+                    """)
+            }
+'''
+if 'MediaLibraryBuilder.shouldWriteAppleCatalogStoreFields(for: updatedSong)' not in text:
+    text = text[:pos] + store_edit + text[pos:]
+
 path.write_text(text)
 PY
 

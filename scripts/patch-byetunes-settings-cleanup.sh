@@ -46,6 +46,17 @@ if marker in s:
     end=s.index('                        if metadataSource != "apple" {',s.index(marker))
     s=s[:start]+s[end:]
 
+# Remove the original downloader cards from the metadata submenu, preserving
+# its metadata/lyrics controls and the separate About format documentation.
+start=s.find('                    Text("DOWNLOADS")')
+if start >= 0:
+    end=s.index('                    }\n                    .frame(width: max(proxy.size.width - 40, 0)', start)
+    s=s[:start]+s[end:]
+s=s.replace('Metadata & Downloads', 'Metadata')
+s=s.replace('Metadata & Lyrics', 'Metadata')
+s=s.replace('METADATA & LYRICS', 'METADATA')
+s=s.replace('DownloaderSettingsScreen', 'MetadataSettingsScreen')
+
 s=s.replace("Apple Music Subscription Lyrics","Apple Synced Lyrics")
 s=s.replace(
     "If you have an active Apple Music subscription, use Apple's own time-synced lyrics instead of the community sources above. Requires an internet connection.",
@@ -73,3 +84,6 @@ grep -Fq 'Text("Apple Synced Lyrics")' "$ROOT/SettingsView.swift"
 grep -Fq 'Replay Onboarding' "$ROOT/SettingsView.swift"
 ! grep -Fq 'Apple Music Subscription Lyrics' "$ROOT/SettingsView.swift"
 ! grep -Fq 'showingPairingPicker' "$ROOT/SettingsView.swift"
+
+grep -Fq '.navigationTitle("Metadata")' "$ROOT/SettingsView.swift"
+! grep -Eq 'Text\("(DOWNLOADS|DOWNLOAD FORMAT|Keep Downloaded Songs|Allow Background Downloads|Output Format)"\)' "$ROOT/SettingsView.swift"
