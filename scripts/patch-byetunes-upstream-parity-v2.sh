@@ -212,7 +212,7 @@ cs = cs[:appear_start] + '''        .onAppear {
                 Logger.shared.log("[ContentView] Filza embed: restored persisted pairing file; reconnecting automatically")
                 manager.startHeartbeat()
             } else {
-                Logger.shared.log("[ContentView] Filza embed: no persisted pairing file; showing import flow")
+                Logger.shared.log("[ContentView] Filza embed: no persisted pairing record; showing on-device pairing flow")
             }
             restorePersistedSongQueueIfNeeded()
             checkPendingInjections()
@@ -260,7 +260,7 @@ version_row = '''                        HStack {
                                     .foregroundColor(.secondary)
                             }
                             Spacer()
-                            Text("ByeTunes 2.4")
+                            Text("ByeTunes 2.5")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }

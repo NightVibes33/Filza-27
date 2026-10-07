@@ -205,22 +205,17 @@ jobs:
           grep -aFq 'https://api.deezer.com/search' "$DYLIB"
           grep -aFq 'https://lrclib.net/api/get' "$DYLIB"
           grep -aFq 'https://lrclib.net/api/search' "$DYLIB"
-          grep -aFq 'https://raw.githubusercontent.com/amll-dev/amll-ttml-db/refs/heads/main/am-lyrics' "$DYLIB"
-          grep -aFq 'itunes:timing="Line"' "$DYLIB"
-          grep -aFq '[ByeTunesRichLyrics] AMLL TTML hit appleMusicId=' "$DYLIB"
-          # Short SwiftUI strings may use Swift's inline string representation.
-          # Verify generated picker source and the compiled provider implementation.
-          grep -Fq 'Picker("Lyrics Provider", selection: $freeLyricsProvider)' ByeTunes/MusicManager/SettingsView.swift
-          grep -Fq '.tag("lyricsplus")' ByeTunes/MusicManager/SettingsView.swift
-          grep -Fq '.tag("lrcred")' ByeTunes/MusicManager/SettingsView.swift
-          grep -Fq '.tag("amll")' ByeTunes/MusicManager/SettingsView.swift
-          grep -Fq '.tag("lrclib")' ByeTunes/MusicManager/SettingsView.swift
-          grep -aFq 'https://lyricsplus.prjktla.my.id/v2/lyrics/get' "$DYLIB"
+          grep -aFq 'Musixmatch' "$DYLIB"
+          grep -aFq 'NetEase' "$DYLIB"
+          grep -aFq 'Apple Synced Lyrics' "$DYLIB"
+          ! grep -aFq 'AMLL' "$DYLIB"
+          ! grep -aFq 'LyricsPlus' "$DYLIB"
+          ! grep -aFq 'lrc.red' "$DYLIB"
+          ! grep -aFq 'syncedLyricsTTML' "$DYLIB"
           ! grep -aFq 'Apple Music Subscription Lyrics' "$DYLIB"
-          ! grep -aFq 'appleSubscriptionLyrics' "$DYLIB"
-          ! grep -aFq 'media-user-token' "$DYLIB"
-          ! grep -aFq 'syllable-lyrics' "$DYLIB"
           grep -aFq 'Pair with ByeTunes' "$DYLIB"
+          grep -aFq 'Replay Onboarding' "$DYLIB"
+          ! grep -aFq 'Import RP Pairing File' "$DYLIB"
           grep -aFq 'RPPairing tunnel established via' "$DYLIB"
           grep -aFq '10.7.0.1' "$DYLIB"
           ! grep -aFq 'LocalDevVPN preflight reachable hosts=' "$DYLIB"

@@ -159,13 +159,7 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/patch-byetunes-rppairing-localdevvpn.sh
 	@bash scripts/patch-byetunes-pairing-and-tabs.sh
 	@bash scripts/patch-byetunes-settings-cleanup.sh
-	@bash scripts/patch-byetunes-lyric-integrity.sh
-	@bash scripts/patch-byetunes-amll-picker.sh
-	@bash scripts/patch-byetunes-free-providers.sh
 	@bash scripts/patch-byetunes-album-color-save.sh
-	@bash scripts/patch-byetunes-lyric-roundtrip.sh
-	@bash scripts/patch-byetunes-native-lyric-text.sh
-	@bash scripts/patch-byetunes-lyric-provider-audit.sh
 	@bash scripts/verify-byetunes-lyrics.sh
 	@bash scripts/verify-byetunes-album-color.sh
 	@test -s "$(IDEVICE_STATIC)" || (echo "Missing $(IDEVICE_STATIC). Run: bash scripts/build-idevice.sh" >&2; exit 1)
@@ -202,19 +196,20 @@ before-FilzaApplySandboxExt-all::
 	@! grep -Fq '/api/metadata' "$(BYETUNES_ROOT)/DownloadView.swift" || (echo "Private ByeTunes metadata backend remains" >&2; exit 1)
 	@! grep -Fq '/api/download' "$(BYETUNES_ROOT)/DownloadView.swift" || (echo "Private ByeTunes download backend remains" >&2; exit 1)
 	@! grep -Fq 'ByeTunesApiUrl' "$(BYETUNES_ROOT)/Config.swift" || (echo "ByeTunes Config.plist key remains" >&2; exit 1)
-	@grep -Fq 'static func cleanSyncedLyrics' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "LRCLIB synced lyric preservation missing" >&2; exit 1)
-	@grep -Fq 'var syncedLyricsTTML: String?' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "custom TTML state missing" >&2; exit 1)
-	@grep -Fq 'resolveFreeSyncedLyrics(for: song)' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "free synced lyric resolver missing" >&2; exit 1)
-	@grep -Fq 'https://raw.githubusercontent.com/amll-dev/amll-ttml-db/refs/heads/main/am-lyrics' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "AMLL Apple-ID provider missing" >&2; exit 1)
-	@grep -Fq 'itunes:timing="Line"' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "LRC to Apple TTML conversion missing" >&2; exit 1)
-	@grep -Fq 'let hasCustomTimedLyrics = lyricPayload.timed' "$(BYETUNES_ROOT)/MediaLibraryBuilder.swift" || (echo "custom timed lyric DB routing missing" >&2; exit 1)
-	@grep -Fq 'let storeLyricsAvailable = 0' "$(BYETUNES_ROOT)/MediaLibraryBuilder.swift" || (echo "community lyrics incorrectly marked as Apple store lyrics" >&2; exit 1)
-	@grep -Fq 'Picker("Lyrics Provider"' "$(BYETUNES_ROOT)/SettingsView.swift" || (echo "free synced lyrics UI missing" >&2; exit 1)
-	@! grep -Fq 'Apple Music Subscription Lyrics' "$(BYETUNES_ROOT)/SettingsView.swift" || (echo "subscription-only lyrics UI returned" >&2; exit 1)
-	@! grep -Fq 'appleSubscriptionLyrics' "$(BYETUNES_ROOT)/SettingsView.swift" || (echo "legacy subscription lyrics setting returned" >&2; exit 1)
-	@! grep -Fq 'appleSubscriptionLyrics' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "legacy subscription lyrics routing returned" >&2; exit 1)
-	@! grep -Fq 'media-user-token' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "custom Apple cookie/token path returned" >&2; exit 1)
-	@! grep -Fq 'AppleMusicSyncedLyricsClient' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "custom Apple direct-lyrics client returned" >&2; exit 1)
+	@grep -Fq 'case lrclib' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "LRCLIB lyric service missing" >&2; exit 1)
+	@grep -Fq 'case musixmatch' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "Musixmatch lyric service missing" >&2; exit 1)
+	@grep -Fq 'case netease' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "NetEase lyric service missing" >&2; exit 1)
+	@grep -Fq 'fetchLyricsFromMusixMatch' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "Musixmatch fallback missing" >&2; exit 1)
+	@grep -Fq 'fetchLyricsFromNetEase' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "NetEase fallback missing" >&2; exit 1)
+	@grep -Fq 'Text("Fetch Lyrics")' "$(BYETUNES_ROOT)/SettingsView.swift" || (echo "Fetch Lyrics setting missing" >&2; exit 1)
+	@grep -Fq 'Text("Apple Synced Lyrics")' "$(BYETUNES_ROOT)/SettingsView.swift" || (echo "Apple Synced Lyrics setting missing" >&2; exit 1)
+	@grep -Fq 'store_lyrics_available, time_synced_lyrics_available' "$(BYETUNES_ROOT)/MediaLibraryBuilder.swift" || (echo "native lyric columns missing" >&2; exit 1)
+	@grep -Fq 'let hasAppleCatalogMatch = shouldWriteAppleCatalogStoreFields(for: song)' "$(BYETUNES_ROOT)/MediaLibraryBuilder.swift" || (echo "Apple catalog matching fields missing" >&2; exit 1)
+	@grep -Fq 'store_saga_id, match_redownload_params, cloud_status' "$(BYETUNES_ROOT)/MediaLibraryBuilder.swift" || (echo "Apple catalog cloud fields missing" >&2; exit 1)
+	@! grep -Fq 'AMLL' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "obsolete AMLL lyric code returned" >&2; exit 1)
+	@! grep -Fq 'LyricsPlus' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "obsolete LyricsPlus lyric code returned" >&2; exit 1)
+	@! grep -Fq 'lrc.red' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "obsolete lrc.red lyric code returned" >&2; exit 1)
+	@! grep -Fq 'syncedLyricsTTML' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "obsolete custom TTML state returned" >&2; exit 1)
 	@grep -Fq 'Pair with ByeTunes' "$(BYETUNES_ROOT)/OnboardingView.swift" || (echo "on-device pairing UI missing" >&2; exit 1)
 	@! grep -Fq 'Label("Download", systemImage: "arrow.down.circle")' "$(BYETUNES_ROOT)/TabViews.swift" || (echo "Download tab still visible" >&2; exit 1)
 	@test -f "scripts/patch-3105-embedded-compat.sh" || (echo "Missing 3105 embedded compatibility transform" >&2; exit 1)
