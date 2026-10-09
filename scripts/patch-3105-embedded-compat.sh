@@ -54,4 +54,10 @@ grep -Fq 'enum AppPaths' "$UTILS"
 ! grep -Fq 'DisplayIdentityAttestationToken' "$UTILS"
 ! grep -Fq 'enum AppUpdateChecker' "$UTILS"
 
-echo "Applied 3105 1.1.1 embedded-host compatibility transform (standalone updater/attestation excluded)"
+echo "Applied 3105 1.1.1 embedded-host compatibility baseline (standalone updater/attestation excluded)"
+
+test -f scripts/stage-3105-v2-overlay.sh || {
+  echo "Missing 3105 2.0 overlay staging script" >&2
+  exit 1
+}
+bash scripts/stage-3105-v2-overlay.sh
