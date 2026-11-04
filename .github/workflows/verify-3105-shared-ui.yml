@@ -111,10 +111,14 @@ jobs:
           test -f ThirdParty/3105/Sources/KernelExploit.swift
           test -f ThirdParty/3105/Sources/Utils.swift
           grep -Fq 'stage-3105-v1.sh' Makefile
-          grep -Fq '@python3 scripts/patch-3105-erosion-features.py' Makefile
-          grep -Fq '@python3 scripts/patch-3105-cleaner-all-apps.py' Makefile
-          grep -Fq '@bash scripts/patch-3105-ipa-export.sh' Makefile
-          grep -Fq '@bash scripts/patch-3105-app-manager-view-sort.sh' Makefile
+          grep -Fq '@python3 scripts/patch-3105-erosion-features.py' FilzaByeTunesNetwork.mk
+          grep -Fq '@python3 scripts/patch-3105-cleaner-all-apps.py' FilzaByeTunesNetwork.mk
+          grep -Fq '@bash scripts/patch-3105-ipa-export.sh' FilzaByeTunesNetwork.mk
+          grep -Fq '@bash scripts/patch-3105-app-manager-view-sort.sh' FilzaByeTunesNetwork.mk
+          ! grep -Fq '@python3 scripts/patch-3105-erosion-features.py' Makefile
+          ! grep -Fq '@python3 scripts/patch-3105-cleaner-all-apps.py' Makefile
+          ! grep -Fq '@bash scripts/patch-3105-ipa-export.sh' Makefile
+          ! grep -Fq '@bash scripts/patch-3105-app-manager-view-sort.sh' Makefile
           grep -Fq 'airliftCatalog.refresh()' scripts/patch-3105-cleaner-all-apps.py
           grep -Fq 'preferredGeneration: report?.layout.generation' scripts/patch-3105-erosion-features.py
           grep -Fq 'selectedGeneration(preferredGeneration)' FilzaErosionPosterBoardWriter.swift

@@ -117,8 +117,10 @@ jobs:
 
           # Check exact production integration source contracts on the same commit.
           grep -Fq 'f1b81047a01a1817c7fb17e6938929eef108f1aa' scripts/stage-3105-v1.sh
-          grep -Fq '@python3 scripts/patch-3105-erosion-features.py' Makefile
-          grep -Fq '@python3 scripts/patch-3105-cleaner-all-apps.py' Makefile
+          grep -Fq '@python3 scripts/patch-3105-erosion-features.py' FilzaByeTunesNetwork.mk
+          grep -Fq '@python3 scripts/patch-3105-cleaner-all-apps.py' FilzaByeTunesNetwork.mk
+          ! grep -Fq '@python3 scripts/patch-3105-erosion-features.py' Makefile
+          ! grep -Fq '@python3 scripts/patch-3105-cleaner-all-apps.py' Makefile
           grep -Fq 'FilzaAirliftCleaner.inspect(app)' scripts/patch-3105-cleaner-all-apps.py
           grep -Fq 'FilzaErosionPosterBoardWriter.apply' scripts/patch-3105-erosion-features.py
           grep -Fq 'FilzaNativeCoreMediaBridge.swift' Makefile

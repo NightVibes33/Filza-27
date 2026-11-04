@@ -150,10 +150,6 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/build-nfcard-ffi.sh "$(NFCARD_ROOT)" "$(NFCARD_FFI)"
 	@bash scripts/patch-3105-embedded-compat.sh
 	@python3 scripts/patch-3105-airlift.py
-	@bash scripts/patch-3105-ipa-export.sh
-	@bash scripts/patch-3105-app-manager-view-sort.sh
-	@python3 scripts/patch-3105-erosion-features.py
-	@python3 scripts/patch-3105-cleaner-all-apps.py
 	@bash scripts/patch-access-map-provenance.sh
 	@bash scripts/patch-byetunes-upstream-parity-v2.sh
 	@bash scripts/restore-byetunes-v24-metadata-compat.sh
@@ -238,10 +234,6 @@ before-FilzaApplySandboxExt-all::
 	@test -f "FilzaMondBridge.m" || (echo "Missing FilzaMondBridge.m" >&2; exit 1)
 	@test -f "FilzaMainToolbarGestalt.m" || (echo "Missing FilzaMainToolbarGestalt.m" >&2; exit 1)
 	@test -f "FilzaNativeCoreMediaBridge.swift" || (echo "Missing native Filza CoreMedia backend" >&2; exit 1)
-	@grep -Fq 'FILZA_ALL_APP_AIRLIFT_CLEANER' "$(THREEONE_ROOT)/Sources/CleanerView.swift" || (echo "All-app Airlift Cleaner was not staged" >&2; exit 1)
-	@grep -Fq 'FILZA_EROSION_WALLPAPER_BRIDGE' "$(THREEONE_ROOT)/Sources/WallpaperLabView.swift" || (echo "Airlift Wallpapers were not staged" >&2; exit 1)
-	@grep -Fq 'FilzaErosionPosterBoardWriter.apply' "$(THREEONE_ROOT)/Sources/WallpaperLabView.swift" || (echo "Airlift PosterBoard route is disconnected" >&2; exit 1)
-	@grep -Fq 'FilzaAirliftCleaner.inspect(app)' "$(THREEONE_ROOT)/Sources/CleanerView.swift" || (echo "Airlift cache scan is disconnected" >&2; exit 1)
 	@grep -Fq 'ContainerStore.installedAppsFromAPI()' "$(THREEONE_ROOT)/Sources/CleanerView.swift" || (echo "Original Cleaner app discovery is missing" >&2; exit 1)
 	@grep -Fq 'ContainerStore.installedAppsFromMHACandidates' "$(THREEONE_ROOT)/Sources/CleanerView.swift" || (echo "Original MCM/MHA Cleaner discovery is missing" >&2; exit 1)
 	@! grep -Fq '[items insertObject:airlift' FilzaMainToolbarGestalt.m || (echo "Erosion fifth toolbar app returned" >&2; exit 1)
