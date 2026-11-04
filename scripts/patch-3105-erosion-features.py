@@ -109,6 +109,30 @@ patch(wallpaper, [
     @State private var confirmAirliftApply = false"""
     ),
     (
+        """        Button {
+            if let selectedPackage {
+                alert = WallpaperLabAlert(kind: .install(selectedPackage))
+            }
+        } label: {""",
+        """        Button {
+            if let selectedPackage {
+                if report?.canInstall == true {
+                    // Preserve the original 3105/MCM/bad_query install path.
+                    alert = WallpaperLabAlert(kind: .install(selectedPackage))
+                } else if FilzaAirlift.pairedRecord() != nil {
+                    // The old OS-specific MCM route is unavailable. Present
+                    // the paired Airlift confirmation; never write silently.
+                    confirmAirliftApply = true
+                }
+            }
+        } label: {"""
+    ),
+    (
+        "        .disabled(selectedPackage == nil || report?.canInstall != true || isBusy)",
+        """        .disabled(selectedPackage == nil || isBusy ||
+                  (report?.canInstall != true && FilzaAirlift.pairedRecord() == nil))"""
+    ),
+    (
         """                packagesSection
                 if !activeReceipts.isEmpty { resetSection }""",
         """                packagesSection
@@ -150,8 +174,10 @@ patch(wallpaper, [
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                Text("This uses Erosion's remote PosterBoard descriptor writer " +
-                     "when 3105's direct MCM access is denied.")
+                Text("The main Install button uses 3105's local MCM/bad_query " +
+                     "route where writable. When it is unavailable, Install " +
+                     "offers this paired Airlift route with explicit confirmation. " +
+                     "You can also choose Airlift manually from this section.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -161,6 +187,10 @@ patch(wallpaper, [
     }
 
     private func applyViaAirlift(_ package: WallpaperStagedPackage) {
+        FilzaDiagnosticsAppend(
+            "WallpaperLab",
+            "User selected Airlift PosterBoard install; original MCM/bad_query route retained"
+        )
         guard !isBusy else { return }
         isBusy = true
         operationKey = "wallpaper.installing"
