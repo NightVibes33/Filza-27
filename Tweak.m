@@ -62,6 +62,54 @@ static NSString *redirectedLegacyBrowserPath(id requestedPath) {
     return path;
 }
 
+// CoreMedia only supplies bytes for an app-owned read-only mirror inside
+// Filza's original Device Storage browser. There is no fifth app or browser.
+static NSHashTable *gFZNativeCoreMediaPages;
+
+static Class FZNativeCoreMediaBridge(void) {
+    return NSClassFromString(@"FilzaNativeCoreMediaBridge");
+}
+
+static void FZNativeCoreMediaPrepareRoot(void) {
+    Class bridge = FZNativeCoreMediaBridge();
+    SEL selector = NSSelectorFromString(@"prepareNativeRoot");
+    if (bridge && [bridge respondsToSelector:selector])
+        ((void(*)(id, SEL))objc_msgSend)(bridge, selector);
+}
+
+static void FZNativeCoreMediaRequest(NSString *path) {
+    if (![path isKindOfClass:NSString.class]) return;
+    Class bridge = FZNativeCoreMediaBridge();
+    SEL selector = NSSelectorFromString(@"refreshNativeDirectory:");
+    if (bridge && [bridge respondsToSelector:selector])
+        ((void(*)(id, SEL, id))objc_msgSend)(bridge, selector, path);
+}
+
+static void FZNativeCoreMediaRegisterPage(id page) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        gFZNativeCoreMediaPages = [NSHashTable weakObjectsHashTable];
+        [[NSNotificationCenter defaultCenter]
+            addObserverForName:@"FilzaNativeCoreMediaDirectoryReady"
+                        object:nil queue:NSOperationQueue.mainQueue
+                    usingBlock:^(NSNotification *notification) {
+            NSString *readyPath = notification.userInfo[@"path"];
+            if (!readyPath.length) return;
+            for (id browser in gFZNativeCoreMediaPages.allObjects) {
+                SEL currentSelector = NSSelectorFromString(@"currentPath");
+                SEL reloadSelector = NSSelectorFromString(@"doLoadingPage");
+                if (![browser respondsToSelector:currentSelector] ||
+                    ![browser respondsToSelector:reloadSelector]) continue;
+                NSString *current = ((id(*)(id, SEL))objc_msgSend)(
+                    browser, currentSelector);
+                if ([current isEqualToString:readyPath])
+                    ((void(*)(id, SEL))objc_msgSend)(browser, reloadSelector);
+            }
+        }];
+    });
+    [gFZNativeCoreMediaPages addObject:page];
+}
+
 static IMP orig_fileSystemSetCurrentPath = NULL;
 static IMP orig_fileSystemUpdateEditableUI = NULL;
 static void refreshWallpaperButton(id controller, id fallbackPath) {
@@ -86,6 +134,7 @@ static void hook_fileSystemSetCurrentPath(id self, SEL _cmd, id requestedPath) {
         NSLog(@"[DeviceStorage] redirected legacy browser path to %@", path);
     ((void(*)(id, SEL, id))orig_fileSystemSetCurrentPath)(self, _cmd, path ?: requestedPath);
     refreshWallpaperButton(self, path ?: requestedPath);
+    FZNativeCoreMediaRequest(path ?: requestedPath);
     // Filza rebuilds its Edit item after loading a directory. Re-apply the
     // lab action after those deferred navigation updates have completed.
     for (NSNumber *delay in @[@100, @500]) {
@@ -99,6 +148,8 @@ static void hook_fileSystemSetCurrentPath(id self, SEL _cmd, id requestedPath) {
 static IMP orig_fileSystemViewWillAppear = NULL;
 static BOOL gNormalizedInitialBrowserPath = NO;
 static void hook_fileSystemViewWillAppear(id self, SEL _cmd, BOOL animated) {
+    FZNativeCoreMediaRegisterPage(self);
+    FZNativeCoreMediaPrepareRoot();
     NSString *currentPath = [self respondsToSelector:NSSelectorFromString(@"currentPath")]
         ? ((id(*)(id, SEL))objc_msgSend)(self, NSSelectorFromString(@"currentPath")) : nil;
     NSString *redirected = redirectedLegacyBrowserPath(currentPath);
@@ -135,6 +186,7 @@ static void hook_fileSystemViewWillAppear(id self, SEL _cmd, BOOL animated) {
     NSString *visiblePath = [self respondsToSelector:visiblePathSelector]
         ? ((id(*)(id, SEL))objc_msgSend)(self, visiblePathSelector) : redirected;
     PBWallpaperConfigureBrowser(self, visiblePath);
+    FZNativeCoreMediaRequest(visiblePath);
 
     // State restoration can leave the browser's table model empty even after
     // its path is correct. Reload on the next main-loop turn, after the view
