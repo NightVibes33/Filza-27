@@ -72,97 +72,214 @@ replace_one(cleaner,
                      "success is not proof of reclaimed bytes.")
             }""")
 
-# Erosion's old decorational metadata section is replaced with a real remote
-# cache scanner. The paired apps list is independent of local eligible records.
-f = Path(cleaner)
-s = f.read_text(encoding="utf-8")
-start_marker = "    // Erosion does not provide a safe system-wide cache-deletion API."
-end_marker = "    private var summarySection: some View {"
-if start_marker not in s or end_marker not in s:
-    raise SystemExit("Cleaner Erosion section boundary changed")
-start = s.index(start_marker)
-end = s.index(end_marker, start)
-section = r'''    private var airliftSection: some View {
-        Section {
-            Text(localScanSummary)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            if !lastLocalCleanup.isEmpty {
-                Text(lastLocalCleanup)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Text(airliftCatalog.message)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            if FilzaAirlift.pairedRecord() == nil {
-                Text("Set up Device Pairing in Filza Settings to inspect other " +
-                     "applications using the paired connection.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            if airliftCatalog.scanning { ProgressView() }
-            ForEach(airliftCatalog.apps) { app in
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(app.name)
-                                .font(.subheadline.weight(.medium))
-                            Text(app.bundleID)
-                                .font(.caption2.monospaced())
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer(minLength: 8)
-                        if remoteBusyBundle == app.bundleID {
-                            ProgressView().controlSize(.small)
-                        }
-                    }
-                    if let inventory = remoteInventories[app.bundleID] {
-                        Text("\(inventory.entries.count) inspected disposable items; " +
-                             ByteCountFormatter.string(
-                                 fromByteCount: inventory.bytes, countStyle: .file
-                             ) + " estimated cache")
-                            .font(.caption)
-                        if inventory.canClean {
-                            Button(role: .destructive) {
-                                remoteConfirmation = app.bundleID
-                            } label: {
-                                Label("Clean verified cache", systemImage: "trash")
-                            }
-                            .disabled(remoteBusyBundle != nil || isBusy)
-                        }
-                    }
-                    if let message = remoteMessages[app.bundleID] {
-                        Text(message)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Button {
-                        scanRemoteApp(app)
-                    } label: {
-                        Label("Inspect app cache", systemImage: "arrow.clockwise")
-                    }
-                    .disabled(app.dataPath == nil ||
-                              remoteBusyBundle != nil || isBusy ||
-                              FilzaAirlift.pairedRecord() == nil)
-                }
-                .padding(.vertical, 4)
-            }
-        } header: {
-            Text("All installed apps")
-        } footer: {
-            Text("The local Cleaner scans accessible caches for every app. " +
-                 "Paired access can inspect additional installed apps only when " +
-                 "paired transport and safe snapshot restoration succeed. " +
-                 "Protected app data is never assumed writable from metadata.")
+# One app list, not separate "local" and "Erosion" app categories.
+# Real Airlift InstallationProxy discovery provides rows, not fake cache sizes.
+replace_one(cleaner,
+    """    private var filteredRecords: [CleanerAppRecord] {""",
+    """    // FILZA_UNIFIED_CLEANER_LIST_V1
+    private var allCleanerRecords: [CleanerAppRecord] {
+        var known = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
+        for remote in airliftCatalog.apps {
+            guard ContainerPresentationPolicy.shouldShow(bundleID: remote.bundleID),
+                  known[remote.bundleID] == nil else { continue }
+            let app = InstalledApp(
+                bundleID: remote.bundleID,
+                name: remote.name,
+                containerPath: remote.dataPath ?? "",
+                version: "",
+                icon: nil
+            )
+            // Discovery is metadata. Zero here means unknown, NOT a 0-byte scan.
+            known[remote.bundleID] = CleanerAppRecord(
+                app: app,
+                usage: LimitedCleanerUsage(
+                    cacheBytes: 0, temporaryBytes: 0, removableItemCount: 0
+                )
+            )
         }
+        return Array(known.values)
     }
 
-    private func scanRemoteApp(_ app: FilzaAirliftApp) {
-        guard remoteBusyBundle == nil else { return }
+    private func isLocalEligible(_ bundleID: String) -> Bool {
+        records.contains { $0.id == bundleID }
+    }
+
+    private func remoteApp(for bundleID: String) -> FilzaAirliftApp? {
+        airliftCatalog.apps.first { $0.bundleID == bundleID }
+    }
+
+    private var filteredRecords: [CleanerAppRecord] {""")
+replace_one(cleaner,
+    """            matchingRecords = records
+        } else {""",
+    """            matchingRecords = allCleanerRecords
+        } else {""")
+replace_one(cleaner,
+    """            matchingRecords = records.filter {""",
+    """            matchingRecords = allCleanerRecords.filter {""")
+replace_one(cleaner,
+    """        if records.isEmpty {
+            List { emptySection }
+        } else {
+            List {
+                summarySection
+                applicationsSection
+            }
+        }""",
+    """        if allCleanerRecords.isEmpty {
+            List { emptySection }
+        } else {
+            List {
+                summarySection
+                applicationsSection
+            }
+        }""")
+replace_one(cleaner,
+    """        if !records.isEmpty {
+            ToolbarItem(placement: .navigationBarLeading) {""",
+    """        if !allCleanerRecords.isEmpty {
+            ToolbarItem(placement: .navigationBarLeading) {""")
+replace_one(cleaner,
+    """                Text(language.text("cleaner.apps_with_cache", Int64(filteredRecords.count)))""",
+    """                Text("\(filteredRecords.count) installed apps")""")
+replace_one(cleaner,
+    """            if !records.isEmpty {
+                Text(language.text("cleaner.apps_footer"))
+            }""",
+    """            if !allCleanerRecords.isEmpty {
+                Text("Only verified caches can be cleaned. Other app containers " +
+                     "are discovered, not automatically readable.")
+            }""")
+replace_one(cleaner,
+    """                ForEach(filteredRecords) { record in
+                    Button {
+                        toggleSelection(record.id)
+                    } label: {
+                        applicationRow(record)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isCleaning)
+                }""",
+    """                ForEach(filteredRecords) { record in
+                    Button {
+                        if isLocalEligible(record.id) {
+                            toggleSelection(record.id)
+                        } else if let remote = remoteApp(for: record.id) {
+                            scanRemoteApp(remote)
+                        }
+                    } label: {
+                        applicationRow(record)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isCleaning ||
+                              (!isLocalEligible(record.id) &&
+                               (remoteOperationsLocked || remoteBusyBundle != nil)))
+                    .contextMenu {
+                        if let remote = remoteApp(for: record.id) {
+                            Button {
+                                scanRemoteApp(remote)
+                            } label: {
+                                Label("Inspect cache", systemImage: "arrow.clockwise")
+                            }
+                            .disabled(remoteOperationsLocked || remoteBusyBundle != nil ||
+                                      remote.dataPath == nil || isBusy)
+                            if let inventory = remoteInventories[record.id],
+                               inventory.canClean {
+                                Button(role: .destructive) {
+                                    remoteConfirmation = record.id
+                                } label: {
+                                    Label("Clean verified cache", systemImage: "trash")
+                                }
+                                .disabled(remoteOperationsLocked || remoteBusyBundle != nil || isBusy)
+                            }
+                        }
+                    }
+                }""")
+replace_one(cleaner,
+    """                Text(record.app.bundleID)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer(minLength: 8)""",
+    """                Text(record.app.bundleID)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if !isLocalEligible(record.id) {
+                    Text(remoteMessages[record.id] ??
+                         (remoteOperationsLocked ? "Recovery required before remote access" :
+                          (remoteBusyBundle == record.id ? "Inspecting cache…" :
+                           (remoteApp(for: record.id)?.dataPath == nil
+                              ? "No data container reported"
+                              : (remoteInventories[record.id]?.canClean == true
+                                ? "Verified • long press to clean"
+                                : "Not inspected • tap to inspect")))))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+
+            Spacer(minLength: 8)""")
+replace_one(cleaner,
+    """            Text(sizeText(record.usage.totalBytes))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+
+            Image(systemName: selectedBundleIDs.contains(record.id) ? "checkmark.circle.fill" : "circle")""",
+    """            if isLocalEligible(record.id) {
+                Text(sizeText(record.usage.totalBytes))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            } else if let inventory = remoteInventories[record.id],
+                      inventory.canClean {
+                Text(sizeText(inventory.bytes) + " est.")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("—").font(.caption).foregroundStyle(.tertiary)
+            }
+
+            Image(systemName: isLocalEligible(record.id)
+                  ? (selectedBundleIDs.contains(record.id) ? "checkmark.circle.fill" : "circle")
+                  : "arrow.clockwise.circle")""")
+replace_one(cleaner,
+    """        } footer: {
+            Text(language.text("cleaner.scope_footer"))
+        }
+    }""",
+    """        } footer: {
+            Text(language.text("cleaner.scope_footer"))
+            Text(airliftCatalog.message)
+                .font(.caption2)
+            if airliftCatalog.scanning { ProgressView() }
+            if remoteOperationsLocked {
+                Text("SAFETY STOP: remote directory restoration was not confirmed. " +
+                     "Remote Cleaner operations are blocked until recovery is resolved.")
+                    .foregroundStyle(.red)
+                    .font(.caption)
+            }
+        }
+    }""")
+replace_one(cleaner,
+    """    @State private var remoteConfirmation: String?""",
+    """    @State private var remoteConfirmation: String?
+    @State private var remoteOperationsLocked = false""")
+
+# Remote operations are opt-in from the SAME original Cleaner app row.
+# A failed original-object restore locks the remote Cleaner for this session.
+replace_one(cleaner,
+    """    private var summarySection: some View {""",
+    """    private func scanRemoteApp(_ app: FilzaAirliftApp) {
+        guard !remoteOperationsLocked, remoteBusyBundle == nil,
+              !isBusy, app.dataPath != nil else { return }
         remoteBusyBundle = app.bundleID
         remoteInventories.removeValue(forKey: app.bundleID)
-        remoteMessages[app.bundleID] = "Inspecting remote caches…"
+        remoteMessages[app.bundleID] = "Inspecting paired cache…"
         Task {
             do {
                 let inventory = try await FilzaAirliftCleaner.inspect(app)
@@ -171,14 +288,18 @@ section = r'''    private var airliftSection: some View {
                     remoteMessages[app.bundleID] = inventory.failures.joined(separator: "; ")
                 } else {
                     remoteMessages[app.bundleID] = inventory.entries.isEmpty
-                        ? "No removable cache entries were confirmed."
-                        : "Snapshot and original-object restoration confirmed. " +
-                          "Review estimated size, then choose Clean."
+                        ? "No removable caches confirmed."
+                        : "Verified • long press this app to clean."
                 }
             } catch {
                 remoteMessages[app.bundleID] = error.localizedDescription
+                if let airliftError = error as? FilzaAirliftError,
+                   case .unsafeRecovery = airliftError {
+                    remoteOperationsLocked = true
+                    remoteInventories.removeAll()
+                }
                 FilzaDiagnosticsAppend(
-                    "Cleaner", "Airlift scan \(app.bundleID) failed: \(error.localizedDescription)"
+                    "Cleaner", "Paired scan \(app.bundleID) failed: \(error.localizedDescription)"
                 )
             }
             remoteBusyBundle = nil
@@ -186,38 +307,41 @@ section = r'''    private var airliftSection: some View {
     }
 
     private func cleanRemoteApp(_ bundleID: String) {
-        guard remoteBusyBundle == nil,
+        guard !remoteOperationsLocked, remoteBusyBundle == nil,
               let inventory = remoteInventories[bundleID],
               inventory.canClean else { return }
         remoteBusyBundle = bundleID
-        remoteMessages[bundleID] = "Cleaning inspected cache entries…"
+        remoteMessages[bundleID] = "Cleaning verified cache entries…"
         Task {
             do {
                 let result = try await FilzaAirliftCleaner.removeVerifiedCacheEntries(inventory)
                 let estimate = ByteCountFormatter.string(
                     fromByteCount: result.estimatedBytes, countStyle: .file
                 )
-                remoteMessages[bundleID] = "Airlift accepted " +
+                remoteMessages[bundleID] = "Remote cleanup accepted " +
                     "\(result.acceptedRemovals) exact deletions (" +
                     "\(estimate) estimated, not independently remeasured). " +
                     result.failures.joined(separator: "; ")
                 remoteInventories.removeValue(forKey: bundleID)
                 FilzaDiagnosticsAppend(
-                    "Cleaner", "Airlift \(bundleID): " + (remoteMessages[bundleID] ?? "")
+                    "Cleaner", "Paired cleanup \(bundleID): " + (remoteMessages[bundleID] ?? "")
                 )
             } catch {
                 remoteMessages[bundleID] = error.localizedDescription
+                if let airliftError = error as? FilzaAirliftError,
+                   case .unsafeRecovery = airliftError {
+                    remoteOperationsLocked = true
+                    remoteInventories.removeAll()
+                }
                 FilzaDiagnosticsAppend(
-                    "Cleaner", "Airlift cleanup \(bundleID) failed: \(error.localizedDescription)"
+                    "Cleaner", "Paired cleanup \(bundleID) failed: \(error.localizedDescription)"
                 )
             }
             remoteBusyBundle = nil
         }
     }
 
-'''
-s=s[:start]+section+s[end:]
-f.write_text(s, encoding="utf-8")
+    private var summarySection: some View {""")
 
 # Never show successful local cleaning for a bundle whose MCM re-activation
 # fails after a first verified open. Use the exact scanned root.
@@ -289,13 +413,17 @@ replace_one(cleaner,
         airliftCatalog.refresh()
         FilzaDiagnosticsAppend("Cleaner", "Refreshing local installed-app and paired Airlift catalogs")""")
 
-# The local scan always probes all API/MCM/LS candidates, not Filza alone.
+# Verify merged rows are drawn only by 3105's original Cleaner app list.
 text = f.read_text(encoding="utf-8")
-assert "FILZA_ALL_APP_AIRLIFT_CLEANER" in text
-assert "ForEach(airliftCatalog.apps)" in text
+assert "FILZA_UNIFIED_CLEANER_LIST_V1" in text
+assert "allCleanerRecords" in text
+assert "ForEach(filteredRecords)" in text
+assert "airliftSection" not in text
+assert "ForEach(airliftCatalog.apps)" not in text
 assert "FilzaAirliftCleaner.inspect(app)" in text
 assert "FilzaAirliftCleaner.removeVerifiedCacheEntries(inventory)" in text
+assert "remoteOperationsLocked" in text
 assert "alreadyVerified = record.app.containerPath" in text
 assert "NSHomeDirectory()" not in text
 assert "FilzaAirliftWorkspaceView" not in text
-print("All-app Cleaner: verified local roots plus per-app Airlift inspection/confirmed cache deletion")
+print("Unified 3105 Cleaner: single app list from local + paired discovery, no fake cache sizes")
