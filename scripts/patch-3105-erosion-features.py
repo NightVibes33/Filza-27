@@ -197,7 +197,8 @@ patch(wallpaper, [
         Task {
             do {
                 let count = try await FilzaErosionPosterBoardWriter.apply(
-                    payload: package.payload
+                    payload: package.payload,
+                    preferredGeneration: report?.layout.generation
                 )
                 isBusy = false
                 _ = openApplicationForBundleID("com.apple.PosterBoard")

@@ -26,16 +26,24 @@ enum FilzaErosionPosterBoardWriter {
         }
     }
 
-    /// Erosion's current PosterBoard path uses generation 61. On a different
-    /// OS revision this path may not exist; the Airlift operation reports failure.
-    private static let generation = "61"
+    /// Use an actual read-only 3105 layout discovery when available, rather
+    /// than forcing Erosion's generation 61 on every iOS release.
+    /// Retain generation 61 only as the historical upstream fallback when
+    /// the OS denies layout enumeration, and report that uncertainty.
+    private static let upstreamFallbackGeneration = "61"
+    private static func selectedGeneration(_ measured: String?) -> String {
+        guard let measured, measured.count <= 4,
+              !measured.isEmpty, measured.allSatisfy({ $0.isNumber }),
+              Int(measured) != nil else { return upstreamFallbackGeneration }
+        return measured
+    }
     private static let allowedExtensions: Set<String> = [
         WallpaperPosterLayout.collectionsExtension,
         WallpaperPosterLayout.mercuryExtension,
         WallpaperPosterLayout.photosExtension
     ]
 
-    static func apply(payload: TendiesPayload) async throws -> Int {
+    static func apply(payload: TendiesPayload, preferredGeneration: String? = nil) async throws -> Int {
         guard let pairing = FilzaAirlift.pairedRecord() else {
             throw Failure.pairingUnavailable
         }
@@ -47,6 +55,14 @@ enum FilzaErosionPosterBoardWriter {
         // unfiltered InstallationProxy app scan. Resolve this one bundle
         // explicitly, using the same pinned AirliftFFI lookup.
         let posterBoard = try await findPosterBoardContainer(pairing: pairing)
+        let generation = selectedGeneration(preferredGeneration)
+        FilzaDiagnosticsAppend(
+            "WallpaperLab",
+            "Airlift PosterBoard generation=\(generation) " +
+            (preferredGeneration == nil
+                ? "(upstream default, not measured; may fail on this iOS build)"
+                : "(measured by 3105 local read-only access probe)")
+        )
 
         let fm = FileManager.default
         var completed = 0

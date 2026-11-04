@@ -278,6 +278,17 @@ replace_one(cleaner,
                 FilzaDiagnosticsAppend("Cleaner", lastLocalCleanup)
                 activeAlert = .result(message: resultMessage)""")
 
+# Refresh the remote catalog every time the user presses Scan Again too, not
+# only once when Cleaner first appears. This is necessary if the user pairs in
+# Settings after opening Cleaner, and works independently of local MCM access.
+replace_one(cleaner,
+    """    private func reload() {
+        guard !isBusy else { return }""",
+    """    private func reload() {
+        guard !isBusy else { return }
+        airliftCatalog.refresh()
+        FilzaDiagnosticsAppend("Cleaner", "Refreshing local installed-app and paired Airlift catalogs")""")
+
 # The local scan always probes all API/MCM/LS candidates, not Filza alone.
 text = f.read_text(encoding="utf-8")
 assert "FILZA_ALL_APP_AIRLIFT_CLEANER" in text
