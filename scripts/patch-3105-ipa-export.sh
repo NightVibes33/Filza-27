@@ -24,6 +24,9 @@ state_replacement = '''    @State private var hasLoaded = false
     @State private var exportingBundleID: String?
     @State private var ipaExportItem: FilzaIPAExportItem?
     @State private var ipaExportError: String?
+    @State private var preparedIPAs: [String: URL] = [:]
+    @State private var preparedEncryption: [String: String] = [:]
+    @State private var decryptedIPAs: [String: URL] = [:]
 '''
 if state_anchor not in browser:
     raise SystemExit("3105 IPA export patch: state anchor changed")
@@ -42,7 +45,7 @@ navigation_replacement = '''            .sheet(item: $ipaExportItem) { item in
                 }
             }
             .alert(
-                "IPA Export",
+                "App Preparation",
                 isPresented: Binding(
                     get: { ipaExportError != nil },
                     set: { if !$0 { ipaExportError = nil } }
@@ -71,7 +74,7 @@ version_anchor = '''            if !app.version.isEmpty {
 version_replacement = '''            if exportingBundleID == app.bundleID {
                 ProgressView()
                     .controlSize(.small)
-                    .accessibilityLabel("Repackaging IPA")
+                    .accessibilityLabel("Preparing IPA")
             } else if !app.version.isEmpty {
                 Text(app.version)
                     .font(.caption2)
@@ -81,12 +84,39 @@ version_replacement = '''            if exportingBundleID == app.bundleID {
         .padding(.vertical, 2)
         .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 12))
         .contextMenu {
-            Button {
-                repackageToIPA(app)
-            } label: {
-                Label("Repackage as IPA", systemImage: "shippingbox.and.arrow.backward")
+            if let ipa = preparedIPAs[app.bundleID] {
+                if let verified = decryptedIPAs[app.bundleID] {
+                    Button {
+                        ipaExportItem = FilzaIPAExportItem(url: verified)
+                    } label: {
+                        Label("Export decrypted IPA", systemImage: "checkmark.shield")
+                    }
+                }
+                Button {
+                    decryptPreparedIPA(app)
+                } label: {
+                    Label("Decrypt", systemImage: "lock.open")
+                }
+                .disabled(exportingBundleID != nil)
+                Button {
+                    ipaExportItem = FilzaIPAExportItem(url: ipa)
+                } label: {
+                    Label("Export prepared IPA", systemImage: "square.and.arrow.up")
+                }
+                Button {
+                    prepareIPA(app)
+                } label: {
+                    Label("Prepare again", systemImage: "arrow.clockwise")
+                }
+                .disabled(exportingBundleID != nil)
+            } else {
+                Button {
+                    prepareIPA(app)
+                } label: {
+                    Label("Prepare", systemImage: "shippingbox")
+                }
+                .disabled(exportingBundleID != nil)
             }
-            .disabled(exportingBundleID != nil)
         }
     }
 '''
@@ -96,32 +126,80 @@ browser = browser.replace(version_anchor, version_replacement, 1)
 
 reload_anchor = '''    private func reload() {
 '''
-export_method = '''    private func repackageToIPA(_ app: InstalledApp) {
+export_method = '''    // Stage one is local/bad_query-first with paired Airlift as an additive fallback.
+    private func prepareIPA(_ app: InstalledApp) {
         guard exportingBundleID == nil else { return }
-
         let bundleID = app.bundleID
         let displayName = app.displayName
         let version = app.version
+        let paired = airliftCatalog.apps.first { $0.bundleID == bundleID }
         exportingBundleID = bundleID
         ipaExportError = nil
-
-        DispatchQueue.global(qos: .userInitiated).async {
+        preparedIPAs[bundleID] = nil
+        preparedEncryption[bundleID] = nil
+        decryptedIPAs[bundleID] = nil
+        Task {
             do {
-                let url = try FilzaAppIPAExporter.repackage(
-                    bundleID: bundleID,
-                    displayName: displayName,
-                    version: version
-                )
-                DispatchQueue.main.async {
-                    exportingBundleID = nil
-                    ipaExportItem = FilzaIPAExportItem(url: url)
+                let url: URL
+                do {
+                    url = try await Task.detached(priority: .userInitiated) {
+                        try FilzaAppIPAExporter.repackage(
+                            bundleID: bundleID, displayName: displayName, version: version
+                        )
+                    }.value
+                } catch {
+                    guard let paired, paired.bundlePath != nil else { throw error }
+                    let export = try await FilzaAirliftIPAExporter.export(paired)
+                    url = export.fileURL
+                }
+                let status = try await Task.detached(priority: .utility) {
+                    try FilzaAirliftIPAExporter.inspectIPA(url)
+                }.value
+                preparedIPAs[bundleID] = url
+                preparedEncryption[bundleID] = status
+                ipaExportError = "Prepared \(displayName).\\n\(status)\\nLong-press again for Decrypt or Export prepared IPA."
+            } catch {
+                ipaExportError = "Prepare failed for \(displayName): \(error.localizedDescription)"
+            }
+            exportingBundleID = nil
+        }
+    }
+
+    // In-process FairPlay research backend: no second helper IPA.
+    // Airlift copies a staged bundle but cannot authorize the kernel to
+    // decrypt an original installed binary on unsupported iOS builds.
+    private func decryptPreparedIPA(_ app: InstalledApp) {
+        guard let prepared = preparedIPAs[app.bundleID],
+              exportingBundleID == nil else {
+            ipaExportError = "Prepare this app first."
+            return
+        }
+        if let existing = decryptedIPAs[app.bundleID] {
+            ipaExportItem = FilzaIPAExportItem(url: existing)
+            return
+        }
+        let id = app.bundleID
+        let pairedBundlePath = airliftCatalog.apps.first { $0.bundleID == id }?.bundlePath
+        exportingBundleID = id
+        ipaExportError = nil
+        Task {
+            do {
+                let result = try await Task.detached(priority: .userInitiated) {
+                    try FilzaFairPlayBackend.decryptPreparedIPA(
+                        bundleID: id, preparedIPA: prepared,
+                        pairedBundlePath: pairedBundlePath
+                    )
+                }.value
+                if result == prepared {
+                    ipaExportError = "The prepared IPA already contains unencrypted arm64 binaries. Use Export prepared IPA."
+                } else {
+                    decryptedIPAs[id] = result
+                    ipaExportError = "Decrypted IPA verified. Long-press again to Export decrypted IPA."
                 }
             } catch {
-                DispatchQueue.main.async {
-                    exportingBundleID = nil
-                    ipaExportError = error.localizedDescription
-                }
+                ipaExportError = "Decrypt failed: \(error.localizedDescription)"
             }
+            exportingBundleID = nil
         }
     }
 
@@ -261,7 +339,12 @@ zip_text = zip_text.replace(resource_keys_anchor, unix_mode_method, 1)
 zip_path.write_text(zip_text, encoding="utf-8")
 PY
 
-grep -Fq 'Label("Repackage as IPA"' "$BROWSER"
+grep -Fq 'Label("Prepare", systemImage:' "$BROWSER"
+grep -Fq 'Label("Decrypt", systemImage:' "$BROWSER"
+grep -Fq 'preparedIPAs[app.bundleID]' "$BROWSER"
+grep -Fq 'decryptPreparedIPA(app)' "$BROWSER"
+grep -Fq 'FilzaFairPlayBackend.decryptPreparedIPA' "$BROWSER"
+grep -Fq 'Label("Export decrypted IPA"' "$BROWSER"
 grep -Fq 'FilzaAppIPAExporter.repackage' "$BROWSER"
 grep -Fq 'FilzaIPAExportDocumentPicker' "$BROWSER"
 grep -Fq '.navigationDestination(for: FileBrowserDestination.self)' "$BROWSER"

@@ -30,6 +30,8 @@ static NSString *const FMTGestaltIdentifier =
     @"com.nightvibes33.filzaslop.toolbar.gestalt";
 static NSString *const FMTNFCARDIdentifier =
     @"com.nightvibes33.filzaslop.toolbar.nfcard";
+static NSString *const FMTAirliftIdentifier =
+    @"com.nightvibes33.filzaslop.toolbar.airlift-files";
 static NSString *const FMTLegacyPatchesIdentifier =
     @"com.nightvibes33.filzaslop.toolbar.patches";
 static NSString *const FMTAppsIdentifier =
@@ -48,9 +50,11 @@ static BOOL FMTIsUtilityItem(UIBarButtonItem *item)
     NSString *identifier = item.accessibilityIdentifier;
     return [identifier isEqualToString:FMTGestaltIdentifier] ||
         [identifier isEqualToString:FMTNFCARDIdentifier] ||
+        [identifier isEqualToString:FMTAirliftIdentifier] ||
         [identifier isEqualToString:FMTLegacyPatchesIdentifier] ||
         item.action == NSSelectorFromString(@"fz_openMondGestalt") ||
         item.action == NSSelectorFromString(@"fz_openNFCARD") ||
+        item.action == NSSelectorFromString(@"fz_openAirliftFiles") ||
         item.action == NSSelectorFromString(@"fz_open3105Patches");
 }
 
@@ -110,6 +114,24 @@ static void FMTOpenNFCARD(id self, SEL _cmd)
     FilzaNFCARDPresentFromController(controller);
 }
 
+static void FMTOpenAirliftFiles(id self, SEL _cmd)
+{
+    UIViewController *source = [self isKindOfClass:UIViewController.class] ? self : nil;
+    Class factory = NSClassFromString(@"FilzaAirliftHostFactory");
+    SEL selector = NSSelectorFromString(@"makeViewController");
+    if (!source || !factory || ![factory respondsToSelector:selector]) {
+        FilzaDiagnosticsAppend(@"Airlift", @"native Filza file-manager host unavailable");
+        return;
+    }
+    UIViewController *controller = ((id (*)(id, SEL))objc_msgSend)(factory, selector);
+    if (!controller) return;
+    UIViewController *presenter = source;
+    while (presenter.presentedViewController) presenter = presenter.presentedViewController;
+    [presenter presentViewController:controller animated:YES completion:^{
+        FilzaDiagnosticsAppend(@"Airlift", @"opened paired-device transport tools from native Filza toolbar");
+    }];
+}
+
 static void FMTEnsureUtilityItems(id mainView)
 {
     if (!mainView) return;
@@ -151,6 +173,10 @@ static void FMTEnsureUtilityItems(id mainView)
         @"NFCARD", FMTNFCARDIdentifier, mainView,
         NSSelectorFromString(@"fz_openNFCARD"));
 
+    UIBarButtonItem *airlift = FMTImageItem(@"folder.badge.gearshape",
+        @"Airlift Tools", FMTAirliftIdentifier, mainView,
+        NSSelectorFromString(@"fz_openAirliftFiles"));
+
     NSInteger insertion = items.count;
     if (appsIndex != NSNotFound || musicIndex != NSNotFound) {
         NSInteger last = MAX(appsIndex == NSNotFound ? -1 : appsIndex,
@@ -159,12 +185,13 @@ static void FMTEnsureUtilityItems(id mainView)
     }
     [items insertObject:gestalt atIndex:(NSUInteger)insertion];
     [items insertObject:nfcard atIndex:(NSUInteger)insertion + 1];
+    [items insertObject:airlift atIndex:(NSUInteger)insertion + 2];
 
     gFMTMutatingToolbar = YES;
     [toolbar setItems:items animated:NO];
     gFMTMutatingToolbar = NO;
     FilzaDiagnosticsAppend(@"Toolbar", [NSString stringWithFormat:
-        @"ensured persistent Apps/Music/Gestalt/NFCARD bottom toolbar apps=%ld music=%ld",
+        @"ensured persistent Apps/Music/Gestalt/NFCARD/Airlift toolbar apps=%ld music=%ld",
         (long)appsIndex, (long)musicIndex]);
 }
 
@@ -264,6 +291,8 @@ static void FMTInstallHooks(void)
                     (IMP)FMTOpenApps, "v@:");
     class_addMethod(cls, NSSelectorFromString(@"fz_openNFCARD"),
                     (IMP)FMTOpenNFCARD, "v@:");
+    class_addMethod(cls, NSSelectorFromString(@"fz_openAirliftFiles"),
+                    (IMP)FMTOpenAirliftFiles, "v@:");
     gFMTOriginalCreateMainToolBar = FMTHook(cls,
         NSSelectorFromString(@"createMainToolBar"), (IMP)FMTCreateMainToolBar);
     gFMTOriginalViewDidLoad = FMTHook(cls, @selector(viewDidLoad),

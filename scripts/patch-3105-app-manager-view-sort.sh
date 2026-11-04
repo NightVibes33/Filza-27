@@ -38,16 +38,68 @@ if overlay_anchor not in text:
     raise SystemExit("3105 view/sort patch: overlay anchor changed")
 text = text.replace(overlay_anchor, overlay_replacement, 1)
 
-# 3105 v1.0.1 has the existing FilesTab toolbar button before Refresh. Keep both
-# exactly where they are and insert only the requested View / Sort menu.
-toolbar_anchor = '''            .toolbar {\n                ToolbarItem(placement: .navigationBarTrailing) {\n                    FilesTabToolbarButton(session: $tabSession)\n                }\n                ToolbarItem(placement: .navigationBarTrailing) {\n                    Button { reload() } label: {\n                        if isResolving {\n                            ProgressView()\n                        } else {\n                            Image(systemName: "arrow.clockwise")\n                        }\n                    }\n                    .disabled(isResolving)\n                    .accessibilityLabel(language.text("browser.retry"))\n                }\n            }\n'''
-toolbar_replacement = '''            .toolbar {\n                ToolbarItem(placement: .navigationBarTrailing) {\n                    FilesTabToolbarButton(session: $tabSession)\n                }\n                ToolbarItem(placement: .navigationBarTrailing) {\n                    Menu {\n                        Picker("View", selection: $appViewMode) {\n                            ForEach(AppBrowserViewMode.allCases) { mode in\n                                Text(mode.title).tag(mode)\n                            }\n                        }\n\n                        Divider()\n\n                        Picker("Sort", selection: $appSortOrder) {\n                            ForEach(AppBrowserSortOrder.allCases) { order in\n                                Text(order.title).tag(order)\n                            }\n                        }\n                    } label: {\n                        Image(systemName: "line.3.horizontal.decrease.circle")\n                    }\n                    .accessibilityLabel("View and sort apps")\n                }\n                ToolbarItem(placement: .navigationBarTrailing) {\n                    Button { reload() } label: {\n                        if isResolving || isResearchCatalogLoading {\n                            ProgressView()\n                        } else {\n                            Image(systemName: "arrow.clockwise")\n                        }\n                    }\n                    .disabled(isResolving || isResearchCatalogLoading)\n                    .accessibilityLabel(language.text("browser.retry"))\n                }\n            }\n'''
+# Preserve both upstream FilesTab and Airlift toolbar buttons. Insert only
+# the View / Sort menu before Refresh, without replacing the entire toolbar.
+toolbar_anchor = '''                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { reload() } label: {
+                        if isResolving {
+'''
+toolbar_replacement = '''                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Picker("View", selection: $appViewMode) {
+                            ForEach(AppBrowserViewMode.allCases) { mode in
+                                Text(mode.title).tag(mode)
+                            }
+                        }
+                        Divider()
+                        Picker("Sort", selection: $appSortOrder) {
+                            ForEach(AppBrowserSortOrder.allCases) { order in
+                                Text(order.title).tag(order)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                    }
+                    .accessibilityLabel("View and sort apps")
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { reload() } label: {
+                        if isResolving || isResearchCatalogLoading {
+'''
+# Preserve leading integrations (including Airlift Files) and patch only
+# the original trailing FilesTab + Refresh controls.
+toolbar_head = "            .toolbar {\\n".replace("\\\\n", "\\n")
+toolbar_anchor = toolbar_anchor.replace(toolbar_head, "", 1)
+toolbar_replacement = toolbar_replacement.replace(toolbar_head, "", 1)
 if toolbar_anchor not in text:
-    raise SystemExit("3105 view/sort patch: v1.0.1 toolbar anchor changed")
+    raise SystemExit("3105 view/sort patch: trailing toolbar controls changed")
 text = text.replace(toolbar_anchor, toolbar_replacement, 1)
+refresh_anchor = '''                    .disabled(isResolving)
+                    .accessibilityLabel(language.text("browser.retry"))
+'''
+refresh_replacement = '''                    .disabled(isResolving || isResearchCatalogLoading)
+                    .accessibilityLabel(language.text("browser.retry"))
+'''
+if refresh_anchor not in text:
+    raise SystemExit("3105 view/sort patch: refresh state anchor changed")
+text = text.replace(refresh_anchor, refresh_replacement, 1)
 
-on_appear_anchor = '''            .onAppear {\n                if workspaceURL == nil {\n                    workspaceURL = try? PatchWorkspaceService.documentsRootURL()\n                    _ = try? PatchWorkspaceService.patchesRootURL()\n                }\n                if !hasLoaded {\n                    hasLoaded = true\n                    reload()\n                }\n            }\n'''
-on_appear_replacement = '''            .onAppear {\n                if workspaceURL == nil {\n                    workspaceURL = try? PatchWorkspaceService.documentsRootURL()\n                    _ = try? PatchWorkspaceService.patchesRootURL()\n                }\n                if !hasLoaded {\n                    hasLoaded = true\n                    reload()\n                }\n            }\n            .onChange(of: appViewMode) { newMode in\n                if newMode.requiresResearchCatalog {\n                    loadResearchCatalogIfNeeded()\n                }\n            }\n'''
+# Pairing/Airlift may extend .onAppear; add onChange before navigation.
+on_appear_anchor = '''            .navigationDestination(for: FileBrowserDestination.self) { destination in
+'''
+on_appear_replacement = '''            .onChange(of: appViewMode) { newMode in
+                if newMode.requiresResearchCatalog {
+                    loadResearchCatalogIfNeeded()
+                }
+            }
+            .navigationDestination(for: FileBrowserDestination.self) { destination in
+'''
+# Airlift's optional refresh is additive to upstream onAppear. Retain it
+# alongside the research mode lifecycle hook when present.
+if on_appear_anchor not in text and "airliftCatalog.refresh()" in text:
+    refresh_line = "                    if FilzaAirlift.pairedRecord() != nil { airliftCatalog.refresh() }\\n"
+    on_appear_anchor = on_appear_anchor.replace("                    reload()\\n", "                    reload()\\n" + refresh_line, 1)
+    on_appear_replacement = on_appear_replacement.replace("                    reload()\\n", "                    reload()\\n" + refresh_line, 1)
 if on_appear_anchor not in text:
     raise SystemExit("3105 view/sort patch: v1.0.1 onAppear anchor changed")
 text = text.replace(on_appear_anchor, on_appear_replacement, 1)
@@ -58,8 +110,12 @@ if reload_start not in text:
     raise SystemExit("3105 view/sort patch: reload start anchor changed")
 text = text.replace(reload_start, reload_replacement, 1)
 
-final_anchor = '''            DispatchQueue.main.async {\n                apps = result\n                isLoading = false\n                isResolving = false\n                if result.isEmpty {\n                    errorMessage = emptyMessage\n                }\n            }\n'''
-final_replacement = '''            let apiIDs = Set(apiApps.map(\\.bundleID))\n            let mcmIDs = Set(mcmApps.map(\\.bundleID))\n            let launchServiceIDs = Set(launchServicesIdentifiers)\n            let inferredIDs = Set(inferredFilesystemApps.map(\\.bundleID))\n\n            DispatchQueue.main.async {\n                apps = result\n                researchCandidates = result\n                installedAPIBundleIDs = apiIDs\n                mcmBundleIDs = mcmIDs\n                launchServicesBundleIDs = launchServiceIDs\n                filesystemBundleIDs = inferredIDs\n                launchServicesCandidateIdentifiers = launchServicesIdentifiers\n                isLoading = false\n                isResolving = false\n                if result.isEmpty {\n                    errorMessage = emptyMessage\n                }\n                if appViewMode.requiresResearchCatalog {\n                    loadResearchCatalogIfNeeded()\n                }\n            }\n'''
+final_anchor = '''            DispatchQueue.main.async {\n                localAppResults = result\n                apps = mergedWithAirlift(result)\n                isLoading = false\n                isResolving = false\n                if result.isEmpty {\n                    errorMessage = emptyMessage\n                }\n            }\n'''
+final_replacement = '''            let apiIDs = Set(apiApps.map(\\.bundleID))\n            let mcmIDs = Set(mcmApps.map(\\.bundleID))\n            let launchServiceIDs = Set(launchServicesIdentifiers)\n            let inferredIDs = Set(inferredFilesystemApps.map(\\.bundleID))\n\n            DispatchQueue.main.async {\n                localAppResults = result\n                apps = mergedWithAirlift(result)\n                researchCandidates = mergedWithAirlift(result)\n                installedAPIBundleIDs = apiIDs\n                mcmBundleIDs = mcmIDs\n                launchServicesBundleIDs = launchServiceIDs\n                filesystemBundleIDs = inferredIDs\n                launchServicesCandidateIdentifiers = launchServicesIdentifiers\n                isLoading = false\n                isResolving = false\n                if result.isEmpty {\n                    errorMessage = emptyMessage\n                }\n                if appViewMode.requiresResearchCatalog {\n                    loadResearchCatalogIfNeeded()\n                }\n            }\n'''
+# Preserve Airlift-discovered entries in the final visible list.
+if final_anchor not in text and "mergedWithAirlift(result)" in text:
+    final_anchor = final_anchor.replace("                apps = result\\n", "                apps = mergedWithAirlift(result)\\n", 1)
+    final_replacement = final_replacement.replace("                apps = result\\n", "                apps = mergedWithAirlift(result)\\n", 1)
 if final_anchor not in text:
     raise SystemExit("3105 view/sort patch: final result anchor changed")
 text = text.replace(final_anchor, final_replacement, 1)
@@ -85,7 +141,7 @@ required = [
     'case unresolvedInteresting = "unresolved-interesting"',
     'if appViewMode == .default && appSortOrder == .name',
     'ContainerPresentationPolicy.shouldShow(bundleID: $0.bundleID)',
-    'Label("Repackage as IPA"',
+    'Label("Prepare", systemImage:',
 ]
 for needle in required:
     if needle not in text:
@@ -109,7 +165,8 @@ grep -Fq 'Picker("Sort", selection: $appSortOrder)' "$BROWSER"
 grep -Fq 'case internalHidden = "internal-hidden"' "$BROWSER"
 grep -Fq 'case systemServices = "system-services"' "$BROWSER"
 grep -Fq 'case unresolvedInteresting = "unresolved-interesting"' "$BROWSER"
-grep -Fq 'Label("Repackage as IPA"' "$BROWSER"
+grep -Fq 'Label("Prepare", systemImage:' "$BROWSER"
+grep -Fq 'Label("Decrypt", systemImage:' "$BROWSER"
 ! grep -Fq 'discoverySummary(for: app)' "$BROWSER"
 
 echo "Patched 3105 Apps Manager with View / Sort research modes and original row presentation"

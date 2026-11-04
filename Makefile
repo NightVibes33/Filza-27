@@ -21,7 +21,7 @@ MOND_GEN := $(MOND_CURRENT_ROOT)/Generated
 
 FilzaApplySandboxExt_FILES = Tweak.m FilzaNFCARDBridge.m AppsMusicFix.m AppsManagerPresentationFix.m AppProxyMetadataFix.m AppMetadataRetryFix.m AppIconResourceProxyFix.m VirtualBackendFix.m SystemPathDiagnostics.m BadQuerySystemProbe.m GestaltManager.m FilzaMondBridge.m FilzaMainToolbarGestalt.m Filza3105Bridge.m Filza3105IPAExportBridge.m ByeTunesMusicBridge.m ByeTunesFilzaLibraryEmbed.m ByeTunesFullAppLauncher.m FilzaDiagnostics.m FilzaQuickActions.m WebDAVRuntimeFix.m WebDAVToggleStateFix.m ArchiveSafety.m ArchiveCreationSafety.m RuntimeStability.m CompatibilityDiagnostics.m CVE43724RieCompatibility.m MCMBridge.m MCMFilzaIntegration.m PosterBoardFeature.m
 FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/AppIconHelper.m
-FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/wallpaper_zip.c
+FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/wallpaper_zip.c FilzaFairPlayRuntime.c
 FilzaApplySandboxExt_FILES += $(BAD_QUERY_ROOT)/bad_query/bad_query.c
 FilzaApplySandboxExt_FILES += $(MOND_GEN)/mond_bad_query.c
 FilzaApplySandboxExt_FILES += $(NFCARD_IOS)/GrappaHelper.m
@@ -113,7 +113,7 @@ MOND_ZIP_SWIFT_FILES := \
     $(MOND_GEN)/ZIPFoundation/FileManager+ZIPDeprecated.swift \
     $(MOND_GEN)/ZIPFoundation/URL+ZIP.swift
 
-FilzaApplySandboxExt_SWIFT_FILES = FilzaNFCARDHost.swift $(NFCARD_SWIFT_FILES) ByeTunesEmbeddedHost.swift ByeTunesOnDevicePairing.swift ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift FilzaMondCurrentHost.swift Filza3105Host.swift $(MOND_SWIFT_FILES) $(MOND_PARTYUI_SWIFT_FILES) $(MOND_ZIP_SWIFT_FILES) $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
+FilzaApplySandboxExt_SWIFT_FILES = FilzaUnifiedPairing.swift FilzaAirliftCleaner.swift FilzaErosionPosterBoardWriter.swift FilzaFairPlayBackend.swift FilzaCoreMediaReader.swift FilzaCoreMediaBrowser.swift FilzaAirliftBackend.swift FilzaAirliftIPAExporter.swift FilzaAirliftWorkspace.swift FilzaNFCARDHost.swift $(NFCARD_SWIFT_FILES) ByeTunesEmbeddedHost.swift ByeTunesOnDevicePairing.swift ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift FilzaMondCurrentHost.swift Filza3105Host.swift $(MOND_SWIFT_FILES) $(MOND_PARTYUI_SWIFT_FILES) $(MOND_ZIP_SWIFT_FILES) $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
 
 FilzaApplySandboxExt_CFLAGS = -I$(PWD)/compat -I$(PWD) -I$(PWD)/XPF/src -I$(PWD)/XPF/external/ChOma/include -I$(IDEVICE_VENDOR)/include -I$(PWD)/$(BAD_QUERY_ROOT)/bad_query -I$(PWD)/$(THREEONE_ROOT)/Sources -I$(PWD)/$(MOND_GEN) \
     -I$(PWD)/$(NFCARD_IOS) -I$(PWD)/$(NFCARD_FFI)/include -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Core -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Requests -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Responses -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebDAVServer \
@@ -146,8 +146,10 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/stage-mond-22-overlay.sh
 	@bash scripts/stage-3105-v1.sh
 	@bash scripts/stage-nfcard.sh
+	@python3 scripts/patch-nfcard-unified-pairing.py
 	@bash scripts/build-nfcard-ffi.sh "$(NFCARD_ROOT)" "$(NFCARD_FFI)"
 	@bash scripts/patch-3105-embedded-compat.sh
+	@python3 scripts/patch-3105-airlift.py
 	@bash scripts/patch-access-map-provenance.sh
 	@bash scripts/patch-byetunes-upstream-parity-v2.sh
 	@bash scripts/restore-byetunes-v24-metadata-compat.sh
@@ -159,6 +161,7 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/patch-byetunes-rppairing-localdevvpn.sh
 	@bash scripts/patch-byetunes-pairing-and-tabs.sh
 	@bash scripts/patch-byetunes-settings-cleanup.sh
+	@python3 scripts/patch-embedded-unified-pairing.py
 	@bash scripts/patch-byetunes-album-color-save.sh
 	@bash scripts/verify-byetunes-lyrics.sh
 	@bash scripts/verify-byetunes-album-color.sh
@@ -167,11 +170,14 @@ before-FilzaApplySandboxExt-all::
 	@grep -Fq 'al_pairing_run_host' "$(NFCARD_FFI)/include/AirliftFFI/airlift.h" || (echo "NFCARD pairing-host API missing" >&2; exit 1)
 	@grep -Fq 'al_connection_endpoint_set' "$(NFCARD_FFI)/include/AirliftFFI/airlift.h" || (echo "NFCARD endpoint API missing" >&2; exit 1)
 	@test -f "$(NFCARD_IOS)/NFCARDContentView.swift" || (echo "Missing staged NFCARD root" >&2; exit 1)
-	@grep -Fq 'NFCARDPairingTab()' "$(NFCARD_IOS)/NFCARDContentView.swift" || (echo "NFCARD Pairing tab missing" >&2; exit 1)
+	@! grep -Fq 'NFCARDPairingTab()' "$(NFCARD_IOS)/NFCARDContentView.swift" || (echo "NFCARD has redundant Pairing tab" >&2; exit 1)
+	@grep -Fq 'FILZA_NFCARD_SHARED_RP_PATH' "$(NFCARD_IOS)/PairingController.swift" || (echo "NFCARD shared pairing adapter missing" >&2; exit 1)
 	@grep -Fq 'NFCARDWalletCardsTab()' "$(NFCARD_IOS)/NFCARDContentView.swift" || (echo "NFCARD Wallet tab missing" >&2; exit 1)
 	@grep -Fq 'case cardLibrary = "Library"' "$(NFCARD_IOS)/Models.swift" || (echo "NFCARD Library tab missing" >&2; exit 1)
 	@! grep -Fq 'case passcodeThemes = "Passcode"' "$(NFCARD_IOS)/Models.swift" || (echo "obsolete NFCARD Passcode tab returned" >&2; exit 1)
 	@! grep -Fq 'case wallpapers = "Wallpapers"' "$(NFCARD_IOS)/Models.swift" || (echo "obsolete NFCARD Wallpapers tab returned" >&2; exit 1)
+	@grep -Fq 'al_list_app_containers' "$(NFCARD_FFI)/include/AirliftFFI/airlift.h" || (echo "Missing Erosion app discovery runtime" >&2; exit 1)
+	@grep -Fq 'al_exploit_read_folder' "$(NFCARD_FFI)/include/AirliftFFI/airlift.h" || (echo "Missing Erosion remote read runtime" >&2; exit 1)
 	@test -f "FilzaNFCARDHost.swift" || (echo "Missing NFCARD embedded host" >&2; exit 1)
 	@test -f "FilzaNFCARDBridge.m" || (echo "Missing NFCARD presentation bridge" >&2; exit 1)
 	@test -d "$(BYETUNES_ROOT)" || (echo "Missing ByeTunes submodule. Run: git submodule update --init --recursive" >&2; exit 1)
@@ -210,7 +216,9 @@ before-FilzaApplySandboxExt-all::
 	@! grep -Fq 'LyricsPlus' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "obsolete LyricsPlus lyric code returned" >&2; exit 1)
 	@! grep -Fq 'lrc.red' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "obsolete lrc.red lyric code returned" >&2; exit 1)
 	@! grep -Fq 'syncedLyricsTTML' "$(BYETUNES_ROOT)/SongMetadata.swift" || (echo "obsolete custom TTML state returned" >&2; exit 1)
-	@grep -Fq 'Pair with ByeTunes' "$(BYETUNES_ROOT)/OnboardingView.swift" || (echo "on-device pairing UI missing" >&2; exit 1)
+	@grep -Fq 'Continue to Music' "$(BYETUNES_ROOT)/OnboardingView.swift" || (echo "nonblocking ByeTunes onboarding missing" >&2; exit 1)
+	@grep -Fq 'Pairing is managed by Filza 27' "$(BYETUNES_ROOT)/SettingsView.swift" || (echo "ByeTunes pairing must be centralized" >&2; exit 1)
+	@grep -Fq 'FilzaUnifiedPairingHostFactory' FilzaUnifiedPairing.swift || (echo "Filza pairing settings host missing" >&2; exit 1)
 	@! grep -Fq 'Label("Download", systemImage: "arrow.down.circle")' "$(BYETUNES_ROOT)/TabViews.swift" || (echo "Download tab still visible" >&2; exit 1)
 	@test -f "scripts/patch-3105-embedded-compat.sh" || (echo "Missing 3105 embedded compatibility transform" >&2; exit 1)
 	@test -f "$(BAD_QUERY_ROOT)/bad_query/bad_query.c" || (echo "Missing pinned bad_query submodule" >&2; exit 1)
