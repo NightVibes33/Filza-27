@@ -500,8 +500,8 @@ static void MCMInstallStandardSandboxRoot(void)
         @"Filza-27 standard sideload mode\\n\\nSigned code identity: %@\\n"
          "MobileHouseArrest privileges: not assumed.\\n"
          "This folder, Library, Temporary and Archive are app-owned storage.\\n"
-         "Use the Apps Manager and Airlift Files panels for additional access "
-         "only when their own permissions and pairing checks succeed.\\n",
+         "Use Apps Manager for supported paired Airlift per-app operations.\\n"
+         "Read-only CoreMedia system snapshots are inside Device Storage.\\n",
         MCMSignedCodeIdentifier() ?: @"unavailable"];
     MCMWriteGeneratedString(message, [root stringByAppendingPathComponent:@"README.txt"]);
 }

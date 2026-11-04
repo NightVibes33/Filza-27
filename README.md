@@ -211,28 +211,32 @@ Filza-27 combines work from multiple open-source projects. Their upstream licens
 
 This repository includes compatibility and filesystem-access research for modern iOS. Those experiments should be treated as research features, not proof of unrestricted system access.
 
-## Optional Erosion Airlift file and app backend (iOS 18–27.0.1)
+## Erosion backends in Filza's original browser and Apps Manager (iOS 18–27.0.1)
 
-The **Apps Manager** retains 3105's MCM, MobileHouseArrest, LaunchServices and
-legacy `bad_query` discovery and access logic. A separate **Airlift Files**
-entry in Filza's native toolbar and 3105's Apps Manager uses a single NFCARD
-pairing record and an Erosion-based Airlift runtime for:
+**Filza remains the only file browser.** No Erosion app, fifth toolbar
+button, separate Airlift file-browser tab, or second file manager is shipped.
 
-- Paired InstallationProxy catalog of app bundle metadata, app data paths and
-  available App Groups, without claiming filesystem access based on metadata.
-- Explicit remote file/folder snapshots that can be browsed inside Filza's
-  local workspace or via `Device Storage/[Airlift] Snapshots`.
-- User-confirmed individual remote-file writes, folder uploads, and
-  remote-path deletion where the actual Airlift capability succeeds; local
-  snapshot edits are never auto-synced.
-- An AFC-only app-group path fallback if InstallationProxy metadata omits
-  App Group paths. This probes directory entries, not group file contents.
-- A separate **read-only CoreMedia `/usr/libexec` browser**, adapted from
-  Erosion's bytestream implementation. It is an optional capability probe,
-  not general system read access; files are copied locally for sharing.
-- IPA packaging of an accessible application snapshot, with Mach-O
-  `LC_ENCRYPTION_INFO(_64)` status detection. **This is not a FairPlay
-  decryption engine.** An encrypted executable stays encrypted.
+- **Filza → Device Storage → SYSTEM PATHS - READ-ONLY → CoreMedia →
+  usr → libexec** uses the optional CoreMedia XPC bytestream reader.
+  The existing native Filza directory UI opens genuine read-only local
+  snapshots when CoreMedia can return the system bytes. Each directory is
+  populated off the main thread and the same Filza folder refreshes when done.
+  Its ACCESS STATUS.txt lists actual results and omissions. No general system
+  filesystem capability or privilege escalation is implied; these are local
+  copies, not writes to the original /usr/libexec.
+- **3105 Apps Manager** keeps MCM, MobileHouseArrest, LaunchServices and
+  older bad_query discovery. Airlift supplies optional InstallationProxy
+  metadata and confirmed per-app snapshots when paired transport succeeds.
+- **All-app Cleaner** retains its existing local cache/tmp cleaning logic;
+  Airlift is an additional per-app path, not a Filza-only cleaner.
+- **Wallpapers and other embedded modules** retain their supported Erosion
+  transport functions where a real device transaction succeeds.
+- **Filza → Device Storage → [Airlift] Snapshots** can contain staged
+  snapshots from supported app-manager operations. These are local copies;
+  edits do not sync back automatically.
+
+All pairing is still managed centrally from Filza Settings → Device Pairing.
+On-device pairing and importing a pairing file remain available.
 
 The NFCARD integration now pins the newest NFCARD main revision
 `16f8bfd20a88a474f59c2d6eda291164a1cc015f`; its existing Wallet,
