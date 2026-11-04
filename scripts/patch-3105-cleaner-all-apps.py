@@ -59,14 +59,14 @@ replace_one(cleaner,
                 titleVisibility: .visible
             ) {
                 if let bundleID = remoteConfirmation {
-                    Button("Clean selected app using Airlift", role: .destructive) {
+                    Button("Clean selected app", role: .destructive) {
                         remoteConfirmation = nil
                         cleanRemoteApp(bundleID)
                     }
                 }
                 Button("Cancel", role: .cancel) { remoteConfirmation = nil }
             } message: {
-                Text("Only items confirmed in a complete Airlift cache snapshot " +
+                Text("Only items confirmed in a complete paired cache snapshot " +
                      "from Library/Caches and tmp will be removed. The source app " +
                      "should be closed. Remote deletion cannot be undone; transport " +
                      "success is not proof of reclaimed bytes.")
@@ -97,7 +97,7 @@ section = r'''    private var airliftSection: some View {
                 .foregroundStyle(.secondary)
             if FilzaAirlift.pairedRecord() == nil {
                 Text("Set up Device Pairing in Filza Settings to inspect other " +
-                     "applications using Erosion/Airlift.")
+                     "applications using the paired connection.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -127,7 +127,7 @@ section = r'''    private var airliftSection: some View {
                             Button(role: .destructive) {
                                 remoteConfirmation = app.bundleID
                             } label: {
-                                Label("Clean verified Airlift cache", systemImage: "trash")
+                                Label("Clean verified cache", systemImage: "trash")
                             }
                             .disabled(remoteBusyBundle != nil || isBusy)
                         }
@@ -140,7 +140,7 @@ section = r'''    private var airliftSection: some View {
                     Button {
                         scanRemoteApp(app)
                     } label: {
-                        Label("Inspect app cache via Airlift", systemImage: "arrow.clockwise")
+                        Label("Inspect app cache", systemImage: "arrow.clockwise")
                     }
                     .disabled(app.dataPath == nil ||
                               remoteBusyBundle != nil || isBusy ||
@@ -149,10 +149,10 @@ section = r'''    private var airliftSection: some View {
                 .padding(.vertical, 4)
             }
         } header: {
-            Text("All installed apps • Erosion/Airlift")
+            Text("All installed apps")
         } footer: {
             Text("The local Cleaner scans accessible caches for every app. " +
-                 "Airlift can inspect additional installed apps only when " +
+                 "Paired access can inspect additional installed apps only when " +
                  "paired transport and safe snapshot restoration succeed. " +
                  "Protected app data is never assumed writable from metadata.")
         }

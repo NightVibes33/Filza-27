@@ -88,7 +88,7 @@ patch(cleaner, [
                 }
             }
         } header: {
-            Text("Erosion app containers")
+            Text("Installed application access")
         } footer: {
             Text("Airlift paths are metadata. They are not counted as " +
                  "reclaimable caches and cannot be deleted by Cleaner. " +
@@ -143,16 +143,16 @@ patch(wallpaper, [
         """            .alert(item: $alert, content: alertContent)""",
         """            .alert(item: $alert, content: alertContent)
             .confirmationDialog(
-                "Apply wallpaper through Erosion/Airlift?",
+                "Apply wallpaper using paired access?",
                 isPresented: $confirmAirliftApply,
                 titleVisibility: .visible
             ) {
-                Button("Apply via Airlift", role: .destructive) {
+                Button("Apply using paired access", role: .destructive) {
                     if let package = selectedPackage { applyViaAirlift(package) }
                 }
             } message: {
                 Text("This writes selected wallpaper descriptors to PosterBoard " +
-                     "through the paired Erosion backend. It requires LocalDevVPN " +
+                     "through the paired service. It requires LocalDevVPN " +
                      "and may fail on this iOS build. Remote injections are not " +
                      "covered by 3105's local rollback receipts.")
             }"""
@@ -164,7 +164,7 @@ patch(wallpaper, [
             Button {
                 confirmAirliftApply = true
             } label: {
-                Label("Apply selected pack via Erosion/Airlift",
+                Label("Apply selected pack using paired access",
                       systemImage: "square.and.arrow.down")
             }
             .disabled(selectedPackage == nil || isBusy ||
@@ -182,7 +182,7 @@ patch(wallpaper, [
                     .foregroundStyle(.secondary)
             }
         } header: {
-            Text("Erosion fallback")
+            Text("Additional install method")
         }
     }
 

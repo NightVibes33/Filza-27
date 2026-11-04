@@ -251,7 +251,21 @@ jobs:
           ! grep -aFq 'LocalDevVPN preflight reachable hosts=' "$DYLIB"
           ! grep -aFq 'filzaByeTunesLastRPPairingHost' "$DYLIB"
           grep -aFq 'NFCARDEmbeddedHostFactory' "$DYLIB"
-          grep -aFq 'FilzaAirliftHostFactory' "$DYLIB"
+          # Airlift remains a private backend; its removed standalone app must
+          # not be compiled into the IPA.
+          grep -aFq 'al_list_app_containers' "$DYLIB"
+          ! grep -aFq 'FilzaAirliftHostFactory' "$DYLIB"
+          grep -Fq 'FilzaAirliftBackend.swift' Makefile
+          ! grep -Fq 'FilzaAirliftWorkspace.swift' Makefile
+          ! grep -Fq 'FilzaCoreMediaBrowser.swift' Makefile
+          ! grep -Fq '[items insertObject:airlift' FilzaMainToolbarGestalt.m
+          ! grep -Fq 'FMTOpenAirliftFiles' FilzaMainToolbarGestalt.m
+          grep -Fq 'FZNativeCoreMediaRequest' Tweak.m
+          grep -Fq 'SYSTEM PATHS - READ-ONLY' FilzaNativeCoreMediaBridge.swift
+          grep -Fq 'FILZA_EROSION_WALLPAPER_BRIDGE' ThirdParty/3105/Sources/WallpaperLabView.swift
+          grep -Fq 'FILZA_ALL_APP_AIRLIFT_CLEANER' ThirdParty/3105/Sources/CleanerView.swift
+          ! grep -Fq 'Erosion fallback' ThirdParty/3105/Sources/WallpaperLabView.swift
+          ! grep -Fq 'Erosion app containers' ThirdParty/3105/Sources/CleanerView.swift
           # Swift string constants may not be stored as contiguous ASCII in
           # optimized arm64 code. Validate the source contract rather than
           # treating the absence of a plaintext string as missing functionality.
