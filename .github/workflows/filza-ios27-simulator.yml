@@ -113,7 +113,13 @@ jobs:
           echo "$SIM_UDID" > .sim/evidence/simulator-udid.txt
           xcrun simctl boot "$SIM_UDID" || true
           xcrun simctl bootstatus "$SIM_UDID" -b | tee .sim/logs/boot.log
-          xcrun simctl io "$SIM_UDID" screenshot .sim/screenshots/00-boot.png
+          # iPhone Duo has two separate simulator displays. Capture the main
+          # LCD rather than failing with CoreSimulator's ambiguous-display error.
+          SCREENSHOT_DISPLAY_ARGS=()
+          if grep -qi "Duo" .sim/evidence/device-name.txt; then
+            SCREENSHOT_DISPLAY_ARGS=(--display=1)
+          fi
+          xcrun simctl io "$SIM_UDID" screenshot "${SCREENSHOT_DISPLAY_ARGS[@]}" .sim/screenshots/00-boot.png
 
           # Check exact production integration source contracts on the same commit.
           grep -Fq 'f1b81047a01a1817c7fb17e6938929eef108f1aa' scripts/stage-3105-v1.sh
@@ -167,16 +173,22 @@ jobs:
             --filza-simulator-test --simulate-cleaner-tab --simulate-cleaner-data \
             2>&1 | tee .sim/logs/cleaner-launch.log
           sleep 6
-          xcrun simctl io "$SIM_UDID" screenshot .sim/screenshots/01-cleaner-sample.png
+          xcrun simctl io "$SIM_UDID" screenshot "${SCREENSHOT_DISPLAY_ARGS[@]}" .sim/screenshots/01-cleaner-sample.png
           test -s .sim/screenshots/01-cleaner-sample.png
+          CLEANER_PID="$(sed -nE 's/.*: ([0-9]+)$/\1/p' .sim/logs/cleaner-launch.log | tail -1)"
+          test -n "$CLEANER_PID"
+          kill -0 "$CLEANER_PID"
 
           xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID"
           xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" \
             --filza-simulator-test --simulate-wallpaper-tab \
             2>&1 | tee .sim/logs/wallpaper-launch.log
           sleep 6
-          xcrun simctl io "$SIM_UDID" screenshot .sim/screenshots/02-wallpapers.png
+          xcrun simctl io "$SIM_UDID" screenshot "${SCREENSHOT_DISPLAY_ARGS[@]}" .sim/screenshots/02-wallpapers.png
           test -s .sim/screenshots/02-wallpapers.png
+          WALLPAPER_PID="$(sed -nE 's/.*: ([0-9]+)$/\1/p' .sim/logs/wallpaper-launch.log | tail -1)"
+          test -n "$WALLPAPER_PID"
+          kill -0 "$WALLPAPER_PID"
 
           cat >> .sim/evidence/RESULT.md <<'EOF'
 
