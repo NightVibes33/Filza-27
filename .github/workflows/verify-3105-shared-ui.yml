@@ -148,7 +148,12 @@ jobs:
           grep -Fq 'LimitedCleanerService.clean' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'static let allowedRelativeDirectories = ["Library/Caches", "tmp"]' ThirdParty/3105/Sources/LimitedCleanerService.swift
           grep -Fq 'FILZA_ALL_APP_AIRLIFT_CLEANER' ThirdParty/3105/Sources/CleanerView.swift
-          grep -Fq 'ForEach(airliftCatalog.apps)' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'FILZA_UNIFIED_CLEANER_LIST_V1' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'allCleanerRecords' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'ForEach(filteredRecords)' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'remoteOperationsLocked' ThirdParty/3105/Sources/CleanerView.swift
+          ! grep -Fq 'airliftSection' ThirdParty/3105/Sources/CleanerView.swift
+          ! grep -Fq 'ForEach(airliftCatalog.apps)' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'FilzaAirliftCleaner.inspect(app)' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'FilzaAirliftCleaner.removeVerifiedCacheEntries(inventory)' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'al_exploit_remove_path' FilzaAirliftBackend.swift

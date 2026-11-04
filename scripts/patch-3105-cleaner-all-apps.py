@@ -414,6 +414,7 @@ replace_one(cleaner,
         FilzaDiagnosticsAppend("Cleaner", "Refreshing local installed-app and paired Airlift catalogs")""")
 
 # Verify merged rows are drawn only by 3105's original Cleaner app list.
+f = Path(cleaner)
 text = f.read_text(encoding="utf-8")
 assert "FILZA_UNIFIED_CLEANER_LIST_V1" in text
 assert "allCleanerRecords" in text
