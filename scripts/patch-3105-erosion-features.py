@@ -40,64 +40,8 @@ patch(cleaner, [
             }""",
         """                hasLoaded = true
                 reload()
-                if FilzaAirlift.pairedRecord() != nil {
-                    airliftCatalog.refresh()
-                }
             }"""
     ),
-    (
-        """        if records.isEmpty {
-            List { emptySection }
-        } else {
-            List {
-                summarySection
-                applicationsSection
-            }""",
-        """        if records.isEmpty {
-            List {
-                emptySection
-                airliftSection
-            }
-        } else {
-            List {
-                summarySection
-                applicationsSection
-                airliftSection
-            }"""
-    ),
-    (
-        "    private var summarySection: some View {",
-        """    // Erosion does not provide a safe system-wide cache-deletion API.
-    // Show real InstallationProxy paths, but do not include them in
-    // reclaimable-byte counts or the destructive local cleaner.
-    private var airliftSection: some View {
-        Section {
-            Text(airliftCatalog.message)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            if airliftCatalog.scanning { ProgressView() }
-            ForEach(airliftCatalog.apps.filter { $0.dataPath != nil }) { app in
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(app.name)
-                        .font(.subheadline)
-                    Text(app.bundleID)
-                        .font(.caption2.monospaced())
-                    Text("Container path discovered; native Filza owns file browsing")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        } header: {
-            Text("Installed application access")
-        } footer: {
-            Text("Airlift paths are metadata. They are not counted as " +
-                 "reclaimable caches and cannot be deleted by Cleaner. " +
-                 "Successful snapshots belong in Filza's native Device Storage.")
-        }
-    }
-
-    private var summarySection: some View {"""
-    )
 ], "FILZA_EROSION_CLEANER_BRIDGE")
 
 wallpaper = "ThirdParty/3105/Sources/WallpaperLabView.swift"
