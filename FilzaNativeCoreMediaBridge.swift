@@ -67,9 +67,13 @@ public final class FilzaNativeCoreMediaBridge: NSObject {
         guard normalized == root || normalized.hasPrefix(root + "/") else { return }
         guard !loading.contains(normalized), !completed.contains(normalized) else { return }
 
-        // A symlink inside the mirror must not redirect this read-only projection.
-        guard URL(fileURLWithPath: normalized).resolvingSymlinksInPath().path == normalized else {
-            FilzaDiagnosticsAppend("CoreMedia", "Refused symlinked mirror path")
+        // iOS aliases /var to /private/var. Compare resolved roots rather than
+        // rejecting this legitimate system alias, while rejecting mirror escapes.
+        let resolvedRoot = mirrorRoot().resolvingSymlinksInPath().path
+        let resolvedPath = URL(fileURLWithPath: normalized).resolvingSymlinksInPath().path
+        guard resolvedPath == resolvedRoot ||
+              resolvedPath.hasPrefix(resolvedRoot + "/") else {
+            FilzaDiagnosticsAppend("CoreMedia", "Refused mirror path escaping Device Storage")
             return
         }
         loading.insert(normalized)
