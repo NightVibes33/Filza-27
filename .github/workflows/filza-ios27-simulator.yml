@@ -26,10 +26,13 @@ jobs:
           set -Eeuo pipefail
           mkdir -p .sim/evidence .sim/screenshots .sim/logs .sim/derived
           SIM_UDID=""
+          CREATED_SIMULATOR="false"
           cleanup() {
             if test -n "$SIM_UDID"; then
               xcrun simctl shutdown "$SIM_UDID" >/dev/null 2>&1 || true
-              xcrun simctl delete "$SIM_UDID" >/dev/null 2>&1 || true
+              if test "$CREATED_SIMULATOR" = true; then
+                xcrun simctl delete "$SIM_UDID" >/dev/null 2>&1 || true
+              fi
             fi
           }
           trap cleanup EXIT
@@ -55,39 +58,60 @@ jobs:
           test "$(uname -m)" = arm64
           xcrun simctl list -j runtimes > .sim/evidence/runtimes.json
           xcrun simctl list -j devicetypes > .sim/evidence/device-types.json
+          xcrun simctl list -j devices > .sim/evidence/devices.json
           python3 - <<'PY'
           import json, re
           from pathlib import Path
           base = Path('.sim/evidence')
           runtimes = json.loads((base/'runtimes.json').read_text())['runtimes']
-          compatible = [r for r in runtimes if r.get('isAvailable', True)
-                        and r.get('name', '').startswith('iOS 27')]
-          if not compatible:
+          eligible = [r for r in runtimes if r.get('isAvailable', True)
+                      and r.get('name', '').startswith('iOS 27')]
+          if not eligible:
               raise SystemExit('No installed iOS 27 Simulator runtime')
-          def key(r):
-              return tuple(int(n) for n in re.findall(r'\d+', r.get('version', '0')))
-          runtime = sorted(compatible, key=key, reverse=True)[0]
-          types = json.loads((base/'device-types.json').read_text())['devicetypes']
-          phones = [d for d in types if d['name'].startswith('iPhone ')]
-          device = next((d for d in phones if d['name']=='iPhone 16'), None)
-          if device is None:
-              device = next((d for d in phones if d['name']=='iPhone 18 Pro'), None)
-          if device is None and phones:
-              device=phones[0]
-          if device is None:
-              raise SystemExit('No iPhone simulator device type')
+          eligible.sort(key=lambda r: tuple(int(n) for n in re.findall(r'\d+', r.get('version','0'))), reverse=True)
+          devices = json.loads((base/'devices.json').read_text()).get('devices', {})
+          preferred_names = ('iPhone 18 Pro', 'iPhone 18', 'iPhone 17 Pro', 'iPhone 17', 'iPhone 16')
+          runtime, existing = None, None
+          for candidate in eligible:
+              matched = [d for d in devices.get(candidate['identifier'], [])
+                         if d.get('isAvailable', True) and d.get('name','').startswith('iPhone ')]
+              if matched:
+                  runtime = candidate
+                  existing = sorted(matched, key=lambda d:
+                      preferred_names.index(d['name']) if d['name'] in preferred_names else 99)[0]
+                  break
+          if runtime is None:
+              runtime = eligible[0]
           (base/'runtime-id.txt').write_text(runtime['identifier'])
-          (base/'device-id.txt').write_text(device['identifier'])
-          (base/'device-name.txt').write_text(device['name'])
           (base/'runtime-name.txt').write_text(runtime['name'])
-          print('Simulator:', device['name'], runtime['name'])
+          if existing:
+              (base/'existing-simulator-udid.txt').write_text(existing['udid'])
+              (base/'device-name.txt').write_text(existing['name'])
+              print('Compatible precreated simulator:', existing['name'], runtime['name'])
+          else:
+              types = json.loads((base/'device-types.json').read_text())['devicetypes']
+              phones = [d for d in types if d['name'].startswith('iPhone ')]
+              phones.sort(key=lambda d: preferred_names.index(d['name'])
+                          if d['name'] in preferred_names else 99)
+              (base/'candidate-types.txt').write_text('\n'.join(d['identifier'] for d in phones))
+              print('Attempting compatible iPhone types for:', runtime['name'])
           PY
 
           RUNTIME_ID="$(cat .sim/evidence/runtime-id.txt)"
-          DEVICE_ID="$(cat .sim/evidence/device-id.txt)"
-          SIM_UDID="$(xcrun simctl create Filza27-3105-Regression "$DEVICE_ID" "$RUNTIME_ID")"
+          if test -s .sim/evidence/existing-simulator-udid.txt; then
+            SIM_UDID="$(cat .sim/evidence/existing-simulator-udid.txt)"
+            CREATED_SIMULATOR="false"
+          else
+            CREATED_SIMULATOR="true"
+            while IFS= read -r DEVICE_ID; do
+              if SIM_UDID="$(xcrun simctl create Filza27-3105-Regression "$DEVICE_ID" "$RUNTIME_ID" 2>>.sim/logs/create-attempts.log)"; then
+                break
+              fi
+            done < .sim/evidence/candidate-types.txt
+            test -n "$SIM_UDID" || { echo 'No compatible iPhone device type could be created'; exit 1; }
+          fi
           echo "$SIM_UDID" > .sim/evidence/simulator-udid.txt
-          xcrun simctl boot "$SIM_UDID"
+          xcrun simctl boot "$SIM_UDID" || true
           xcrun simctl bootstatus "$SIM_UDID" -b | tee .sim/logs/boot.log
           xcrun simctl io "$SIM_UDID" screenshot .sim/screenshots/00-boot.png
 
