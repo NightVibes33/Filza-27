@@ -8,28 +8,36 @@ import UniformTypeIdentifiers
 /// existing canonical location. No credentials are logged or exported.
 @MainActor
 enum FilzaUnifiedPairingManager {
+    // Read-only snapshot. Never call refreshExpectedPairingFileState() or
+    // PairingController.pairingFilePath() from SwiftUI body: both can mutate
+    // observed state. The latter can also copy candidate pairing records.
     static func recordPath() -> String? {
         let manager = DeviceManager.shared
-        manager.refreshExpectedPairingFileState()
         if manager.hasValidExpectedPairingFile {
             return manager.rpPairingFile.path
         }
-        // Support NFCARD pairings already completed in older Filza builds.
-        // NFCARD's patched lookup prefers the canonical record once present.
-        let legacy = PairingController.pairingFilePath()
-        let fm = FileManager.default
-        if fm.isReadableFile(atPath: legacy),
-           ((try? fm.attributesOfItem(atPath: legacy)[.size] as? Int) ?? 0) > 0 {
-            return legacy
+        let docs = FileManager.default.urls(
+            for: .documentDirectory, in: .userDomainMask
+        )[0]
+        var candidates = [
+            docs.appendingPathComponent("aircard_pairing.plist").path,
+            docs.appendingPathComponent("airlift_pairing.plist").path
+        ]
+        if let custom = PairingController.customPairingFilePath {
+            candidates.insert(custom, at: 0)
         }
-        return nil
+        let fm = FileManager.default
+        return candidates.first { path in
+            fm.isReadableFile(atPath: path) &&
+            ((try? fm.attributesOfItem(atPath: path)[.size] as? Int) ?? 0) > 0
+        }
     }
 
-    static func recordSource() -> String {
-        let manager = DeviceManager.shared
-        manager.refreshExpectedPairingFileState()
-        if manager.hasValidExpectedPairingFile { return "Shared RP pairing (ByeTunes / 3105 / Airlift / NFCARD)" }
-        return recordPath() == nil ? "None" : "Legacy NFCARD pairing record"
+    static func recordSource(for path: String?) -> String {
+        if DeviceManager.shared.hasValidExpectedPairingFile {
+            return "Shared RP pairing (ByeTunes / 3105 / Airlift / NFCARD)"
+        }
+        return path == nil ? "None" : "Legacy NFCARD/Airlift pairing record"
     }
 
     static func synchronize(reason: String) {
@@ -37,10 +45,11 @@ enum FilzaUnifiedPairingManager {
         FilzaSharedPairingSupport.resetAfterPairingChange()
         AppViewModel.shared?.refreshPairingFile()
         AppViewModel.shared?.refreshNetworkStatus()
+        let path = recordPath()
         FilzaDiagnosticsAppend(
             "Pairing",
-            "Unified record changed: \(reason); source=\(recordSource()); " +
-            "record available=\(recordPath() != nil)"
+            "Unified record changed: \(reason); source=\(recordSource(for: path)); " +
+            "record available=\(path != nil)"
         )
         FilzaAirliftCatalogStore.shared.refresh()
     }
@@ -54,11 +63,22 @@ private struct FilzaUnifiedPairingSettings: View {
     @State private var showForgetConfirmation = false
     @State private var showAlert = false
     @State private var alertMessage = ""
+    // Keep status as a snapshot. Re-reading and publishing pairing state from
+    // body creates an ObservableObject -> body -> publish feedback loop.
+    @State private var recordLabel = "Checking…"
+    @State private var recordAvailable = false
+
+    private func refreshDisplayedRecord() {
+        manager.refreshExpectedPairingFileState()
+        let path = FilzaUnifiedPairingManager.recordPath()
+        recordLabel = FilzaUnifiedPairingManager.recordSource(for: path)
+        recordAvailable = path != nil
+    }
 
     var body: some View {
         Form {
             Section("Shared device connection") {
-                LabeledContent("Pairing record", value: FilzaUnifiedPairingManager.recordSource())
+                LabeledContent("Pairing record", value: recordLabel)
                 LabeledContent("Required format", value: manager.expectedPairingFileTitle)
                 LabeledContent("Device tunnel", value: manager.heartbeatReady
                     && FilzaSharedPairingSupport.hasActiveTransport
@@ -111,13 +131,13 @@ private struct FilzaUnifiedPairingSettings: View {
             Section("Connection tools") {
                 Button {
                     FilzaUnifiedPairingManager.synchronize(reason: "manual refresh")
+                    refreshDisplayedRecord()
                     manager.startHeartbeat(forceReconnect: true)
                 } label: {
                     Label("Reconnect and refresh all modules", systemImage: "arrow.clockwise")
                 }
-                .disabled(FilzaUnifiedPairingManager.recordPath() == nil)
-                if manager.hasValidExpectedPairingFile ||
-                   FilzaUnifiedPairingManager.recordPath() != nil {
+                .disabled(!recordAvailable)
+                if recordAvailable {
                     Button(role: .destructive) {
                         showForgetConfirmation = true
                     } label: {
@@ -127,13 +147,15 @@ private struct FilzaUnifiedPairingSettings: View {
             }
         }
         .navigationTitle("Device Pairing")
-        .onAppear {
-            manager.refreshExpectedPairingFileState()
-            FilzaUnifiedPairingManager.synchronize(reason: "settings opened")
+        .task {
+            // A single refresh after presentation is safe. Do not launch
+            // discovery/reconnection merely by opening the Settings screen.
+            refreshDisplayedRecord()
         }
         .onChange(of: onDevice.status) { value in
             if value.hasPrefix("Paired.") {
                 FilzaUnifiedPairingManager.synchronize(reason: "on-device RP pairing completed")
+                refreshDisplayedRecord()
             }
         }
         .fileImporter(
@@ -145,6 +167,7 @@ private struct FilzaUnifiedPairingSettings: View {
                 guard let url = try result.get().first else { return }
                 try manager.importPairingFile(from: url)
                 FilzaUnifiedPairingManager.synchronize(reason: "imported validated RP record")
+                refreshDisplayedRecord()
                 manager.startHeartbeat(forceReconnect: true)
                 alertMessage = "Pairing imported. Enable LocalDevVPN if the tunnel is disconnected."
             } catch {
@@ -173,6 +196,7 @@ private struct FilzaUnifiedPairingSettings: View {
                 PairingController.customPairingFilePath = nil
                 manager.stopHeartbeat()
                 FilzaUnifiedPairingManager.synchronize(reason: "user forgot records")
+                refreshDisplayedRecord()
                 alertMessage = "Local pairing records cleared. No remote device settings were changed."
                 showAlert = true
             }
