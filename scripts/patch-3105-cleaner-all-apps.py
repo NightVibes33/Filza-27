@@ -117,6 +117,15 @@ replace_one(cleaner,
 replace_one(cleaner,
     """            matchingRecords = records.filter {""",
     """            matchingRecords = allCleanerRecords.filter {""")
+# Select All must ignore metadata-only rows. Unverified app caches are
+# not eligible for Cleaner selection, even when InstallationProxy found them.
+replace_one(cleaner,
+    """        filteredRecords.map(\.id)""",
+    """        filteredRecords.filter { isLocalEligible($0.id) }.map(\.id)""")
+replace_one(cleaner,
+    """            .disabled(areAllVisibleRecordsSelected)""",
+    """            .disabled(visibleBundleIDs.isEmpty || areAllVisibleRecordsSelected)""")
+
 replace_one(cleaner,
     """        if records.isEmpty {
             List { emptySection }
@@ -268,7 +277,7 @@ replace_one(cleaner,
 replace_one(cleaner,
     """    @State private var remoteConfirmation: String?""",
     """    @State private var remoteConfirmation: String?
-    @State private var remoteOperationsLocked = false""")
+    @AppStorage("filza.remoteCleanerSafetyStop.v1") private var remoteOperationsLocked = false""")
 
 # Remote operations are opt-in from the SAME original Cleaner app row.
 # A failed original-object restore locks the remote Cleaner for this session.
@@ -409,7 +418,9 @@ replace_one(cleaner,
     """    private func reload() {
         guard !isBusy else { return }""",
     """    private func reload() {
-        guard !isBusy else { return }
+        guard !isBusy, remoteBusyBundle == nil else { return }
+        remoteInventories.removeAll()
+        remoteMessages.removeAll()
         airliftCatalog.refresh()
         FilzaDiagnosticsAppend("Cleaner", "Refreshing local installed-app and paired Airlift catalogs")""")
 
@@ -424,6 +435,8 @@ assert "ForEach(airliftCatalog.apps)" not in text
 assert "FilzaAirliftCleaner.inspect(app)" in text
 assert "FilzaAirliftCleaner.removeVerifiedCacheEntries(inventory)" in text
 assert "remoteOperationsLocked" in text
+assert 'filza.remoteCleanerSafetyStop.v1' in text
+assert "filter { isLocalEligible($0.id) }" in text
 assert "alreadyVerified = record.app.containerPath" in text
 assert "NSHomeDirectory()" not in text
 assert "FilzaAirliftWorkspaceView" not in text
