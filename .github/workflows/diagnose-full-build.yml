@@ -18,10 +18,10 @@ concurrency:
 
 jobs:
   diagnose:
-    runs-on: xcode-27
+    runs-on: macos-26-intel
     env:
       THEOS: ${{ github.workspace }}/theos
-      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
       THEOS_COMMIT: 5280bd038207e14f8bd76f5417aa2fe641c03228
       IDEVICE_COMMIT: 37ee77cf713f483551f3cf33ea8b2087a40058ca
       LIBSSH_COMMIT: 07430deb9b97b751ec5ea5a7fc307f40bf042e0a
@@ -36,12 +36,12 @@ jobs:
       BASE_IPA_URL: https://github.com/0xjohnnydev/FilzaSlop/releases/download/v1.0.2/FilzaSlop-v1.0.2-unsigned.ipa
 
     steps:
-      - name: Xcode 27 setup
+      - name: Xcode 26.2 setup
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '27.0'
+          xcode-version: '26.2'
 
-      - name: Verify macOS 27 arm64 and Xcode 27 toolchain
+      - name: Verify macOS 26 Intel and Xcode 26.2 toolchain
         shell: bash
         run: |
           set -euxo pipefail
@@ -49,9 +49,9 @@ jobs:
           uname -m
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
-          test "$(sw_vers -productVersion | cut -d. -f1)" = "27"
-          test "$(uname -m)" = "arm64"
-          test "$(xcrun --sdk iphoneos --show-sdk-version | cut -d. -f1)" = "27"
+          test "$(sw_vers -productVersion | cut -d. -f1)" = "26"
+          test "$(uname -m)" = "x86_64"
+          test "$(xcrun --sdk iphoneos --show-sdk-version | cut -d. -f1)" = "26"
 
       - name: Checkout complete source tree
         uses: actions/checkout@v4
@@ -84,7 +84,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: Vendor/idevice
-          key: idevice-ffi-${{ runner.os }}-${{ runner.arch }}-xcode27.0-ios27.0-${{ env.IDEVICE_COMMIT }}-${{ hashFiles('scripts/build-idevice.sh') }}
+          key: idevice-ffi-${{ runner.os }}-${{ runner.arch }}-xcode26.2-ios26.2-${{ env.IDEVICE_COMMIT }}-${{ hashFiles('scripts/build-idevice.sh') }}
 
       - name: Build pinned idevice FFI
         if: steps.idevice-cache.outputs.cache-hit != 'true'
@@ -106,7 +106,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: Vendor/ssh
-          key: ssh-stack-${{ runner.os }}-${{ runner.arch }}-xcode27.0-ios27.0-${{ env.LIBSSH_COMMIT }}-${{ env.MBEDTLS_COMMIT }}-${{ hashFiles('scripts/build-ssh-stack.sh') }}
+          key: ssh-stack-${{ runner.os }}-${{ runner.arch }}-xcode26.2-ios26.2-${{ env.LIBSSH_COMMIT }}-${{ env.MBEDTLS_COMMIT }}-${{ hashFiles('scripts/build-ssh-stack.sh') }}
 
       - name: Build pinned SSH stack
         if: steps.ssh-cache.outputs.cache-hit != 'true'
@@ -119,7 +119,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: Vendor/wolfssh
-          key: wolfssh-${{ runner.os }}-${{ runner.arch }}-xcode27.0-ios17-${{ env.WOLFSSH_COMMIT }}-${{ env.WOLFSSL_COMMIT }}-${{ hashFiles('scripts/build-wolfssh-stack.sh', 'scripts/wolfssh-allow-multiple-session-channels.patch') }}
+          key: wolfssh-${{ runner.os }}-${{ runner.arch }}-xcode26.2-ios17-${{ env.WOLFSSH_COMMIT }}-${{ env.WOLFSSL_COMMIT }}-${{ hashFiles('scripts/build-wolfssh-stack.sh', 'scripts/wolfssh-allow-multiple-session-channels.patch') }}
 
       - name: Build pinned wolfSSH server stack
         if: steps.wolfssh-cache.outputs.cache-hit != 'true'
@@ -144,7 +144,7 @@ jobs:
             ThirdParty/NFCARD/NFCARD_PINNED_REVISION
             ThirdParty/NFCARD/AIRCARD_PINNED_REVISION
             ThirdParty/NFCARD/EROSION_PINNED_REVISION
-          key: nfcard-runtime-${{ env.NFCARD_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-xcode27.0-ios17-${{ env.NFCARD_PIN }}-${{ env.AIRCARD_PIN }}-${{ env.EROSION_PIN }}-${{ hashFiles('scripts/stage-nfcard.sh', 'scripts/build-nfcard-ffi.sh') }}
+          key: nfcard-runtime-${{ env.NFCARD_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-xcode26.2-ios17-${{ env.NFCARD_PIN }}-${{ env.AIRCARD_PIN }}-${{ env.EROSION_PIN }}-${{ hashFiles('scripts/stage-nfcard.sh', 'scripts/build-nfcard-ffi.sh') }}
 
       - name: Build staged NFCARD + AirliftFFI cache
         if: steps.nfcard-runtime-cache.outputs.cache-hit != 'true'
