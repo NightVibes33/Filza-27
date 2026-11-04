@@ -87,7 +87,22 @@ if marker in text:
 elif "struct Filza3105PairingSettingsSection" in text:
     raise SystemExit("3105 pairing controls marker changed")
 
+# The 3105 settings view still references the old pairing section after its
+# definition is removed above. Remove that call as well so the generated Swift
+# target doesn't refer to a symbol that no longer exists.
+settings3105_view = Path("ThirdParty/3105/Sources/ThreeOneOSFiveSettingsView.swift")
+settings3105_ui = settings3105_view.read_text(encoding="utf-8")
+pairing_row = "                Filza3105PairingSettingsSection()\n"
+if pairing_row in settings3105_ui:
+    if settings3105_ui.count(pairing_row) != 1:
+        raise SystemExit("3105 settings contains duplicate pairing rows")
+    settings3105_ui = settings3105_ui.replace(pairing_row, "", 1)
+    settings3105_view.write_text(settings3105_ui, encoding="utf-8")
+elif "Filza3105PairingSettingsSection" in settings3105_ui:
+    raise SystemExit("3105 settings pairing call changed; refusing partial removal")
+
 assert "onDevicePairing.start(manager: manager)" not in settings.read_text()
 assert "onDevicePairing.start(manager: manager)" not in onboarding.read_text()
 assert "struct Filza3105PairingSettingsSection" not in settings3105.read_text()
+assert "Filza3105PairingSettingsSection" not in settings3105_view.read_text()
 print("Removed ByeTunes and 3105 duplicate pairing controls; Filza Settings owns pairing")
