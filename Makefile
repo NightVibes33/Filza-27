@@ -237,7 +237,7 @@ before-FilzaApplySandboxExt-all::
 	@test -f "FilzaNativeAirliftFolderBridge.swift" || (echo "Missing Filza native paired-folder backend" >&2; exit 1)
 	@grep -Fq 'FZEnsurePairedFolderButton(self)' Tweak.m || (echo "Native Filza folder action not wired" >&2; exit 1)
 	@grep -Fq 'SecureZIPArchive.extract' FilzaNativeAirliftFolderBridge.swift || (echo "Safe folder extraction is missing" >&2; exit 1)
-	@! grep -Fq 'FilzaAirliftWorkspace.swift' Makefile || (echo "Separate Airlift UI returned" >&2; exit 1)
+	@! grep -Eq '^FilzaApplySandboxExt_SWIFT_FILES.*FilzaAirliftWorkspace[.]swift' Makefile || (echo "Separate Airlift UI returned" >&2; exit 1)
 	@grep -Fq 'ContainerStore.installedAppsFromAPI()' "$(THREEONE_ROOT)/Sources/CleanerView.swift" || (echo "Original Cleaner app discovery is missing" >&2; exit 1)
 	@grep -Fq 'ContainerStore.installedAppsFromMHACandidates' "$(THREEONE_ROOT)/Sources/CleanerView.swift" || (echo "Original MCM/MHA Cleaner discovery is missing" >&2; exit 1)
 	@! grep -Fq '[items insertObject:airlift' FilzaMainToolbarGestalt.m || (echo "Erosion fifth toolbar app returned" >&2; exit 1)

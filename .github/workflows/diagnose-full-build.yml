@@ -256,7 +256,7 @@ jobs:
           grep -aFq 'al_list_app_containers' "$DYLIB"
           ! grep -aFq 'FilzaAirliftHostFactory' "$DYLIB"
           grep -Fq 'FilzaAirliftBackend.swift' Makefile
-          ! grep -Fq 'FilzaAirliftWorkspace.swift' Makefile
+          ! grep -Eq '^FilzaApplySandboxExt_SWIFT_FILES.*FilzaAirliftWorkspace[.]swift' Makefile
           grep -Fq 'FilzaNativeAirliftFolderBridge.swift' Makefile
           grep -Fq 'FZEnsurePairedFolderButton(self)' Tweak.m
           grep -Fq 'SecureZIPArchive.extract' FilzaNativeAirliftFolderBridge.swift
