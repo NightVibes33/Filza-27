@@ -80,23 +80,6 @@ replace_one(cleaner,
     """    // FILZA_ALL_APP_AIRLIFT_CLEANER
     @State private var discoveredInstalledApps: [InstalledApp] = []
     @State private var remoteInventories:""")
-replace_one(cleaner,
-    """        var known = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
-        for remote in airliftCatalog.apps {""",
-    """        var known = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
-        // Same API/MCM/LaunchServices/metadata discovery as the main Apps list.
-        // Prefer local icon + display metadata and retain a single row per ID.
-        for app in discoveredInstalledApps {
-            guard ContainerPresentationPolicy.shouldShow(bundleID: app.bundleID),
-                  known[app.bundleID] == nil else { continue }
-            known[app.bundleID] = CleanerAppRecord(
-                app: app,
-                usage: LimitedCleanerUsage(
-                    cacheBytes: 0, temporaryBytes: 0, removableItemCount: 0
-                )
-            )
-        }
-        for remote in airliftCatalog.apps {""")
 # Both local and Airlift metadata are actual discovered apps; cache sizes stay
 # unknown until a verified local or remote scan, never simulated.
 replace_one(cleaner,
@@ -215,6 +198,24 @@ replace_one(cleaner,
     }
 
     private var filteredRecords: [CleanerAppRecord] {""")
+replace_one(cleaner,
+    """        var known = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
+        for remote in airliftCatalog.apps {""",
+    """        var known = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
+        // Same API/MCM/LaunchServices/metadata discovery as the main Apps list.
+        // Prefer local icon + display metadata and retain a single row per ID.
+        for app in discoveredInstalledApps {
+            guard ContainerPresentationPolicy.shouldShow(bundleID: app.bundleID),
+                  known[app.bundleID] == nil else { continue }
+            known[app.bundleID] = CleanerAppRecord(
+                app: app,
+                usage: LimitedCleanerUsage(
+                    cacheBytes: 0, temporaryBytes: 0, removableItemCount: 0
+                )
+            )
+        }
+        for remote in airliftCatalog.apps {""")
+
 replace_one(cleaner,
     """            matchingRecords = records
         } else {""",
