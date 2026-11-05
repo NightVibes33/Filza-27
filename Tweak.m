@@ -119,11 +119,11 @@ static void FZNativeAirliftShowFolderPrompt(id self, SEL _cmd) {
     UIViewController *browser = (UIViewController *)self;
     UIAlertController *alert = [UIAlertController
         alertControllerWithTitle:@"Open Paired Folder"
-        message:@"Enter a remote device directory. Airlift temporarily stages and restores this folder; a failed restore can require device recovery. Successful contents open read-only in Filza's original browser."
+        message:@"Enter a specific remote folder path. Airlift temporarily stages and restores it. Do not run if a previous SAFETY STOP remains unresolved. On success the folder opens read-only in Filza."
         preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
         field.placeholder = @"/var/mobile/Containers/Data/Application/…";
-        field.text = @"/var/mobile/Containers/Data/Application/";
+        field.text = @""; // Require an explicit, narrowly scoped folder selection.
         field.autocorrectionType = UITextAutocorrectionTypeNo;
         field.autocapitalizationType = UITextAutocapitalizationTypeNone;
         field.clearButtonMode = UITextFieldViewModeWhileEditing;

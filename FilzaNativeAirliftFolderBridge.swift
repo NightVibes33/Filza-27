@@ -58,6 +58,7 @@ public final class FilzaNativeAirliftFolderBridge: NSObject {
             defer { browsing = false }
             do {
                 let archive = try await FilzaAirlift.snapshot(path: remotePath, folder: true)
+                defer { try? FileManager.default.removeItem(at: archive) }
                 let fm = FileManager.default
                 let storage = URL(fileURLWithPath: MCMFilzaVirtualRoot(), isDirectory: true)
                 let parent = storage.appendingPathComponent("Paired Folders", isDirectory: true)
@@ -79,8 +80,7 @@ public final class FilzaNativeAirliftFolderBridge: NSObject {
                 let extraction = try await Task.detached(priority: .utility) {
                     try SecureZIPArchive.extract(archiveURL: archive, destinationURL: target)
                 }.value
-                try? fm.removeItem(at: archive)
-
+                
                 // These are copies only. Make local snapshots read-only so the
                 // browser never implies editing the protected source in place.
                 if let enumerator = fm.enumerator(at: target,
