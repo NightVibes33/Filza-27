@@ -59,6 +59,46 @@ jobs:
           chmod +x "$RUNNER_TEMP/filza-tools/plutil"
           echo "$RUNNER_TEMP/filza-tools" >> "$GITHUB_PATH"
 
+      - name: Verify re-signable Filza identity and sandbox fallback
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 -m py_compile scripts/set-filza-bundle-id.py
+          python3 - <<'PY'
+          import plistlib
+          import subprocess
+          import sys
+          import tempfile
+          from pathlib import Path
+
+          with tempfile.TemporaryDirectory() as tmp:
+              app = Path(tmp) / "Filza.app"
+              app.mkdir()
+              plist = app / "Info.plist"
+              sharing = app / "PlugIns" / "Sharing.appex"
+              sharing.mkdir(parents=True)
+              with (sharing / "Info.plist").open("wb") as stream:
+                  plistlib.dump({"CFBundleIdentifier": "com.apple.mobile.MobileHouseArrest.Sharing"}, stream)
+              for original in ("com.apple.mobile.MobileHouseArrest", "com.filza27.nigtvibes33"):
+                  with plist.open("wb") as stream:
+                      plistlib.dump({"CFBundleIdentifier": original, "CFBundleName": "Filza"}, stream)
+                  subprocess.run([sys.executable, "scripts/set-filza-bundle-id.py", str(plist)], check=True)
+                  with plist.open("rb") as stream:
+                      info = plistlib.load(stream)
+                  assert info["CFBundleIdentifier"] == "com.filza27.nigtvibes33"
+                  assert info["CFBundleName"] == "Filza 27"
+                  assert info["CFBundleDisplayName"] == "Filza 27"
+                  assert not sharing.exists()
+              with plist.open("wb") as stream:
+                  plistlib.dump({"CFBundleIdentifier": "com.unrelated.app"}, stream)
+              denied = subprocess.run([sys.executable, "scripts/set-filza-bundle-id.py", str(plist)])
+              assert denied.returncode != 0
+          PY
+          grep -Fq 'com.filza27.nigtvibes33' FilzaApplySandboxExt.plist
+          grep -Fq 'MCMInstallStandardSandboxRoot();' MCMFilzaIntegration.m
+          grep -Fq 'set-filza-bundle-id.py' scripts/build_release_ipa.sh
+          grep -Fq 'set-filza-bundle-id.py' .github/workflows/diagnose-full-build.yml
+
       - name: Verify pinned 3105 1.1.1 integration
         shell: bash
         run: |
@@ -71,6 +111,17 @@ jobs:
           test -f ThirdParty/3105/Sources/KernelExploit.swift
           test -f ThirdParty/3105/Sources/Utils.swift
           grep -Fq 'stage-3105-v1.sh' Makefile
+          grep -Fq '@python3 scripts/patch-3105-erosion-features.py' FilzaByeTunesNetwork.mk
+          grep -Fq '@python3 scripts/patch-3105-cleaner-all-apps.py' FilzaByeTunesNetwork.mk
+          grep -Fq '@bash scripts/patch-3105-ipa-export.sh' FilzaByeTunesNetwork.mk
+          grep -Fq '@bash scripts/patch-3105-app-manager-view-sort.sh' FilzaByeTunesNetwork.mk
+          ! grep -Fq '@python3 scripts/patch-3105-erosion-features.py' Makefile
+          ! grep -Fq '@python3 scripts/patch-3105-cleaner-all-apps.py' Makefile
+          ! grep -Fq '@bash scripts/patch-3105-ipa-export.sh' Makefile
+          ! grep -Fq '@bash scripts/patch-3105-app-manager-view-sort.sh' Makefile
+          grep -Fq 'airliftCatalog.refresh()' scripts/patch-3105-cleaner-all-apps.py
+          grep -Fq 'preferredGeneration: report?.layout.generation' scripts/patch-3105-erosion-features.py
+          grep -Fq 'selectedGeneration(preferredGeneration)' FilzaErosionPosterBoardWriter.swift
 
       - name: Verify embedded-host isolation
         shell: bash
@@ -80,6 +131,102 @@ jobs:
           grep -Fq 'patch-3105-embedded-compat.sh' Makefile
           bash scripts/stage-3105-v1.sh
           bash scripts/patch-3105-embedded-compat.sh
+          python3 scripts/patch-3105-airlift.py
+          bash scripts/patch-3105-ipa-export.sh
+          bash scripts/patch-3105-app-manager-view-sort.sh
+          python3 scripts/patch-3105-erosion-features.py
+          python3 scripts/patch-3105-cleaner-all-apps.py
+          python3 -m py_compile scripts/patch-3105-cleaner-all-apps.py
+          # Preserve the original all-iOS-version local discovery and safe cleaner.
+          grep -Fq 'ContainerStore.installedAppsFromAPI()' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'ContainerStore.installedAppsFromMCM' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'ContainerStore.installedAppsFromMHACandidates' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'ContainerStore.dynamicAppIdentifiers()' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'ContainerStore.launchServicesStoreIdentifiers()' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'MCMActivateContainerPath' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'ContainerStore.resolveAppContainerPath' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'LimitedCleanerService.clean' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'static let allowedRelativeDirectories = ["Library/Caches", "tmp"]' ThirdParty/3105/Sources/LimitedCleanerService.swift
+          grep -Fq 'FILZA_ALL_APP_AIRLIFT_CLEANER' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'FILZA_UNIFIED_CLEANER_LIST_V1' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'allCleanerRecords' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'ForEach(filteredRecords)' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'remoteOperationsLocked' ThirdParty/3105/Sources/CleanerView.swift
+          ! grep -Fq 'airliftSection' ThirdParty/3105/Sources/CleanerView.swift
+          ! grep -Fq 'ForEach(airliftCatalog.apps)' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'FilzaAirliftCleaner.inspect(app)' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'FilzaAirliftCleaner.removeVerifiedCacheEntries(inventory)' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'al_exploit_remove_path' FilzaAirliftBackend.swift
+          grep -Fq 'try await FilzaAirlift.snapshot' FilzaAirliftCleaner.swift
+          grep -Fq 'SecureZIPArchive.extract' FilzaAirliftCleaner.swift
+          grep -Fq 'FilzaAirliftCleaner.swift' Makefile
+          grep -Fq 'FilzaNativeAirliftFolderBridge.swift' Makefile
+          grep -Fq 'SecureZIPArchive.extract' FilzaNativeAirliftFolderBridge.swift
+          grep -Fq 'browseFolder:fromBrowser:' Tweak.m
+          grep -Fq 'FZEnsurePairedFolderButton(self)' Tweak.m
+          ! grep -Fq 'createSymbolicLink(at: alias' FilzaAirliftBackend.swift
+          ! grep -Fq 'NSHomeDirectory()' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'FILZA_EROSION_CLEANER_BRIDGE' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'FILZA_EROSION_WALLPAPER_BRIDGE' ThirdParty/3105/Sources/WallpaperLabView.swift
+          grep -Fq 'FilzaErosionPosterBoardWriter.apply' ThirdParty/3105/Sources/WallpaperLabView.swift
+          grep -Fq 'FilzaErosionPosterBoardWriter.swift' Makefile
+          grep -Fq 'al_exploit_inject_folder' FilzaErosionPosterBoardWriter.swift
+          grep -Fq 'al_find_app_container' FilzaErosionPosterBoardWriter.swift
+          python3 -m py_compile scripts/patch-3105-erosion-features.py
+          grep -Fq 'Label("Prepare", systemImage:' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'Label("Decrypt", systemImage:' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'preparedIPAs[app.bundleID]' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'inspectIPA(url)' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'func inspectIPA(_ ipaURL: URL)' FilzaAirliftIPAExporter.swift
+          test -f FilzaFairPlayRuntime.c
+          test -f FilzaFairPlayBackend.swift
+          grep -Fq 'FilzaFairPlayRuntime.c' Makefile
+          grep -Fq 'FilzaFairPlayBackend.swift' Makefile
+          grep -Fq 'FilzaFairPlayBackend.decryptPreparedIPA' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'pairedBundlePath: pairedBundlePath' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'Label("Export decrypted IPA"' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'vm_read_overwrite' FilzaFairPlayRuntime.c
+          grep -Fq 'mremap_encrypted' FilzaFairPlayRuntime.c
+          grep -Fq 'FilzaFairPlayEncryptedSlices(destination)!=0' FilzaFairPlayRuntime.c
+          grep -Fq 'FILZA_3105_APP_VIEW_SORT_V2' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'Picker("View", selection: $appViewMode)' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'FilzaAirliftCatalogStore.shared' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'mergedWithAirlift' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'localAppResults = preliminary' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'localAppResults = progressiveResult' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'localAppResults = result' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'airliftCatalog.refresh()' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq '/var/containers/Data/Application/' FilzaAirliftBackend.swift
+          grep -Fq 'let canonicalTarget = normalize(target)' FilzaAirliftBackend.swift
+          grep -Fq 'let protectedAppContainer = [' FilzaAirliftBackend.swift
+          grep -Fq 'InstallationProxy returned' FilzaAirliftBackend.swift
+          grep -Fq 'Text(airliftCatalog.message)' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          ! grep -Fq 'Button("Scan")' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          ! grep -Fq '.safeAreaInset(edge: .bottom)' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'DeviceManager.shared.rpPairingFile.path' FilzaAirliftBackend.swift
+          grep -Fq 'PairingController.pairingFilePath()' FilzaAirliftBackend.swift
+          grep -Fq 'InstallationProxy scan starting via' FilzaAirliftBackend.swift
+          ! grep -Fq 'Label("Browse via Airlift"' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          ! grep -Fq 'FilzaAirliftWorkspaceView(' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'Stage snapshot in Filza 27' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'stageInNativeFilza' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          ! grep -Fq 'showAirliftFiles' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          ! grep -Fq 'Button("Scan")' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'FilzaUnifiedPairingHostFactory' FilzaUnifiedPairing.swift
+          grep -Fq 'FilzaSSHIsPairingSection' FilzaSSHPreferencesV2.m
+          test -f scripts/patch-nfcard-unified-pairing.py
+          test -f scripts/patch-embedded-unified-pairing.py
+          test -f FilzaAirliftBackend.swift
+          test -f FilzaAirliftIPAExporter.swift
+          test -f FilzaAirliftWorkspace.swift
+          test -f FilzaCoreMediaReader.swift
+          test -f FilzaCoreMediaBrowser.swift
+          grep -Fq 'FilzaCoreMediaReader' FilzaCoreMediaBrowser.swift
+          grep -Fq 'al_exploit_remove_path' FilzaAirliftBackend.swift
+          grep -Fq 'al_exploit_write_dir' FilzaAirliftBackend.swift
+          grep -Fq 'FilzaAirliftHostFactory' FilzaAirliftWorkspace.swift
+          grep -Fq 'EROSION_PIN=' scripts/stage-nfcard.sh
+          grep -Fq 'NFCARD_PIN="16f8bfd20a88a474f59c2d6eda291164a1cc015f"' scripts/stage-nfcard.sh
           ! grep -Fq 'enum AppUpdateChecker' ThirdParty/3105/Sources/Utils.swift
           ! grep -Fq 'DisplayIdentityAttestationToken' ThirdParty/3105/Sources/Utils.swift
           grep -Fq 'enum ExploitStatus' ThirdParty/3105/Sources/Utils.swift

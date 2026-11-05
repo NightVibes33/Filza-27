@@ -53,7 +53,7 @@ For iOS 27 research builds, useful `bad_query` behavior is associated with speci
 > [!WARNING]
 > LiveContainer compatibility is **experimental**. This mode does **not** provide MobileHouseArrest access to App Store apps or other apps installed by iOS. It exposes only guest apps and data stored inside the active LiveContainer environment.
 
-The normal standalone MobileHouseArrest path requires the signed code identity `com.apple.mobile.MobileHouseArrest`. Running Filza-27 as a LiveContainer guest uses the LiveContainer host identity instead, so system app-container access should not be expected in that mode.
+The legacy MobileHouseArrest path requires the actual signed code identity `com.apple.mobile.MobileHouseArrest`. Standard re-signed installations and LiveContainer guests do not acquire that identity or its privileges; they use whatever other backends succeed on their OS/build.
 
 ## Upstream path coverage
 
@@ -78,13 +78,17 @@ These are capability-dependent targets, not a claim that every path is writable 
 
 1. Download `Filza-27.ipa` from the `Filza-27-byetunes-upstream` release using the link above.
 2. Sideload it with your preferred signing method.
-3. Keep the base app identity when your signer allows it:
+3. The unsigned build defaults to this normal application bundle ID:
 
 ```text
-com.apple.mobile.MobileHouseArrest
+com.filza27.nigtvibes33
 ```
 
-Changing that identity can break MobileHouseArrest-dependent behavior.
+Sign with your own Apple ID/developer certificate. SideStore, AltStore and other signers may change this bundle ID to one accepted by your provisioning profile; Filza no longer requires a special identifier to start. The identity written into the actual code signature is authoritative.
+
+**Capability routing:** MobileHouseArrest/MCM container activation is attempted only when the signed identity is genuinely `com.apple.mobile.MobileHouseArrest` and the OS exposes the required symbols. For a normal or re-signed bundle ID, Filza creates an app-sandbox file browser and retains Mond/`bad_query`, 3105/LaunchServices, NFCARD/Airlift pairing, ByeTunes and other available routes. Backend access depends on observed OS permission and exploit success, not the bundle ID. Changing the ID cannot bypass a patched `bad_query` or grant system-container access.
+
+**Release note:** Existing published IPAs may still use the previous identity until a new build is verified and released. Installing under a different bundle ID produces a separate app container; back up files in the old installation first.
 
 ## Main tools
 
@@ -206,3 +210,218 @@ Filza-27 combines work from multiple open-source projects. Their upstream licens
 ## Research note
 
 This repository includes compatibility and filesystem-access research for modern iOS. Those experiments should be treated as research features, not proof of unrestricted system access.
+
+## Erosion backends in Filza's original browser and Apps Manager (iOS 18–27.0.1)
+
+**Filza remains the only file browser.** No Erosion app, fifth toolbar
+button, separate Airlift file-browser tab, or second file manager is shipped.
+
+- **Filza → Device Storage → SYSTEM PATHS - READ-ONLY → CoreMedia →
+  usr → libexec** uses the optional CoreMedia XPC bytestream reader.
+  The existing native Filza directory UI opens genuine read-only local
+  snapshots when CoreMedia can return the system bytes. Each directory is
+  populated off the main thread and the same Filza folder refreshes when done.
+  Its ACCESS STATUS.txt lists actual results and omissions. No general system
+  filesystem capability or privilege escalation is implied; these are local
+  copies, not writes to the original /usr/libexec.
+- **3105 Apps Manager** keeps MCM, MobileHouseArrest, LaunchServices and
+  older bad_query discovery. Airlift supplies optional InstallationProxy
+  metadata and confirmed per-app snapshots when paired transport succeeds.
+- **All-app Cleaner** retains its existing local cache/tmp cleaning logic;
+  Airlift is an additional per-app path, not a Filza-only cleaner.
+- **Wallpapers and other embedded modules** retain their supported Erosion
+  transport functions where a real device transaction succeeds.
+- **Filza → Device Storage → [Airlift] Snapshots** can contain staged
+  snapshots from supported app-manager operations. These are local copies;
+  edits do not sync back automatically.
+
+All pairing is still managed centrally from Filza Settings → Device Pairing.
+On-device pairing and importing a pairing file remain available.
+
+The NFCARD integration now pins the newest NFCARD main revision
+`16f8bfd20a88a474f59c2d6eda291164a1cc015f`; its existing Wallet,
+card library and pairing screens remain intact. Erosion's Rust overlay is
+pinned to `a8dc7e48b13e130e69c28269a43fc4a8b456952a` and is built
+into the same AirliftFFI static library to avoid duplicate symbols.
+
+**Compatibility:** The app's minimum supported deployment remains iOS 17
+(with the requested support envelope of iOS 18 through 27.0.1). Available
+capabilities are determined at runtime. The known `bad_query` builds retain
+their existing routes. Later builds without `bad_query` can still enumerate
+apps through a valid paired InstallationProxy session; remote reads and writes
+are contingent on real device/OS support and can fail. None of the new code
+claims unrestricted kernel access, sandbox escape, guaranteed write access,
+or working FairPlay decryption.
+
+**Safety and distribution:** Airlift folder reads perform device-side
+staging/restoration transactions, not ordinary read-only filesystem opens.
+An incomplete app-container restore is rejected with a recovery warning.
+The imported Erosion upstream currently does not declare a license in its
+GitHub repository: verify written permission or an applicable license before
+redistributing binaries containing its code.
+
+**Build:** `scripts/stage-nfcard.sh` stages the pinned NFCARD/AirCard
+and Erosion source; `scripts/build-nfcard-ffi.sh` builds the single FFI.
+`scripts/patch-3105-airlift.py` re-applies the Apps Manager metadata merge
+after `stage-3105-v1.sh` replaces 3105's upstream sources.
+
+
+### Apps Manager: long-press Prepare → Decrypt
+
+Long-press an app in **Apps Manager** and select **Prepare**. Filza tries existing local/bad_query-repackaging first and then paired NFCARD/Airlift when an actual app bundle path is known. After successful staging and Mach-O inspection, long-press again for **Decrypt**, **Export prepared IPA**, or **Prepare again**. Preparation does not modify the installed app. Decrypt reports if the prepared executable is already unencrypted. FairPlay-encrypted binaries need a privileged runtime decryption backend not bundled in this build; Filza will not claim the encrypted IPA is decrypted.
+
+
+### Integrated FairPlay backend — one Filza IPA
+
+Apps Manager **long-press → Prepare → Decrypt** now calls the original in-process `FilzaFairPlayBackend` and `FilzaFairPlayRuntime.c`; no second FairPlayed app is installed and no unlicensed upstream source is copied. The existing local/bad_query and paired NFCARD/Airlift routes continue to prepare the IPA.
+
+The optional decryptor attempts `mremap_encrypted` on the **original installed executable**, verifies page-in via `vm_read_overwrite`, checks the returned bytes are plausibly decrypted, and only writes verified plaintext to an isolated staging area. Full arm64 executable/framework/extension checks must pass before offering **Export decrypted IPA**. The original installed app is not modified.
+
+**Important:** FairPlay can reject the original installed path even when Airlift successfully copies the app. On restricted iOS versions, including stock 27.0.1, this all-in-one route is unproven; it does not bypass the helper's pre-install embedding requirement. Errors are shown instead of falsely claiming decryption success. Physical device validation is required.
+
+
+**3105 paired-app diagnostics:** Airlift now accepts both InstallationProxy
+`/var/mobile/Containers/Data/Application/` and
+`/var/containers/Data/Application/` path variants, and reports both raw and
+accepted app/bundle counts in Filza Diagnostics. The existing local/MCM app
+catalog is kept separate from paired discovery and the list updates with the
+new result. An app path returned in metadata is not proof that the sandbox,
+Airlift read, or patched `bad_query` can open that path.
+
+
+### Erosion wiring: Apps Manager, Cleaner and Wallpapers
+
+The 3105 Apps Manager preserves its local MCM/LaunchServices catalog and merges
+Erosion's paired InstallationProxy metadata. A discovered app ID does not
+imply a directly readable filesystem path; use **Browse via Airlift** to
+attempt a real remote snapshot. Paired-device scan failures are shown rather
+than silently being treated as empty local filesystems.
+
+The 3105 **Cleaner** now has a separate **Erosion app containers** section,
+listing actual metadata paths with a **Browse remote snapshot** action. Its
+existing safe local Cache/tmp cleaning continues to remove only files in
+containers that iOS actually grants Filza direct access to. **Erosion does not
+supply a general system-cache deletion capability**, so these remote paths
+are never counted as reclaimable bytes or silently deleted.
+
+The 3105 **Wallpapers** panel adds a user-confirmed **Apply selected pack via
+Erosion/Airlift** alternative when native MCM access is unavailable. The
+original code stages validated .tendies descriptors, randomizes the IDs and
+calls the pinned Erosion Airlift **folder-injection API** targeting the
+InstallationProxy-discovered PosterBoard container. Every write result is
+checked and partial success is reported. The generation-61 path depends on
+the device's PosterBoard implementation; an unavailable path or failed
+Airlift transaction is an error, not a successful installation. This remote
+route does **not** create 3105's local rollback receipts; the confirmation
+explains that limitation. No automatic PosterBoard preference overwrite or
+respring is performed.
+
+These routes depend on a functional NFCARD pairing record, LocalDevVPN and
+actual iOS support. They do not make patched `bad_query` functional.
+
+
+### Fix: Airlift shows unpaired despite shared on-device RP pairing
+
+The iOS 27 NFCARD `PairingController.pairingFilePath()` checks the top-level
+Documents directory. The ByeTunes/3105 shared pairing manager keeps its
+validated RP record at `DeviceManager.shared.rpPairingFile` (normally under
+`Documents/pairing file/rpPairingFile.plist`, or its app group when available).
+This mismatch previously prevented InstallationProxy from even starting.
+
+Filza's Airlift backend now reuses the shared RP record **in place**, falling
+back to NFCARD's existing on-device pairing location. It does not export
+pairing secrets, create a second record, or treat pairing availability as proof
+of an active LocalDevVPN tunnel. `Runtime.log` records the selected pairing
+**source label**, then the real InstallationProxy result or error (never the
+record content). A missing record gives explicit pairing guidance.
+
+3105's existing **top-right Refresh** triggers both 3105 and paired Airlift
+scans. The duplicate bottom **Scan** button and obscuring bottom status inset
+are removed. Airlift scan status now appears as a readable section in the app
+list, above the installed applications. This is a source and build fix; actual
+physical-device results still require testing on the installed build.
+
+
+### Unified device pairing in native Filza 27 Settings
+
+Filza's native Settings now provides one **DEVICE PAIRING** row, backed by
+`FilzaUnifiedPairing.swift`. It has two fully functional options:
+**Start on-device pairing** (existing RPPairing host and PIN flow) and
+**Select pairing file** (the existing DeviceManager format validation/import).
+Existing imported records remain in the canonical shared RP location; neither
+the record content nor secret material is logged.
+
+The pairing status and the separate LocalDevVPN transport state are shown
+explicitly. On a pairing change, 3105's enhanced-icon cache is cleared, the
+Airlift InstallationProxy catalog is rescanned, and NFCARD refreshes its path
+and network status. NFCARD now consumes the validated shared RP file before
+its legacy on-device Documents location. Its duplicate Pairing tab is hidden,
+but its host code remains compiled. ByeTunes onboarding is nonblocking and
+its Settings pairing action is replaced by guidance to native Filza Settings.
+3105's embedded settings pairing importer is removed, leaving transport
+and icon services as consumers.
+
+**Filza is the file browser.** The duplicate Airlift file-browser sheet and
+toolbar inside 3105 Apps Manager, the Cleaner remote-browser sheet, and the
+extra 3105 bottom Scan button are removed. The original top-right 3105 refresh
+remains. Paired InstallationProxy metadata appears as such, but a discovered
+container is not treated as accessible without an actual read. Successfully
+staged Airlift snapshots are available under Filza's native
+`Device Storage/[Airlift] Snapshots` alias.
+
+
+### Native Filza 27 snapshot integration
+
+3105's existing installed-app list offers a confirmed **Stage snapshot in
+Filza 27** action when paired Airlift identifies an app with no directly
+accessible MCM path. If the real paired read and restoration succeeds, it saves
+under **Filza 27 → Device Storage → [Airlift] Snapshots**. Filza itself remains
+the only file browser; the separate Airlift transport panel no longer embeds
+3105 FileBrowserView. Metadata-only paths never masquerade as sandbox grants.
+The original 3105 top-right Refresh is retained, and no bottom Scan button or
+second 3105 file-browser sheet is inserted.
+
+The Erosion Airlift static-library cache is validated for both
+`al_exploit_inject_folder` and `al_find_app_container`. An incomplete cached
+runtime must be rebuilt before Wallpapers/PosterBoard integration is accepted.
+
+
+### Cleaner for all installed apps (verified local + paired Airlift)
+
+3105 Cleaner is an **installed-app cache cleaner**, not a Filza-only cleaner.
+Its local scanner discovers apps through LaunchServices, MCM and the available
+MobileHouseArrest candidates. The local app catalog no longer discards a
+bundle ID after one denied MCM lookup: only a successfully readable cache is
+marked resolved. When cleaning, it reuses the verified container instead of
+blindly repeating MCM activation. Deletion remains restricted to each app's
+`Library/Caches` and `tmp`; application documents, databases, keychains,
+preferences and home folders are excluded.
+
+After Filza's unified pairing connects, Cleaner also lists **all installed
+apps returned by paired InstallationProxy**, including apps without a local
+sandbox grant. Each app can explicitly request **Inspect app cache via
+Airlift**: Erosion's actual folder reader creates a ZIP snapshot of that
+app's `Library/Caches` and `tmp`, and Filza requires confirmed restore before
+inspecting the archive. Archive entries are validated, not guessed from app
+metadata. Only entries confirmed in a complete snapshot are eligible for an
+additional destructive confirmation and **Clean verified Airlift cache**.
+The remote removal uses Erosion's actual exact-path operation, stops on first
+error, and logs the accepted count and **estimated** bytes; it never presents
+transport success as verified reclaimed space. Failed, incomplete, oversized,
+unsafe, or inaccessible snapshots disable remote cleaning until a fresh scan.
+
+Airlift is an optional per-app fallback, not proof of universal filesystem
+access on iOS 27.0.1. Protected app containers that iOS refuses remain clearly
+unavailable. No automatic mass deletion or hidden background cleanup runs.
+
+
+**Cleaner compatibility invariant:** the original main-branch Cleaner UI and
+its API, LaunchServices, MCM/MobileHouseArrest, app-container resolution, and
+existing iOS-version-specific direct-access paths remain unchanged in the
+tracked 3105 source. The build overlays a verified per-app Airlift fallback
+only after the original local Cleaner is staged. Local cache scanning and
+deleting still use `LimitedCleanerService` with the original safe
+`Library/Caches` and `tmp` allowlist; paired remote data is a separately
+confirmed, explicitly selected option and is not mixed into local reclaimable
+size calculations. CI now checks the legacy routes are present after staging
+and applying the Airlift overlay.

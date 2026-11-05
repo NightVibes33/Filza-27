@@ -393,6 +393,8 @@ BOOL MCMFilzaPathHasActiveLease(NSString *path)
         MCMPathIsInsideRoot(path, filesTraversalRoot)) return NO;
     if (MCMPathIsInsideRoot(path, virtualRoot) ||
         MCMPathIsInsideRoot(path, MCMFilzaArchivePath())) return YES;
+    if (!MCMFilzaIsRunningInLiveContainer() &&
+        MCMPathIsInsideRoot(path, NSHomeDirectory())) return YES;
     if (MCMFilzaIsRunningInLiveContainer()) {
         for (NSString *root in MCMLiveContainerAuthorityRoots())
             if (MCMPathIsInsideRoot(path, root)) return YES;
@@ -459,6 +461,49 @@ static void MCMInstallArchiveAlias(NSFileManager *manager, NSString *root)
         NSLog(@"[Archive] alias failed %@ -> %@ errno=%d", link, archive, errno);
     else
         NSLog(@"[Archive] alias ready %@ -> %@", link, archive);
+}
+
+// Normal sideloads use an ordinary bundle ID, including IDs rewritten by the
+// user's signing tool. This is deliberately sandbox-only; it never acquires an
+// MCM lease or pretends that a changed Info.plist grants MHA authority.
+static void MCMInstallStandardSandboxRoot(void)
+{
+    NSFileManager *manager = NSFileManager.defaultManager;
+    NSString *root = MCMFilzaVirtualRoot();
+    if (![manager createDirectoryAtPath:root withIntermediateDirectories:YES
+                             attributes:@{NSFilePosixPermissions: @0700} error:nil]) {
+        NSLog(@"[MCMFilza] sandbox root unavailable %@", root);
+        return;
+    }
+    MCMInstallArchiveAlias(manager, root);
+
+    NSArray<NSArray<NSString *> *> *links = @[
+        @[@"[Sandbox] Library", NSSearchPathForDirectoriesInDomains(
+            NSLibraryDirectory, NSUserDomainMask, YES).firstObject ?: @""],
+        @[@"[Sandbox] Temporary", NSTemporaryDirectory() ?: @""],
+    ];
+    for (NSArray<NSString *> *entry in links) {
+        NSString *target = entry[1];
+        BOOL isDirectory = NO;
+        if (!target.isAbsolutePath ||
+            ![manager fileExistsAtPath:target isDirectory:&isDirectory] ||
+            !isDirectory) continue;
+        NSString *link = [root stringByAppendingPathComponent:entry[0]];
+        struct stat status = {0};
+        // Do not replace a file or an existing user-managed symlink.
+        if (lstat(link.fileSystemRepresentation, &status) == 0) continue;
+        if (symlink(target.fileSystemRepresentation, link.fileSystemRepresentation) != 0)
+            NSLog(@"[MCMFilza] sandbox alias failed %@ errno=%d", link, errno);
+    }
+
+    NSString *message = [NSString stringWithFormat:
+        @"Filza-27 standard sideload mode\\n\\nSigned code identity: %@\\n"
+         "MobileHouseArrest privileges: not assumed.\\n"
+         "This folder, Library, Temporary and Archive are app-owned storage.\\n"
+         "Use Apps Manager for supported paired Airlift per-app operations.\\n"
+         "Read-only CoreMedia system snapshots are inside Device Storage.\\n",
+        MCMSignedCodeIdentifier() ?: @"unavailable"];
+    MCMWriteGeneratedString(message, [root stringByAppendingPathComponent:@"README.txt"]);
 }
 
 static void MCMInstallLiveContainerRoot(void)
@@ -1568,12 +1613,14 @@ void MCMFilzaStart(void)
         }
         NSString *actual = MCMSignedCodeIdentifier();
         if (![actual isEqualToString:kRequiredIdentifier]) {
-            NSLog(@"[MCMFilza] disabled: signed code identifier %@ must be %@ (bundle=%@)",
-                  actual, kRequiredIdentifier, NSBundle.mainBundle.bundleIdentifier);
+            NSLog(@"[MCMFilza] MHA unavailable for signed identity %@ (bundle=%@); using app sandbox",
+                  actual, NSBundle.mainBundle.bundleIdentifier);
+            MCMInstallStandardSandboxRoot();
             return;
         }
         if (!MCMBridgeAvailable()) {
-            NSLog(@"[MCMFilza] disabled: ContainerManager symbols unavailable");
+            NSLog(@"[MCMFilza] ContainerManager symbols unavailable; using app sandbox");
+            MCMInstallStandardSandboxRoot();
             return;
         }
         NSFileManager *fm = NSFileManager.defaultManager;

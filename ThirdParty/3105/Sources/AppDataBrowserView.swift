@@ -5,6 +5,9 @@ struct AppDataBrowserView: View {
     @Environment(\.appLanguage) private var language
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var airliftCatalog = FilzaAirliftCatalogStore.shared
+    @State private var showAirliftFiles = false
+    @State private var airliftSelectedPath: String?
     @State private var apps: [InstalledApp] = []
     @State private var isLoading = false
     @State private var isResolving = false
@@ -42,6 +45,15 @@ struct AppDataBrowserView: View {
                 prompt: language.text("browser.search")
             )
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        airliftSelectedPath = nil
+                        showAirliftFiles = true
+                    } label: {
+                        Label("Airlift Files", systemImage: "folder.badge.gearshape")
+                    }
+                    .accessibilityLabel("Airlift File Manager")
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { reload() } label: {
                         if isResolving {
@@ -58,7 +70,16 @@ struct AppDataBrowserView: View {
                 if !hasLoaded {
                     hasLoaded = true
                     reload()
+                    if FilzaAirlift.pairedRecord() != nil {
+                        airliftCatalog.refresh()
+                    }
                 }
+            }
+            .onReceive(airliftCatalog.$apps) { _ in
+                apps = mergedWithAirlift(apps)
+            }
+            .sheet(isPresented: $showAirliftFiles) {
+                FilzaAirliftWorkspaceView(initialRemotePath: airliftSelectedPath)
             }
         }
     }
@@ -68,7 +89,12 @@ struct AppDataBrowserView: View {
             Section {
                 ForEach(filteredApps) { app in
                     if app.containerPath.isEmpty {
-                        appRow(app)
+                        Button {
+                            let paired = airliftCatalog.apps.first { $0.bundleID == app.bundleID }
+                            airliftSelectedPath = paired?.bundlePath ?? paired?.dataPath
+                            showAirliftFiles = true
+                        } label: { appRow(app) }
+                            .buttonStyle(.plain)
                     } else {
                         NavigationLink {
                             FileBrowserView(
@@ -177,6 +203,25 @@ struct AppDataBrowserView: View {
         .padding()
     }
 
+    // Paired-device discovery supplies app names and identities, but its
+    // metadata alone is NOT a sandbox extension. Keep inaccessible rows
+    // non-navigable until Airlift successfully copies a real snapshot.
+    private func mergedWithAirlift(_ localApps: [InstalledApp]) -> [InstalledApp] {
+        var result = localApps
+        var present = Set(localApps.map(\.bundleID))
+        for remote in airliftCatalog.apps where present.insert(remote.bundleID).inserted {
+            result.append(InstalledApp(
+                bundleID: remote.bundleID,
+                name: remote.name,
+                containerPath: "",
+                version: "",
+                icon: nil
+            ))
+        }
+        result.sort { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        return result
+    }
+
     private func reload() {
         isLoading = true
         isResolving = true
@@ -205,7 +250,7 @@ struct AppDataBrowserView: View {
                 ContainerPresentationPolicy.shouldShow(bundleID: $0.bundleID)
             }
             DispatchQueue.main.async {
-                apps = preliminary
+                apps = mergedWithAirlift(preliminary)
                 isLoading = false
             }
 
@@ -238,7 +283,7 @@ struct AppDataBrowserView: View {
                     $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
                 }
                 DispatchQueue.main.async {
-                    apps = progressiveResult
+                    apps = mergedWithAirlift(progressiveResult)
                 }
             }
 
@@ -272,7 +317,7 @@ struct AppDataBrowserView: View {
             }
 
             DispatchQueue.main.async {
-                apps = result
+                apps = mergedWithAirlift(result)
                 isLoading = false
                 isResolving = false
                 if result.isEmpty {

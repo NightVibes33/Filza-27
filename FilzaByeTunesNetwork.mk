@@ -20,7 +20,9 @@ before-FilzaApplySandboxExt-all::
 	# Add Apps Manager IPA repackaging/export integration.
 	@bash scripts/patch-3105-ipa-export.sh
 	@test -f scripts/patch-3105-ipa-export.sh || (echo "Missing 3105 IPA export patch" >&2; exit 1)
-	@grep -Fq 'Label("Repackage as IPA"' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'Label("Prepare", systemImage:' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'Label("Decrypt", systemImage:' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'FilzaFairPlayBackend.decryptPreparedIPA' ThirdParty/3105/Sources/AppDataBrowserView.swift
 	@grep -Fq 'FilzaAppIPAExporter.repackage' ThirdParty/3105/Sources/AppDataBrowserView.swift
 	@grep -Fq 'static func writeIPA(' ThirdParty/3105/Sources/ZIPArchiveWriter.swift
 	@grep -Fq 'archiveRootName: "Payload/' ThirdParty/3105/Sources/ZIPArchiveWriter.swift
@@ -40,15 +42,32 @@ before-FilzaApplySandboxExt-all::
 	@grep -Fq 'if appViewMode == .default && appSortOrder == .name' ThirdParty/3105/Sources/AppDataBrowserView.swift
 	@grep -Fq 'ContainerPresentationPolicy.shouldShow(bundleID: $$0.bundleID)' ThirdParty/3105/Sources/AppDataBrowserView.swift
 	@! grep -Fq 'discoverySummary(for: app)' ThirdParty/3105/Sources/AppDataBrowserView.swift
-	@grep -Fq 'Label("Repackage as IPA"' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'Label("Prepare", systemImage:' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'Label("Decrypt", systemImage:' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'FilzaFairPlayBackend.decryptPreparedIPA' ThirdParty/3105/Sources/AppDataBrowserView.swift
 
-	# Keep upstream 3105 Settings presentation and Filza pairing importer integration.
-	@bash scripts/patch-3105-pairing-importer.sh
-	@test -f scripts/patch-3105-pairing-importer.sh || (echo "Missing 3105 pairing importer patch" >&2; exit 1)
-	@grep -Fq '.sheet(isPresented: $$showSettings) { ThreeOneOSFiveSettingsView() }' ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
-	@grep -Fq 'allowedContentTypes: [.item]' ThirdParty/3105/Sources/FilzaSharedPairingSupport.swift
-	@grep -Fq 'handlePairingImport(_ result: Result<[URL], Error>)' ThirdParty/3105/Sources/FilzaSharedPairingSupport.swift
-	@! grep -Fq '.sheet(isPresented: $$showingPairingImporter)' ThirdParty/3105/Sources/FilzaSharedPairingSupport.swift
+	# Bridge Erosion/Airlift into the actual 3105 Cleaner and Wallpaper UI.
+	@python3 scripts/patch-3105-erosion-features.py
+	# Cache cleaning is per installed app: actual local grants, then opt-in paired Airlift.
+	@python3 scripts/patch-3105-cleaner-all-apps.py
+	@grep -Fq 'FILZA_ALL_APP_AIRLIFT_CLEANER' ThirdParty/3105/Sources/CleanerView.swift
+	@grep -Fq 'FILZA_UNIFIED_CLEANER_LIST_V1' ThirdParty/3105/Sources/CleanerView.swift
+	@grep -Fq 'allCleanerRecords' ThirdParty/3105/Sources/CleanerView.swift
+	@! grep -Fq 'airliftSection' ThirdParty/3105/Sources/CleanerView.swift
+	@grep -Fq 'FilzaAirliftCleaner.inspect(app)' ThirdParty/3105/Sources/CleanerView.swift
+	@grep -Fq 'FilzaAirliftCleaner.removeVerifiedCacheEntries(inventory)' ThirdParty/3105/Sources/CleanerView.swift
+	@test -f FilzaAirliftCleaner.swift
+	@grep -Fq 'FILZA_EROSION_CLEANER_BRIDGE' ThirdParty/3105/Sources/CleanerView.swift
+	@grep -Fq 'FILZA_EROSION_WALLPAPER_BRIDGE' ThirdParty/3105/Sources/WallpaperLabView.swift
+	@grep -Fq 'FilzaErosionPosterBoardWriter.apply' ThirdParty/3105/Sources/WallpaperLabView.swift
+	@test -f FilzaErosionPosterBoardWriter.swift
+	@grep -Fq 'al_exploit_inject_folder' "$(NFCARD_FFI)/include/AirliftFFI/airlift.h" || (echo "Erosion PosterBoard folder-injection API missing from compiled AirliftFFI" >&2; exit 1)
+	@grep -Fq 'al_find_app_container' "$(NFCARD_FFI)/include/AirliftFFI/airlift.h" || (echo "Erosion app-container lookup API missing from compiled AirliftFFI" >&2; exit 1)
+
+	# 3105 is a pairing consumer. Filza main Settings owns both setup methods.
+	@grep -Fq 'ThreeOneOSFiveSettingsView()' ThirdParty/3105/Sources/ThreeOneOSFiveContentView.swift
+	@! grep -Fq 'struct Filza3105PairingSettingsSection' ThirdParty/3105/Sources/FilzaSharedPairingSupport.swift
+	@grep -Fq 'FilzaUnifiedPairingHostFactory' FilzaUnifiedPairing.swift
 
 	# Preserve optimized persistent-client 3105 icon glue.
 	@bash scripts/patch-3105-icon-performance.sh
