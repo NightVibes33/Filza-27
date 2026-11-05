@@ -160,6 +160,11 @@ jobs:
           grep -Fq 'try await FilzaAirlift.snapshot' FilzaAirliftCleaner.swift
           grep -Fq 'SecureZIPArchive.extract' FilzaAirliftCleaner.swift
           grep -Fq 'FilzaAirliftCleaner.swift' Makefile
+          grep -Fq 'FilzaNativeAirliftFolderBridge.swift' Makefile
+          grep -Fq 'SecureZIPArchive.extract' FilzaNativeAirliftFolderBridge.swift
+          grep -Fq 'browseFolder:fromBrowser:' Tweak.m
+          grep -Fq 'FZEnsurePairedFolderButton(self)' Tweak.m
+          ! grep -Fq 'createSymbolicLink(at: alias' FilzaAirliftBackend.swift
           ! grep -Fq 'NSHomeDirectory()' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'FILZA_EROSION_CLEANER_BRIDGE' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'FILZA_EROSION_WALLPAPER_BRIDGE' ThirdParty/3105/Sources/WallpaperLabView.swift

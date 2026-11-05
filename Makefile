@@ -113,7 +113,7 @@ MOND_ZIP_SWIFT_FILES := \
     $(MOND_GEN)/ZIPFoundation/FileManager+ZIPDeprecated.swift \
     $(MOND_GEN)/ZIPFoundation/URL+ZIP.swift
 
-FilzaApplySandboxExt_SWIFT_FILES = FilzaUnifiedPairing.swift FilzaAirliftCleaner.swift FilzaErosionPosterBoardWriter.swift FilzaFairPlayBackend.swift FilzaCoreMediaReader.swift FilzaNativeCoreMediaBridge.swift FilzaAirliftBackend.swift FilzaAirliftIPAExporter.swift FilzaNFCARDHost.swift $(NFCARD_SWIFT_FILES) ByeTunesEmbeddedHost.swift ByeTunesOnDevicePairing.swift ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift FilzaMondCurrentHost.swift Filza3105Host.swift $(MOND_SWIFT_FILES) $(MOND_PARTYUI_SWIFT_FILES) $(MOND_ZIP_SWIFT_FILES) $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
+FilzaApplySandboxExt_SWIFT_FILES = FilzaUnifiedPairing.swift FilzaAirliftCleaner.swift FilzaErosionPosterBoardWriter.swift FilzaFairPlayBackend.swift FilzaCoreMediaReader.swift FilzaNativeCoreMediaBridge.swift FilzaNativeAirliftFolderBridge.swift FilzaAirliftBackend.swift FilzaAirliftIPAExporter.swift FilzaNFCARDHost.swift $(NFCARD_SWIFT_FILES) ByeTunesEmbeddedHost.swift ByeTunesOnDevicePairing.swift ByeTunesMetadataCompat.swift ByeTunesDownloadParityCompat.swift FilzaMondCurrentHost.swift Filza3105Host.swift $(MOND_SWIFT_FILES) $(MOND_PARTYUI_SWIFT_FILES) $(MOND_ZIP_SWIFT_FILES) $(THREEONE_SWIFT_FILES) $(BYETUNES_SWIFT_FILES) $(BYETUNES_ACTIVITY_SHARED)
 
 FilzaApplySandboxExt_CFLAGS = -I$(PWD)/compat -I$(PWD) -I$(PWD)/XPF/src -I$(PWD)/XPF/external/ChOma/include -I$(IDEVICE_VENDOR)/include -I$(PWD)/$(BAD_QUERY_ROOT)/bad_query -I$(PWD)/$(THREEONE_ROOT)/Sources -I$(PWD)/$(MOND_GEN) \
     -I$(PWD)/$(NFCARD_IOS) -I$(PWD)/$(NFCARD_FFI)/include -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Core -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Requests -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebServer/Responses -I$(PWD)/$(GCDWEBSERVER_ROOT)/GCDWebDAVServer \
@@ -234,6 +234,10 @@ before-FilzaApplySandboxExt-all::
 	@test -f "FilzaMondBridge.m" || (echo "Missing FilzaMondBridge.m" >&2; exit 1)
 	@test -f "FilzaMainToolbarGestalt.m" || (echo "Missing FilzaMainToolbarGestalt.m" >&2; exit 1)
 	@test -f "FilzaNativeCoreMediaBridge.swift" || (echo "Missing native Filza CoreMedia backend" >&2; exit 1)
+	@test -f "FilzaNativeAirliftFolderBridge.swift" || (echo "Missing Filza native paired-folder backend" >&2; exit 1)
+	@grep -Fq 'FZEnsurePairedFolderButton(self)' Tweak.m || (echo "Native Filza folder action not wired" >&2; exit 1)
+	@grep -Fq 'SecureZIPArchive.extract' FilzaNativeAirliftFolderBridge.swift || (echo "Safe folder extraction is missing" >&2; exit 1)
+	@! grep -Fq 'FilzaAirliftWorkspace.swift' Makefile || (echo "Separate Airlift UI returned" >&2; exit 1)
 	@grep -Fq 'ContainerStore.installedAppsFromAPI()' "$(THREEONE_ROOT)/Sources/CleanerView.swift" || (echo "Original Cleaner app discovery is missing" >&2; exit 1)
 	@grep -Fq 'ContainerStore.installedAppsFromMHACandidates' "$(THREEONE_ROOT)/Sources/CleanerView.swift" || (echo "Original MCM/MHA Cleaner discovery is missing" >&2; exit 1)
 	@! grep -Fq '[items insertObject:airlift' FilzaMainToolbarGestalt.m || (echo "Erosion fifth toolbar app returned" >&2; exit 1)

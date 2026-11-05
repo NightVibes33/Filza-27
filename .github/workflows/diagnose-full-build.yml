@@ -257,6 +257,10 @@ jobs:
           ! grep -aFq 'FilzaAirliftHostFactory' "$DYLIB"
           grep -Fq 'FilzaAirliftBackend.swift' Makefile
           ! grep -Fq 'FilzaAirliftWorkspace.swift' Makefile
+          grep -Fq 'FilzaNativeAirliftFolderBridge.swift' Makefile
+          grep -Fq 'FZEnsurePairedFolderButton(self)' Tweak.m
+          grep -Fq 'SecureZIPArchive.extract' FilzaNativeAirliftFolderBridge.swift
+          ! grep -Fq 'createSymbolicLink(at: alias' FilzaAirliftBackend.swift
           ! grep -Fq 'FilzaCoreMediaBrowser.swift' Makefile
           ! grep -Fq '[items insertObject:airlift' FilzaMainToolbarGestalt.m
           ! grep -Fq 'FMTOpenAirliftFiles' FilzaMainToolbarGestalt.m
