@@ -176,6 +176,13 @@ static void FZEnsurePairedFolderButton(id controller) {
     nav.rightBarButtonItems = items;
 }
 
+static void FZNativeAirliftRetireOldShortcut(void) {
+    Class bridge = NSClassFromString(@"FilzaNativeAirliftFolderBridge");
+    SEL selector = NSSelectorFromString(@"retireLegacyArchiveShortcut");
+    if (bridge && [bridge respondsToSelector:selector])
+        ((void(*)(id, SEL))objc_msgSend)(bridge, selector);
+}
+
 static IMP orig_fileSystemSetCurrentPath = NULL;
 static IMP orig_fileSystemUpdateEditableUI = NULL;
 static void refreshWallpaperButton(id controller, id fallbackPath) {
@@ -218,6 +225,7 @@ static BOOL gNormalizedInitialBrowserPath = NO;
 static void hook_fileSystemViewWillAppear(id self, SEL _cmd, BOOL animated) {
     FZNativeCoreMediaRegisterPage(self);
     FZNativeCoreMediaPrepareRoot();
+    FZNativeAirliftRetireOldShortcut();
     NSString *currentPath = [self respondsToSelector:NSSelectorFromString(@"currentPath")]
         ? ((id(*)(id, SEL))objc_msgSend)(self, NSSelectorFromString(@"currentPath")) : nil;
     NSString *redirected = redirectedLegacyBrowserPath(currentPath);

@@ -10,6 +10,26 @@ import UIKit
 @objc(FilzaNativeAirliftFolderBridge)
 public final class FilzaNativeAirliftFolderBridge: NSObject {
     private static var browsing = false
+    // Old builds exposed ZIPs under Device Storage/[Airlift] Snapshots.
+    // Remove ONLY that exact old generated symlink, never a user folder.
+    @objc public static func retireLegacyArchiveShortcut() {
+        let fm = FileManager.default
+        let alias = URL(fileURLWithPath: MCMFilzaVirtualRoot(), isDirectory: true)
+            .appendingPathComponent("[Airlift] Snapshots")
+        let original = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("FilzaAirlift/Snapshots", isDirectory: true)
+        guard let oldTarget = try? fm.destinationOfSymbolicLink(atPath: alias.path),
+              URL(fileURLWithPath: oldTarget).standardizedFileURL.path ==
+                original.standardizedFileURL.path else { return }
+        do {
+            try fm.removeItem(at: alias)
+            FilzaDiagnosticsAppend("NativeAirlift", "Retired legacy ZIP shortcut; actual archives remain private")
+        } catch {
+            FilzaDiagnosticsAppend("NativeAirlift", "Legacy shortcut removal denied: " + error.localizedDescription)
+        }
+    }
+
+
 
     @objc public static func browseFolder(
         _ remotePath: String,
