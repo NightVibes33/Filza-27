@@ -72,6 +72,112 @@ replace_one(cleaner,
                      "success is not proof of reclaimed bytes.")
             }""")
 
+# Preserve the same installed-app discovery and rich display names/icons used
+# by 3105 Files > Apps. The old Cleaner scan only retained cache-positive apps.
+replace_one(cleaner,
+    """    // FILZA_ALL_APP_AIRLIFT_CLEANER
+    @State private var remoteInventories:""",
+    """    // FILZA_ALL_APP_AIRLIFT_CLEANER
+    @State private var discoveredInstalledApps: [InstalledApp] = []
+    @State private var remoteInventories:""")
+replace_one(cleaner,
+    """        var known = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
+        for remote in airliftCatalog.apps {""",
+    """        var known = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
+        // Same API/MCM/LaunchServices/metadata discovery as the main Apps list.
+        // Prefer local icon + display metadata and retain a single row per ID.
+        for app in discoveredInstalledApps {
+            guard ContainerPresentationPolicy.shouldShow(bundleID: app.bundleID),
+                  known[app.bundleID] == nil else { continue }
+            known[app.bundleID] = CleanerAppRecord(
+                app: app,
+                usage: LimitedCleanerUsage(
+                    cacheBytes: 0, temporaryBytes: 0, removableItemCount: 0
+                )
+            )
+        }
+        for remote in airliftCatalog.apps {""")
+# Both local and Airlift metadata are actual discovered apps; cache sizes stay
+# unknown until a verified local or remote scan, never simulated.
+replace_one(cleaner,
+    """            var scannedBundleIDs = Set<String>()
+            var discoveredRecords: [CleanerAppRecord] = []
+            var processedCount = 0""",
+    """            var scannedBundleIDs = Set<String>()
+            var discoveredRecords: [CleanerAppRecord] = []
+            var discoveredMetadata: [String: InstalledApp] = [:]
+            var processedCount = 0""")
+replace_one(cleaner,
+    """                let count = processedCount
+                DispatchQueue.main.async {
+                    guard scanID == requestID else { return }
+                    records = snapshot
+                    scannedAppCount = count
+                }""",
+    """                let count = processedCount
+                let metadataSnapshot = Array(discoveredMetadata.values)
+                DispatchQueue.main.async {
+                    guard scanID == requestID else { return }
+                    records = snapshot
+                    discoveredInstalledApps = metadataSnapshot
+                    scannedAppCount = count
+                }""")
+replace_one(cleaner,
+    """            func scanNewApps(_ applications: [InstalledApp]) {
+                let metadata = Dictionary(""",
+    """            func scanNewApps(_ applications: [InstalledApp]) {
+                for app in applications where
+                    ContainerPresentationPolicy.shouldShow(bundleID: app.bundleID) {
+                    if let previous = discoveredMetadata[app.bundleID],
+                       !previous.name.isEmpty, previous.name != previous.bundleID,
+                       app.name.isEmpty || app.name == app.bundleID {
+                        continue
+                    }
+                    discoveredMetadata[app.bundleID] = app
+                }
+                let metadata = Dictionary(""")
+replace_one(cleaner,
+    """                processedCount = scannedBundleIDs.count""",
+    """                processedCount = discoveredMetadata.count""")
+replace_one(cleaner,
+    """            let apiApps = ContainerStore.installedAppsFromAPI()
+            let dynamicIdentifiers = ContainerStore.dynamicAppIdentifiers()
+            let mcmApps = ContainerStore.installedAppsFromMCM(identifiers: dynamicIdentifiers)
+            scanNewApps(apiApps + mcmApps)""",
+    """            let bundleMetadata = ContainerStore.applicationBundleMetadataCatalog()
+            let apiApps = ContainerStore.applyingBundleMetadata(
+                to: ContainerStore.installedAppsFromAPI(), catalog: bundleMetadata
+            )
+            let dynamicIdentifiers = ContainerStore.dynamicAppIdentifiers()
+            let mcmApps = ContainerStore.installedAppsFromMCM(
+                identifiers: dynamicIdentifiers, bundleMetadata: bundleMetadata
+            )
+            let filesystemApps = ContainerStore.containersFromFilesystem()
+            scanNewApps(apiApps + mcmApps + filesystemApps)""")
+replace_one(cleaner,
+    """                custom: [],
+                launchServices: launchServicesIdentifiers""",
+    """                custom: bundleMetadata.keys.sorted(),
+                launchServices: launchServicesIdentifiers""")
+replace_one(cleaner,
+    """            let mhaApps = ContainerStore.installedAppsFromMHACandidates(
+                identifiers: candidates
+            ) { progressiveApps in""",
+    """            let mhaApps = ContainerStore.installedAppsFromMHACandidates(
+                identifiers: candidates, bundleMetadata: bundleMetadata
+            ) { progressiveApps in""")
+replace_one(cleaner,
+    """            scanNewApps(mhaApps)
+            publish(force: true)""",
+    """            scanNewApps(mhaApps)
+            let inferred = ContainerStore.inferUnidentifiedApps(
+                in: filesystemApps,
+                knownApps: mhaApps + mcmApps + apiApps,
+                launchServicesIdentifiers: Set(launchServicesIdentifiers)
+            )
+            scanNewApps(inferred)
+            publish(force: true)""")
+
 # One app list, not separate "local" and "Erosion" app categories.
 # Real Airlift InstallationProxy discovery provides rows, not fake cache sizes.
 replace_one(cleaner,
@@ -429,6 +535,9 @@ f = Path(cleaner)
 text = f.read_text(encoding="utf-8")
 assert "FILZA_UNIFIED_CLEANER_LIST_V1" in text
 assert "allCleanerRecords" in text
+assert "discoveredInstalledApps" in text
+assert "ContainerStore.applicationBundleMetadataCatalog()" in text
+assert "ContainerStore.containersFromFilesystem()" in text
 assert "ForEach(filteredRecords)" in text
 assert "airliftSection" not in text
 assert "ForEach(airliftCatalog.apps)" not in text
