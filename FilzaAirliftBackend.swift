@@ -174,7 +174,25 @@ enum FilzaAirlift {
     }
     /// Airlift's read is a staging/restore transaction, not normal sandbox
     /// access. Copy only complete results into our independent local workspace.
+    // If Airlift's source-folder restore failed, another read can deepen the
+    // device integrity problem. The user must recover externally and
+    // explicitly clear the incident before this backend is reused.
+    private static let restorationStopKey = "filza.remoteCleanerSafetyStop.v1"
+    static var restorationStopped: Bool {
+        UserDefaults.standard.bool(forKey: restorationStopKey)
+    }
+    private static func recordRestoreIncident(_ reason: String) {
+        UserDefaults.standard.set(true, forKey: restorationStopKey)
+        FilzaDiagnosticsAppend("Airlift", "SAFETY STOP persisted: " + reason)
+    }
+
     static func snapshot(path original: String, folder: Bool) async throws -> URL {
+        if restorationStopped {
+            throw FilzaAirliftError.unsafeRecovery(
+                "A previous read did not confirm original-folder restoration. " +
+                "Stop using remote reads or writes until device recovery is verified."
+            )
+        }
         guard let pairing = pairedRecord() else { throw FilzaAirliftError.unpaired }
         let target = try checkPath(original)
         let reply = await call(pairing: pairing) { record, outJSON, outError in
@@ -191,7 +209,9 @@ enum FilzaAirlift {
         } catch {
             let detail = reply.error ?? reply.json ?? ""
             if folder && (detail.lowercased().contains("restore") ||
-                          detail.lowercased().contains("recover")) {
+                          detail.lowercased().contains("recover") ||
+                          detail.lowercased().contains("safety stop")) {
+                recordRestoreIncident(detail)
                 throw FilzaAirliftError.unsafeRecovery(detail)
             }
             throw error
@@ -211,11 +231,11 @@ enum FilzaAirlift {
             (protectedAppContainer && ((result["restoreConfirmed"] as? Bool) != true ||
                                        (result["restoreHandoffCompleted"] as? Bool) != true))
         ) {
-            throw FilzaAirliftError.unsafeRecovery(
-                result["recoveryPath"] as? String ??
+            let detail = result["recoveryPath"] as? String ??
                 result["restoreError"] as? String ??
                 "See Airlift recovery diagnostics."
-            )
+            recordRestoreIncident(detail)
+            throw FilzaAirliftError.unsafeRecovery(detail)
         }
         guard let local = result["localPath"] as? String,
               FileManager.default.isReadableFile(atPath: local)
@@ -227,19 +247,9 @@ enum FilzaAirlift {
             ? "bin" : URL(fileURLWithPath: target).pathExtension)
         let saved = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension(suffix)
         try FileManager.default.copyItem(at: URL(fileURLWithPath: local), to: saved)
-        // Filza's native Device Storage root contains an alias to the same
-        // snapshots. It is an ordinary sandbox-local symlink, not a sandbox
-        // escape or an automatically synchronized device filesystem.
-        let nativeRoot = URL(fileURLWithPath: MCMFilzaVirtualRoot(), isDirectory: true)
-        do {
-            try FileManager.default.createDirectory(at: nativeRoot, withIntermediateDirectories: true)
-            let alias = nativeRoot.appendingPathComponent("[Airlift] Snapshots")
-            if !FileManager.default.fileExists(atPath: alias.path) {
-                try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: directory)
-            }
-        } catch {
-            FilzaDiagnosticsAppend("Airlift", "native Device Storage snapshot alias unavailable: \(error.localizedDescription)")
-        }
+        // ZIP stays private to the backend. Filza's native folder browser
+        // opens *extracted directories*, never a public ZIP or an extra app.
+        // Other consumers can still inspect the private archive explicitly.
         FilzaDiagnosticsAppend("Airlift", "saved snapshot of \(target) to \(saved.lastPathComponent)")
         return saved
     }
