@@ -50,6 +50,7 @@ before-FilzaApplySandboxExt-all::
 	@python3 scripts/patch-3105-erosion-features.py
 	# Cache cleaning is per installed app: actual local grants, then opt-in paired Airlift.
 	@python3 scripts/patch-3105-cleaner-all-apps.py
+	@python3 scripts/patch-3105-worse-query.py
 	@grep -Fq 'FILZA_ALL_APP_AIRLIFT_CLEANER' ThirdParty/3105/Sources/CleanerView.swift
 	@grep -Fq 'FILZA_UNIFIED_CLEANER_LIST_V1' ThirdParty/3105/Sources/CleanerView.swift
 	@grep -Fq 'allCleanerRecords' ThirdParty/3105/Sources/CleanerView.swift

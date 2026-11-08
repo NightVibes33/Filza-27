@@ -196,6 +196,7 @@ Filza-27 combines work from multiple open-source projects. Their upstream licens
 - [0xjohnnydev/FilzaSlop](https://github.com/0xjohnnydev/FilzaSlop)
 - [0xjohnnydev/MobileHouseArrest-PoC](https://github.com/0xjohnnydev/MobileHouseArrest-PoC)
 - [forcequitOS/bad_query](https://github.com/forcequitOS/bad_query)
+- [forcequitOS/worse_query](https://github.com/forcequitOS/worse_query) (pinned GPLv3 source)
 - [rooootdev/mond](https://github.com/rooootdev/mond)
 - [YangJiiii/3105](https://github.com/YangJiiii/3105)
 - [NightVibes33/3105](https://github.com/NightVibes33/3105)
@@ -206,6 +207,51 @@ Filza-27 combines work from multiple open-source projects. Their upstream licens
 - CrazyMind90
 - `SerStars/nugget-wallpapers`
 - mightycooldude12
+
+## worse_query native filesystem access (iOS 26–27)
+
+The original forcequitOS/worse_query GPLv3 implementation is vendored,
+unaltered, from commit bd41f874b3f4d28c4d61b51c7dfb98f0e8a5e9ec.
+scripts/verify-worse-query.py verifies every upstream Git blob, including
+LICENSE. This is not a wrapper that silently substitutes bad_query or Airlift.
+
+- Filza's one native file browser keeps the existing folder action. Choose
+  Open Direct to request a real upstream worse_query sandbox extension and
+  navigate into that original directory, only after a genuine open succeeds.
+  Read Folder remains the separately paired Airlift folder-export option.
+- 3105 Apps Manager, Cleaner and Wallpaper Lab reuse the real shared MCM
+  container resolver. When MCM is denied, worse_query tries a real container
+  path supplied by LaunchServices or an actually discovered app data URL.
+  A denied grant does not become a fabricated app, permission or cache size.
+  Cleaner's original single app list and cache-limited deletion remain.
+- All earlier bad_query routes remain. Airlift stays hidden behind the
+  original UI, not as a new Filza app or another file browser.
+- Worse_query does not claim access to /usr/libexec or system-volume writes;
+  native read-only CoreMedia browsing is still a separate backend.
+
+**App Group signing is now supported by a dedicated GitHub Actions workflow:**
+[Sign Filza 27 with real App Group](.github/workflows/sign-filza27-appgroup.yml).
+See [Signing/README-AppGroup.md](Signing/README-AppGroup.md) for the four
+certificate/provisioning secrets and setup. The workflow verifies the Apple
+Developer Team, registered app ID, the group in the provisioned profile,
+and the group in the final signed code signature. It then produces a distinct
+signed IPA artifact. The regular unsigned artifact remains available; when the four required Apple
+Developer secrets are configured, the same ARM64 build also signs and uploads
+a separate validated Filza-27-AppGroup-signed-arm64 artifact. Without a valid
+matching Apple profile, the unsigned IPA cannot activate App Groups by itself.
+If the user's signer strips or cannot provision the group, this backend
+accurately reports unavailable and existing methods remain.
+
+**Restoration safeguard:** Every invocation verifies that the dedicated App Group `Library/Caches` has been restored to a real, empty directory, even when the upstream query fails. If restoration is unconfirmed, Filza persists a safety stop and refuses further worse_query attempts. Recovery must be verified and performed explicitly; no automatic retry deletes unknown cache contents.
+
+**Upstream safety requirement:** Worse_query temporarily replaces the caller's
+App Group Library/Caches directory with a symlink. The Filza adapter uses
+a dedicated disposable group and refuses to run against a populated or
+symlinked cache. It also validates a consumed extension by opening the
+original directory before reporting a successful grant. An outstanding
+Airlift restoration safety stop disables new direct and remote reads until
+device recovery. This is not a jailbreak, root grant, or proven
+iOS 27.0.1 physical-device result.
 
 ## Research note
 

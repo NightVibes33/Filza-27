@@ -1,6 +1,7 @@
 #import "MCMFilzaIntegration.h"
 
 #import "MCMBridge.h"
+#import "FilzaWorseQueryBridge.h"
 #import <fcntl.h>
 #import <limits.h>
 #import <notify.h>
@@ -294,7 +295,7 @@ NSString *MCMContainerPathForIdentifier(uint64_t containerClass,
                                         BOOL group,
                                         NSString **error)
 {
-    return MCMActivate(containerClass, identifier, group, error);
+    return MCMActivateContainerPath(containerClass, identifier, group, error);
 }
 
 NSString *MCMActivateContainerPath(uint64_t containerClass,
@@ -302,7 +303,14 @@ NSString *MCMActivateContainerPath(uint64_t containerClass,
                                    BOOL group,
                                    NSString **error)
 {
-    return MCMActivate(containerClass, identifier, group, error);
+    NSString *path = MCMActivate(containerClass, identifier, group, error);
+    if (!path && containerClass == 2 && !group) {
+        // Require an actual LaunchServices data URL, a signed App Group,
+        // a consumed upstream token, and a verified open of the directory.
+        path = FZWorseQueryResolveAppDataContainer(identifier);
+        if (!path && error) *error = FZWorseQueryLastStatus();
+    }
+    return path;
 }
 
 int64_t MCMActivateContainer(uint64_t containerClass,
@@ -310,7 +318,7 @@ int64_t MCMActivateContainer(uint64_t containerClass,
                              BOOL group,
                              NSString **error)
 {
-    return MCMActivate(containerClass, identifier, group, error) ? 1 : -1;
+    return MCMActivateContainerPath(containerClass, identifier, group, error) ? 1 : -1;
 }
 
 static NSString *MCMActivateScoped(uint64_t containerClass, NSString *identifier,
@@ -361,7 +369,7 @@ static NSString *MCMActivateScoped(uint64_t containerClass, NSString *identifier
 
 NSString *MCMFilzaDataContainerPath(NSString *identifier, NSString **error)
 {
-    return MCMActivate(2, identifier, NO, error);
+    return MCMActivateContainerPath(2, identifier, NO, error);
 }
 
 static BOOL MCMPathIsInsideRoot(NSString *path, NSString *root)

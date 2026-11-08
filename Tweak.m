@@ -14,6 +14,8 @@
 #include <sys/sysctl.h>
 
 #include "MCMFilzaIntegration.h"
+#include "FilzaWorseQueryBridge.h"
+#include "FilzaDiagnostics.h"
 #include "PosterBoardFeature.h"
 #include "kexploit/kexploit_opa334.h"
 #include "kexploit/kutils.h"
@@ -119,7 +121,7 @@ static void FZNativeAirliftShowFolderPrompt(id self, SEL _cmd) {
     UIViewController *browser = (UIViewController *)self;
     UIAlertController *alert = [UIAlertController
         alertControllerWithTitle:@"Open Paired Folder"
-        message:@"Enter a specific remote folder path. Airlift temporarily stages and restores it. Do not run if a previous SAFETY STOP remains unresolved. On success the folder opens read-only in Filza."
+        message:@"Enter a specific container path. Open Direct uses worse_query (signed App Group required); Read Folder uses paired Airlift and temporarily stages/restores the source."
         preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
         field.placeholder = @"/var/mobile/Containers/Data/Application/…";
@@ -132,6 +134,37 @@ static void FZNativeAirliftShowFolderPrompt(id self, SEL _cmd) {
         style:UIAlertActionStyleCancel handler:nil]];
     __weak UIViewController *weakBrowser = browser;
     __weak UIAlertController *weakAlert = alert;
+    // Real live folder access using forcequitOS worse_query, not an archive
+    // mirror. Never block Filza's UIKit thread on a ContainerManager query.
+    [alert addAction:[UIAlertAction actionWithTitle:@"Open Direct"
+        style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        NSString *input = weakAlert.textFields.firstObject.text ?: @"";
+        NSString *requested = [[input stringByTrimmingCharactersInSet:
+            NSCharacterSet.whitespaceAndNewlineCharacterSet] copy];
+        if (!weakBrowser) return;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            NSString *granted = FZWorseQueryGrantDirectory(requested);
+            NSString *status = FZWorseQueryLastStatus();
+            dispatch_async(dispatch_get_main_queue(), ^{
+                UIViewController *active = weakBrowser;
+                if (!active) return;
+                SEL navigate = NSSelectorFromString(@"setCurrentPath:");
+                if (granted && [active respondsToSelector:navigate]) {
+                    ((void(*)(id,SEL,id))objc_msgSend)(active, navigate, granted);
+                    SEL reload = NSSelectorFromString(@"doLoadingPage");
+                    if ([active respondsToSelector:reload])
+                        ((void(*)(id,SEL))objc_msgSend)(active, reload);
+                } else {
+                    UIAlertController *warning = [UIAlertController
+                        alertControllerWithTitle:@"Direct Folder Access"
+                        message:status preferredStyle:UIAlertControllerStyleAlert];
+                    [warning addAction:[UIAlertAction actionWithTitle:@"OK"
+                        style:UIAlertActionStyleDefault handler:nil]];
+                    [active presentViewController:warning animated:YES completion:nil];
+                }
+            });
+        });
+    }]];
     [alert addAction:[UIAlertAction actionWithTitle:@"Read Folder"
         style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         UIViewController *activeBrowser = weakBrowser;

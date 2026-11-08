@@ -64,6 +64,15 @@ jobs:
         run: |
           set -euxo pipefail
           python3 -m py_compile scripts/set-filza-bundle-id.py
+          python3 scripts/verify-worse-query.py
+          python3 scripts/filza27-appgroup-entitlements.py
+          python3 -m py_compile scripts/filza27-appgroup-entitlements.py
+          bash -n scripts/sign-filza27-appgroup.sh
+          grep -Fq 'Sign Filza with real App Group when Apple credentials are configured' .github/workflows/diagnose-full-build.yml
+          grep -Fq 'Filza-27-AppGroup-signed-arm64' .github/workflows/diagnose-full-build.yml
+          grep -Fq 'Sign Filza 27 with real App Group' .github/workflows/sign-filza27-appgroup.yml
+          grep -Fq 'FILZA_APPGROUP_PROFILE_BASE64' .github/workflows/sign-filza27-appgroup.yml
+          python3 -m py_compile scripts/patch-3105-worse-query.py
           python3 - <<'PY'
           import plistlib
           import subprocess
@@ -136,7 +145,10 @@ jobs:
           bash scripts/patch-3105-app-manager-view-sort.sh
           python3 scripts/patch-3105-erosion-features.py
           python3 scripts/patch-3105-cleaner-all-apps.py
+          python3 scripts/patch-3105-worse-query.py
           python3 -m py_compile scripts/patch-3105-cleaner-all-apps.py
+          grep -Fq 'FILZA_REAL_WORSE_QUERY_APP_ACCESS' ThirdParty/3105/Sources/ContainerStore.swift
+          grep -Fq 'FZWorseQueryGrantDirectory(application.containerPath)' ThirdParty/3105/Sources/CleanerView.swift
           # Preserve the original all-iOS-version local discovery and safe cleaner.
           grep -Fq 'ContainerStore.installedAppsFromAPI()' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'ContainerStore.installedAppsFromMCM' ThirdParty/3105/Sources/CleanerView.swift
