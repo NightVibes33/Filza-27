@@ -79,6 +79,12 @@ static NSString *FZWQInstalledGroup(void) {
     return matches.count == 1 ? matches.firstObject : nil;
 }
 
+// Inspect the live signature after SideStore installation, without running
+// the cache/symlink exploit or implying a grant for another app's directory.
+NSString *FZWorseQueryInstalledGroupIdentifier(void) {
+    return FZWQInstalledGroup();
+}
+
 BOOL FZWorseQueryEntitlementPresent(void) {
     return FZWQInstalledGroup() != nil;
 }

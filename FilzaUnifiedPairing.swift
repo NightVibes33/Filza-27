@@ -220,3 +220,64 @@ public final class FilzaUnifiedPairingHostFactory: NSObject {
         return controller
     }
 }
+
+
+/// SideStore performs signing; Filza only inspects its installed iOS identity.
+/// No certificate, Apple ID, P12, provisioning profile or group is generated here.
+private struct FilzaSideStoreSigningSettings: View {
+    @State private var groupIdentifier: String?
+    @State private var inspected = false
+
+    private func inspectInstalledSignature() {
+        groupIdentifier = FZWorseQueryInstalledGroupIdentifier()
+        inspected = true
+    }
+
+    var body: some View {
+        Form {
+            Section("App Group authorized by iOS") {
+                LabeledContent("Installed signature",
+                    value: !inspected ? "Checking…" :
+                        (groupIdentifier == nil ? "App Group unavailable" : "App Group available"))
+                if let groupIdentifier {
+                    Text(groupIdentifier)
+                        .font(.system(.footnote, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+                Button {
+                    inspectInstalledSignature()
+                } label: {
+                    Label("Recheck signed App Group", systemImage: "arrow.clockwise")
+                }
+                Text("Checks the installed entitlement and accessible App Group container. This is not an exploit success test.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Section("Sign with SideStore") {
+                Text("1. Import the current unsigned filza27.ipa into SideStore.")
+                Text("2. Let SideStore sign and install using your own Apple account and its App Groups provisioning support.")
+                Text("3. Open Filza and recheck the signed App Group above.")
+                Text("If the App Group is unavailable, check SideStore's App Group provisioning or resign and reinstall there. Filza cannot add capabilities after installation.")
+                Text("SideStore may append your Apple Team ID to the dedicated group. Filza detects the group iOS actually authorized, not a hardcoded user's account.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Section("worse_query checks") {
+                Text("An App Group is required but does not prove sandbox escape, filesystem access, or a jailbreak. The actual backend separately validates its directory grant and safe cache restoration.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("SideStore App Group")
+        .task { inspectInstalledSignature() }
+    }
+}
+
+@MainActor @objc(FilzaSideStoreSigningHostFactory)
+public final class FilzaSideStoreSigningHostFactory: NSObject {
+    @objc public static func makeViewController() -> UIViewController {
+        let controller = UIHostingController(rootView: FilzaSideStoreSigningSettings())
+        controller.title = "SideStore App Group"
+        return controller
+    }
+}

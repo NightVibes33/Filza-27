@@ -38,6 +38,10 @@ assert "FilzaWorseQueryBridge.h" in Path("FilzaApplySandboxExt-Bridging-Header.h
 bridge = Path("FilzaWorseQueryBridge.m").read_text()
 assert "worse_query(target, groupID, alternateFlags, false)" in bridge
 assert "FZWQInstalledGroup(void)" in bridge
+assert "FZWorseQueryInstalledGroupIdentifier(void)" in bridge
+assert "FZWorseQueryInstalledGroupIdentifier(void)" in Path("FilzaWorseQueryBridge.h").read_text()
+assert "FilzaSideStoreSigningHostFactory" in Path("FilzaUnifiedPairing.swift").read_text()
+assert "SideStore App Group" in Path("FilzaSSHPreferencesV2.m").read_text()
 assert "containerURLForSecurityApplicationGroupIdentifier:groupID" in bridge
 assert "group.com.filza27.nigtvibes33.worsequery" in bridge
 assert "FZWQDedicatedEmptyCaches" in bridge

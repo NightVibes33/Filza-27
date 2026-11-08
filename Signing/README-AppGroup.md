@@ -20,3 +20,8 @@ The original developer-owned workflow `.github/workflows/sign-filza27-appgroup.y
 `FILZA_SIGNING_P12_BASE64`, `FILZA_SIGNING_P12_PASSWORD`, `FILZA_APPGROUP_PROFILE_BASE64`, and `FILZA_SIGNING_IDENTITY`.
 
 Do not add these credentials for ordinary SideStore distribution. The separate signed artifact and corresponding workflow are not prerequisites for the SideStore IPA. Neither signing model guarantees an iOS 27 sandbox exploit.
+
+
+## In-app verification
+
+After SideStore signs/installs Filza, open **Filza 27 → Settings → Device & Signing → SideStore App Group** and tap **Recheck signed App Group**. The screen detects whether iOS actually authorizes the dedicated group, including SideStore's optional per-Team suffix. This does not sign anything itself, does not request Apple credentials, and does not imply the worse_query exploit succeeded. If the check fails, correct the signing/provisioning in SideStore before testing.
