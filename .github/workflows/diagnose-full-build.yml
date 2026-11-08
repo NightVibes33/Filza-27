@@ -383,6 +383,16 @@ jobs:
             ! LC_ALL=C grep -aFq "$forbidden" "$APP/Frameworks/FilzaApplySandboxExt.dylib"
           done
 
+          # This is a REQUEST CARRIER only: SideStore reads source Mach-O
+          # entitlements, registers the App Group on the user's own team,
+          # and replaces these ad-hoc signatures with its own Apple profile.
+          # Never embed someone else's provisioning profile in a public IPA.
+          codesign --force --sign - --timestamp=none --generate-entitlement-der "$APP/Frameworks/FilzaApplySandboxExt.dylib"
+          codesign --force --sign - --timestamp=none --generate-entitlement-der \
+            --entitlements "$GITHUB_WORKSPACE/Signing/Filza27WorseQuery.entitlements" "$APP"
+          codesign --verify --deep --strict "$APP"
+          python3 scripts/verify-sidestore-payload.py "$APP"
+
           OUTPUT="$GITHUB_WORKSPACE/.theos/filza27.ipa"
           rm -f "$OUTPUT"
           (cd "$STAGE" && zip -qry "$OUTPUT" Payload)

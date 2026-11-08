@@ -18,7 +18,7 @@ typedef CFTypeRef FZWQSecTaskRef;
 extern FZWQSecTaskRef SecTaskCreateFromSelf(CFAllocatorRef allocator);
 extern CFTypeRef SecTaskCopyValueForEntitlement(FZWQSecTaskRef task, CFStringRef name, CFErrorRef *error);
 
-static NSString *const kFZWQGroup = @"group.com.filza27.nigtvibes33.worsequery";
+static NSString *const kFZWQGroupBase = @"group.com.filza27.nigtvibes33.worsequery";
 static NSString *const kFZWQRestorationStop = @"filza.remoteCleanerSafetyStop.v1";
 static NSString *const kFZWQCacheRestoreStop = @"filza.worseQueryCacheRestoreStop.v1";
 static NSMutableDictionary<NSString *, NSNumber *> *gHandles;
@@ -44,18 +44,43 @@ NSString *FZWorseQueryLastStatus(void) {
     @synchronized (FZWQLock()) { return [gStatus copy]; }
 }
 
-BOOL FZWorseQueryEntitlementPresent(void) {
+// SideStore requests the base group from the IPA's ad-hoc entitlement
+// signature, then registers a per-team group (typically BASE.TEAMID).
+// Resolve what iOS actually granted. Do not assume a loose plist is authority.
+static NSString *FZWQInstalledGroup(void) {
     FZWQSecTaskRef task = SecTaskCreateFromSelf(kCFAllocatorDefault);
-    if (!task) return NO;
+    if (!task) return nil;
     CFErrorRef error = NULL;
     CFTypeRef value = SecTaskCopyValueForEntitlement(task,
         CFSTR("com.apple.security.application-groups"), &error);
-    BOOL good = value && CFGetTypeID(value) == CFArrayGetTypeID() &&
-        [(__bridge NSArray *)value containsObject:kFZWQGroup];
+    NSMutableArray<NSString *> *matches = [NSMutableArray array];
+    if (value && CFGetTypeID(value) == CFArrayGetTypeID()) {
+        NSCharacterSet *validTeamChars = [NSCharacterSet
+            characterSetWithCharactersInString:@"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"];
+        NSString *prefix = [kFZWQGroupBase stringByAppendingString:@"."];
+        for (id raw in (__bridge NSArray *)value) {
+            if (![raw isKindOfClass:NSString.class]) continue;
+            NSString *group = (NSString *)raw;
+            BOOL eligible = [group isEqualToString:kFZWQGroupBase];
+            if (!eligible && [group hasPrefix:prefix]) {
+                NSString *team = [group substringFromIndex:prefix.length];
+                eligible = team.length == 10 &&
+                    [team rangeOfCharacterFromSet:validTeamChars.invertedSet].location == NSNotFound;
+            }
+            if (eligible && [NSFileManager.defaultManager
+                containerURLForSecurityApplicationGroupIdentifier:group] != nil)
+                [matches addObject:group];
+        }
+    }
     if (value) CFRelease(value);
     if (error) CFRelease(error);
     CFRelease(task);
-    return good;
+    // An ambiguous entitlement set must not select an arbitrary cache path.
+    return matches.count == 1 ? matches.firstObject : nil;
+}
+
+BOOL FZWorseQueryEntitlementPresent(void) {
+    return FZWQInstalledGroup() != nil;
 }
 
 static BOOL FZWQAllowed(NSString *path, NSInteger major) {
@@ -85,9 +110,9 @@ static NSString *FZWQNormalized(NSString *path, NSInteger major) {
 
 // Upstream temporarily REPLACES App Group Library/Caches with a symlink.
 // Never allow that against an App Group containing any existing data.
-static BOOL FZWQDedicatedEmptyCaches(NSString **reason) {
+static BOOL FZWQDedicatedEmptyCaches(NSString *groupID, NSString **reason) {
     NSFileManager *fm = NSFileManager.defaultManager;
-    NSURL *group = [fm containerURLForSecurityApplicationGroupIdentifier:kFZWQGroup];
+    NSURL *group = [fm containerURLForSecurityApplicationGroupIdentifier:groupID];
     if (!group) {
         if (reason) *reason = @"App Group not available in the signed host app";
         return NO;
@@ -128,9 +153,9 @@ static BOOL FZWQDedicatedEmptyCaches(NSString **reason) {
 // then tries to restore it. Never infer a safe restoration from the returned
 // sandbox-extension handle: verify lstat, non-symlink directory type and
 // empty contents after EVERY query, including unsuccessful ones.
-static BOOL FZWQCacheRestored(NSString **reason) {
+static BOOL FZWQCacheRestored(NSString *groupID, NSString **reason) {
     NSFileManager *fm = NSFileManager.defaultManager;
-    NSURL *group = [fm containerURLForSecurityApplicationGroupIdentifier:kFZWQGroup];
+    NSURL *group = [fm containerURLForSecurityApplicationGroupIdentifier:groupID];
     if (!group) {
         if (reason) *reason = @"Dedicated App Group unavailable after query";
         return NO;
@@ -184,15 +209,16 @@ NSString *FZWorseQueryGrantDirectory(NSString *path) {
             FZWQReport(@"Path outside upstream supported container scopes");
             return nil;
         }
-        if (!FZWorseQueryEntitlementPresent()) {
+        NSString *groupID = FZWQInstalledGroup();
+        if (!groupID) {
             FZWQReport([NSString stringWithFormat:
-                @"Missing provisioned entitlement %@", kFZWQGroup]);
+                @"Missing or ambiguous SideStore-provisioned App Group based on %@", kFZWQGroupBase]);
             return nil;
         }
         if (gHandles[target]) return target;
 
         NSString *reason = nil;
-        if (!FZWQDedicatedEmptyCaches(&reason)) {
+        if (!FZWQDedicatedEmptyCaches(groupID, &reason)) {
             FZWQReport(reason ?: @"Dedicated App Group preflight failed");
             return nil;
         }
@@ -200,9 +226,9 @@ NSString *FZWorseQueryGrantDirectory(NSString *path) {
             [target hasPrefix:@"/private/var/mobile/Containers/Shared/AppGroup/"];
         // The unchanged upstream implementation performs the real container
         // class-7 query and consumes its returned sandbox extension.
-        int64_t handle = worse_query(target, kFZWQGroup, alternateFlags, false);
+        int64_t handle = worse_query(target, groupID, alternateFlags, false);
         NSString *restoreReason = nil;
-        if (!FZWQCacheRestored(&restoreReason)) {
+        if (!FZWQCacheRestored(groupID, &restoreReason)) {
             [NSUserDefaults.standardUserDefaults setBool:YES forKey:kFZWQCacheRestoreStop];
             if (handle >= 0) worse_query_release(handle);
             FZWQReport([NSString stringWithFormat:

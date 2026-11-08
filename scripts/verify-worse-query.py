@@ -36,15 +36,22 @@ assert "FZWorseQueryGrantDirectory" in Path("Tweak.m").read_text()
 assert "FZWorseQueryResolveAppDataContainer" in Path("MCMFilzaIntegration.m").read_text()
 assert "FilzaWorseQueryBridge.h" in Path("FilzaApplySandboxExt-Bridging-Header.h").read_text()
 bridge = Path("FilzaWorseQueryBridge.m").read_text()
-assert "worse_query(target, kFZWQGroup, alternateFlags, false)" in bridge
+assert "worse_query(target, groupID, alternateFlags, false)" in bridge
+assert "FZWQInstalledGroup(void)" in bridge
+assert "containerURLForSecurityApplicationGroupIdentifier:groupID" in bridge
+assert "group.com.filza27.nigtvibes33.worsequery" in bridge
 assert "FZWQDedicatedEmptyCaches" in bridge
-assert "FZWQCacheRestored(&restoreReason)" in bridge
+assert "FZWQCacheRestored(groupID, &restoreReason)" in bridge
 assert "filza.worseQueryCacheRestoreStop.v1" in bridge
 assert "if (handle < 0)" in bridge
 assert "if (handle <= 0)" not in bridge
-assert "FZWorseQueryEntitlementPresent()" in bridge
+assert "NSString *groupID = FZWQInstalledGroup()" in bridge
 assert Path("scripts/sign-filza27-appgroup.sh").is_file()
 assert Path(".github/workflows/sign-filza27-appgroup.yml").is_file()
 assert "FILZA_APPGROUP_PROFILE_BASE64" in Path(".github/workflows/sign-filza27-appgroup.yml").read_text()
 assert "--verify-signed" in Path("scripts/sign-filza27-appgroup.sh").read_text()
-print("Pinned worse_query verbatim; dedicated App Group and real signed IPA workflow checks PASS")
+workflow = Path(".github/workflows/diagnose-full-build.yml").read_text()
+assert "codesign --force --sign - --timestamp=none --generate-entitlement-der" in workflow
+assert "scripts/verify-sidestore-payload.py" in workflow
+assert Path("scripts/verify-sidestore-payload.py").is_file()
+print("Pinned worse_query + SideStore entitlement request and runtime group resolution PASS")

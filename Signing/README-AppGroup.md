@@ -1,21 +1,22 @@
-# Filza 27: activate the worse_query App Group
+# Filza 27: SideStore signing (recommended)
 
-The source code and the unsigned IPA already contain the real worse_query backend. Apple will only let an installed app use its App Group when the **code signature and provisioning profile** both authorize it.
+The downloadable Filza 27 IPA is an **ad-hoc-signed SideStore input**, not an Apple-provisioned installable IPA. Its ad-hoc Mach-O signature requests only the App Group `group.com.filza27.nigtvibes33.worsequery`. It never carries the developer's certificate, provisioning profile, or a reserved Apple App ID.
 
-## Developer configuration
+1. Download the current **filza27.ipa**, not the upstream FilzaSlop IPA. The expected `CFBundleIdentifier` is `com.filza27.nigtvibes33`; the old `com.apple.mobile.MobileHouseArrest` identifier and Sharing.appex are removed.
+2. Open this IPA in SideStore and let SideStore sign and install with **the end user's own Apple ID/team**. Do not import an old Filza IPA through a cached source.
+3. SideStore reads the ad-hoc entitlement request, attempts to register/assign the App Group on the user's Apple team, then generates the new provisioning profile and signs the app. It may append `.<TEAMID>` to the App Group. These operations require Apple's acceptance and must not be claimed as successful without the installed profile.
+4. The Filza worse_query adapter reads the **actual signed** App Group entitlement at runtime, recognizes the exact requested group or SideStore's `.<TEAMID>` variant, validates that iOS can open its dedicated group container, and only then calls upstream worse_query.
+5. Device testing is still required. App Group provisioning does not establish that worse_query grants arbitrary filesystem access.
 
-1. On the Apple Developer team that owns the explicit app ID `com.filza27.nigtvibes33`, register the App Group `group.com.filza27.nigtvibes33.worsequery` and enable it for that app ID.
-2. Regenerate a valid Apple Development or Ad Hoc provisioning profile for that app ID, with the App Group included. Include the target iPhone's UDID if the profile requires registered devices.
-3. Export the matching Apple code-signing certificate **with private key** as a password-protected P12.
-4. In GitHub repository **Settings > Secrets and variables > Actions**, configure these four secrets:
-   - `FILZA_SIGNING_P12_BASE64`: base64-encoded P12 bytes
-   - `FILZA_SIGNING_P12_PASSWORD`: P12 export password
-   - `FILZA_APPGROUP_PROFILE_BASE64`: base64-encoded .mobileprovision bytes
-   - `FILZA_SIGNING_IDENTITY`: the exact matching codesign identity name or SHA-1
-5. Every green **Verify Filza 27 arm64 IPA** build now signs and uploads **Filza-27-AppGroup-signed-arm64** automatically when all four secrets are configured. The unsigned IPA remains available separately. You can also run **Sign Filza 27 with real App Group** manually against a successful unsigned run after the manual workflow is available from the default branch.
+## Troubleshooting
 
-The signing job validates the explicit app ID, TeamIdentifier, unexpired Apple profile, App Group and resulting app code signature. It signs the embedded frameworks and the Filza app, packages the new signed `filza27.ipa`, and uploads it only if verification succeeds.
+- **9400: `com.apple.mobile.MobileHouseArrest.<TEAMID>` unavailable:** SideStore is trying to register the original, Apple-owned FilzaSlop App ID. Discard that imported source file and import the **new filza27.ipa** directly. It must show `com.filza27.nigtvibes33` in its Info.plist. Do not attempt to register an Apple system App ID.
+- **App Group registration fails:** inspect SideStore's Developer Services/App Groups and provisioning result. Apple must approve the group on the active team. The ad-hoc signature alone does not grant access.
+- **Filza reports missing group:** inspect the installed signed entitlements, not the unsigned IPA template. SideStore may have stripped the request or the provisioning step may not have succeeded.
 
-The normal GitHub **unsigned** `filza27.ipa` cannot enable App Groups. An entitlement template placed in a ZIP has no authority on iOS. The signed workflow must use your own Apple Developer team. No signing keys or mobileprovision bytes belong in commits or chat messages.
+## Optional CI Apple signing (not required for SideStore users)
 
-Even a correctly signed build still needs an on-device `worse_query` grant/read test. Signing doesn't guarantee a sandbox exploit works on a particular iOS version. Stop remote access if a prior restoration safety stop is unresolved.
+The original developer-owned workflow `.github/workflows/sign-filza27-appgroup.yml` remains optional. It requires an Apple Developer provisioning profile and these four GitHub Actions secrets:
+`FILZA_SIGNING_P12_BASE64`, `FILZA_SIGNING_P12_PASSWORD`, `FILZA_APPGROUP_PROFILE_BASE64`, and `FILZA_SIGNING_IDENTITY`.
+
+Do not add these credentials for ordinary SideStore distribution. The separate signed artifact and corresponding workflow are not prerequisites for the SideStore IPA. Neither signing model guarantees an iOS 27 sandbox exploit.
