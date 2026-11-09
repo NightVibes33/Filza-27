@@ -19,7 +19,6 @@ extern FZWQSecTaskRef SecTaskCreateFromSelf(CFAllocatorRef allocator);
 extern CFTypeRef SecTaskCopyValueForEntitlement(FZWQSecTaskRef task, CFStringRef name, CFErrorRef *error);
 
 static NSString *const kFZWQGroupBase = @"group.com.filza27.nigtvibes33.worsequery";
-static NSString *const kFZWQRestorationStop = @"filza.remoteCleanerSafetyStop.v1";
 static NSString *const kFZWQCacheRestoreStop = @"filza.worseQueryCacheRestoreStop.v1";
 static NSMutableDictionary<NSString *, NSNumber *> *gHandles;
 static NSString *gStatus;
@@ -206,10 +205,11 @@ NSString *FZWorseQueryGrantDirectory(NSString *path) {
             FZWQReport(@"worse_query SAFETY STOP: dedicated App Group Caches restoration was not verified; recover the App Group before another request");
             return nil;
         }
-        if ([NSUserDefaults.standardUserDefaults boolForKey:kFZWQRestorationStop]) {
-            FZWQReport(@"Airlift unsafe restore stop active; recover before another read");
-            return nil;
-        }
+        // Airlift remote-folder recovery is independent of this local
+        // App Group sandbox-extension path. Never let a pending remote
+        // restoration incident disable otherwise valid worse_query grants.
+        // Airlift itself must still refuse all remote reads/writes until
+        // its original object is independently confirmed restored.
         NSString *target = FZWQNormalized(path, major);
         if (!target) {
             FZWQReport(@"Path outside upstream supported container scopes");
@@ -277,6 +277,29 @@ NSString *FZWorseQueryGrantDirectory(NSString *path) {
         FZWQReport([NSString stringWithFormat:@"Confirmed live directory: %@", canonical]);
         return canonical;
     }
+}
+
+
+// Filza's original file-operation guards previously only recognized MCM
+// leases. A sandbox extension successfully consumed by worse_query is a
+// separate grant and must be recognized for the *verified* live directory.
+// Resolve symlinks before testing containment: aliases must never extend a
+// sandbox extension outside its actual granted directory.
+BOOL FZWorseQueryPathHasActiveGrant(NSString *path) {
+    if (![path isKindOfClass:NSString.class] || !path.isAbsolutePath) return NO;
+    char resolved[PATH_MAX] = {0};
+    if (!realpath(path.fileSystemRepresentation, resolved)) return NO;
+    NSString *canonical = [NSString stringWithUTF8String:resolved];
+    if (!canonical.length) return NO;
+    @synchronized (FZWQLock()) {
+        for (NSString *grantedRoot in gHandles) {
+            if ([canonical isEqualToString:grantedRoot] ||
+                [canonical hasPrefix:[grantedRoot stringByAppendingString:@"/"]]) {
+                return YES;
+            }
+        }
+    }
+    return NO;
 }
 
 NSString *FZWorseQueryResolveAppDataContainer(NSString *bundleID) {

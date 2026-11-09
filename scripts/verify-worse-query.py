@@ -46,6 +46,13 @@ assert "containerURLForSecurityApplicationGroupIdentifier:groupID" in bridge
 assert "group.com.filza27.nigtvibes33.worsequery" in bridge
 assert "FZWQDedicatedEmptyCaches" in bridge
 assert "FZWQCacheRestored(groupID, &restoreReason)" in bridge
+# A pending Airlift restoration is never cleared or retried here. It must
+# not disable independent locally consumed worse_query sandbox extensions.
+assert "filza.remoteCleanerSafetyStop.v1" not in bridge
+assert "FZWorseQueryPathHasActiveGrant(NSString *path)" in bridge
+assert "realpath(path.fileSystemRepresentation, resolved)" in bridge
+assert "FZWorseQueryPathHasActiveGrant(NSString *path)" in Path("FilzaWorseQueryBridge.h").read_text()
+assert "return FZWorseQueryPathHasActiveGrant(path);" in Path("MCMFilzaIntegration.m").read_text()
 assert "filza.worseQueryCacheRestoreStop.v1" in bridge
 assert "if (handle < 0)" in bridge
 assert "if (handle <= 0)" not in bridge

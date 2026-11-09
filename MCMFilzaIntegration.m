@@ -413,7 +413,9 @@ BOOL MCMFilzaPathHasActiveLease(NSString *path)
         for (MCMLease *lease in gLeases.allValues)
             if (lease.activated && MCMPathIsInsideRoot(path, lease.rootPath)) return YES;
     }
-    return NO;
+    // Preserve Filza's original file actions for verified worse_query
+    // directories. The actual filesystem permissions still control writes.
+    return FZWorseQueryPathHasActiveGrant(path);
 }
 
 static void MCMInstallLiveContainerLink(NSFileManager *manager, NSString *root,
