@@ -61,6 +61,8 @@ assert "recordRestoreIncident(detail)" in remote
 
 assert "Prepare with paired Airlift" in export
 assert "pairedPrepareCandidate" in export
+assert "pairedPrepareCandidate = app" in export
+assert 'Label("Prepare with paired Airlift"' not in export
 assert 'private func prepareIPAViaAirlift(_ app: InstalledApp)' in export
 local = export.split("private func prepareIPA(_ app: InstalledApp) {", 1)[1].split(
     "private func prepareIPAViaAirlift", 1)[0]

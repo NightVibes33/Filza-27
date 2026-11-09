@@ -137,16 +137,6 @@ version_replacement = '''            if exportingBundleID == app.bundleID {
                     Label("Prepare", systemImage: "shippingbox")
                 }
                 .disabled(exportingBundleID != nil)
-                if airliftCatalog.apps.contains(where: {
-                    $0.bundleID == app.bundleID && $0.bundlePath != nil
-                }) {
-                    Button {
-                        pairedPrepareCandidate = app
-                    } label: {
-                        Label("Prepare with paired Airlift", systemImage: "network")
-                    }
-                    .disabled(exportingBundleID != nil || FilzaAirlift.restorationStopped)
-                }
             }
         }
     }
@@ -188,10 +178,20 @@ export_method = '''    // Ordinary Prepare NEVER performs a paired folder move a
                 FilzaDiagnosticsAppend(
                     "IPA", "Local Prepare \(bundleID) failed: \(error.localizedDescription)"
                 )
-                ipaExportError = "Local Prepare unavailable for \(displayName): " +
-                    error.localizedDescription +
-                    "\\nThis does not mean the app is absent. SideStore signing does not grant " +
-                    "access to other apps' private bundles. No paired remote read was attempted."
+                // Normal Prepare never starts a remote file move itself.
+                // When local access is unavailable, offer a confirmation
+                // through the original action, with the restore lock respected.
+                if !FilzaAirlift.restorationStopped &&
+                   airliftCatalog.apps.contains(where: {
+                       $0.bundleID == bundleID && $0.bundlePath != nil
+                   }) {
+                    pairedPrepareCandidate = app
+                } else {
+                    ipaExportError = "Local Prepare unavailable for \(displayName): " +
+                        error.localizedDescription +
+                        "\\nNo remote read was attempted. Existing Airlift recovery " +
+                        "incidents must be resolved before any paired preparation."
+                }
             }
             exportingBundleID = nil
         }
