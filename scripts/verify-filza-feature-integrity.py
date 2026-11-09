@@ -56,6 +56,12 @@ assert "scripts/patch-3105-cleaner-all-apps.py" in network
 assert "scripts/patch-3105-wq-discovery.py" in network
 assert "FZContainerDiscovery.m" in make
 assert "FZContainerDiscoveryStart" in read("MCMFilzaIntegration.m")
+assert "MCMStartVerifiedWQDiscovery();" in read("MCMFilzaIntegration.m")
+assert "scripts/patch-3105-paired-cache-catalog.py" in network
+assert "scanNewApps(pairedApps)" in read("scripts/patch-3105-paired-cache-catalog.py")
+assert "pairedInventory.$apps" in read("scripts/patch-3105-paired-cache-catalog.py")
+assert "title: \"Not supported!\"" not in read("FilzaMondCurrentHost.swift")
+assert "IPA repackaged; executable metadata not verified" in read("FilzaAirliftIPAExporter.swift")
 assert "FZLiveContainerPath" in read("Tweak.m")
 assert "FZContainerDiscoveryCachedPaths" in read("scripts/patch-3105-wq-discovery.py")
 assert "scripts/patch-3105-erosion-features.py" in network

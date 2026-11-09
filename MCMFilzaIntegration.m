@@ -675,6 +675,22 @@ static void MCMInstallVerifiedWQDiscovery(NSDictionary<NSString *, NSArray<NSStr
     });
 }
 
+// The legacy MobileHouseArrest identity gate must not disable independently
+// provisioned WQ sandbox extensions in a custom SideStore-signed Filza app.
+static void MCMStartVerifiedWQDiscovery(void) {
+    NSString *signedID = MCMSignedCodeIdentifier() ?: @"unavailable";
+    if (!FZWorseQueryEntitlementPresent()) {
+        FilzaDiagnosticsAppend(@"WQDiscovery",
+            [NSString stringWithFormat:@"No signed WQ App Group for %@; not claiming access", signedID]);
+        return;
+    }
+    FilzaDiagnosticsAppend(@"WQDiscovery",
+        [NSString stringWithFormat:@"Starting separate WQ discovery for signed identity=%@", signedID]);
+    FZContainerDiscoveryStart(^(NSDictionary<NSString *, NSArray<NSString *> *> *found) {
+        MCMInstallVerifiedWQDiscovery(found);
+    });
+}
+
 static void MCMMigrateStorageEntry(NSFileManager *manager, NSString *directory,
                                    NSString *oldName, NSString *newName)
 {
@@ -1668,6 +1684,7 @@ void MCMFilzaStart(void)
         MCMEnsureState();
         if (MCMFilzaIsRunningInLiveContainer()) {
             MCMInstallLiveContainerRoot();
+            MCMStartVerifiedWQDiscovery();
             return;
         }
         NSString *actual = MCMSignedCodeIdentifier();
@@ -1675,11 +1692,13 @@ void MCMFilzaStart(void)
             NSLog(@"[MCMFilza] MHA unavailable for signed identity %@ (bundle=%@); using app sandbox",
                   actual, NSBundle.mainBundle.bundleIdentifier);
             MCMInstallStandardSandboxRoot();
+            MCMStartVerifiedWQDiscovery();
             return;
         }
         if (!MCMBridgeAvailable()) {
             NSLog(@"[MCMFilza] ContainerManager symbols unavailable; using app sandbox");
             MCMInstallStandardSandboxRoot();
+            MCMStartVerifiedWQDiscovery();
             return;
         }
         NSFileManager *fm = NSFileManager.defaultManager;
@@ -1861,8 +1880,6 @@ void MCMFilzaStart(void)
               (unsigned long)gLeases.count, visibleEntries, listError);
         // One background inode scan shared by Filza and 3105. Never run this
         // on Filza navigation/UI thread and never treat paths as grants.
-        FZContainerDiscoveryStart(^(NSDictionary<NSString *, NSArray<NSString *> *> *found) {
-            MCMInstallVerifiedWQDiscovery(found);
-        });
+        MCMStartVerifiedWQDiscovery();
     });
 }

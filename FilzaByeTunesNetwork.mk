@@ -54,6 +54,8 @@ before-FilzaApplySandboxExt-all::
 	@python3 scripts/patch-3105-cleaner-all-apps.py
 	@python3 scripts/patch-3105-worse-query.py
 	@python3 scripts/patch-3105-wq-discovery.py
+	@python3 scripts/patch-3105-paired-cache-catalog.py
+	@grep -Fq 'scanNewApps(pairedApps)' ThirdParty/3105/Sources/CleanerView.swift
 	@grep -Fq 'FILZA_WQFILES_DYNAMIC_DISCOVERY' ThirdParty/3105/Sources/ContainerStore.swift
 	@grep -Fq 'FILZA_MAIN_CLEANER_PARITY' ThirdParty/3105/Sources/CleanerView.swift
 	@grep -Fq 'FZWorseQueryGrantDirectory(candidate)' ThirdParty/3105/Sources/CleanerView.swift

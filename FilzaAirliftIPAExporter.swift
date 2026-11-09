@@ -68,16 +68,22 @@ enum FilzaAirliftIPAExporter {
     nonisolated private static func validatedAppDirectory(
         _ url: URL, bundleID: String
     ) -> URL? {
+        let fm = FileManager.default
+        var directory: ObjCBool = false
         guard url.pathExtension.lowercased() == "app",
-              let info = NSDictionary(contentsOf: url.appendingPathComponent("Info.plist")) as? [String: Any],
-              info["CFBundleIdentifier"] as? String == bundleID,
-              let executable = info["CFBundleExecutable"] as? String,
-              !executable.isEmpty, executable != ".", executable != "..",
-              !executable.contains("/") else { return nil }
-        let target = url.appendingPathComponent(executable)
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: target.path, isDirectory: &isDirectory),
-              !isDirectory.boolValue else { return nil }
+              fm.fileExists(atPath: url.path, isDirectory: &directory),
+              directory.boolValue,
+              let entries = try? fm.contentsOfDirectory(atPath: url.path),
+              !entries.isEmpty else { return nil }
+        // Match Erosion's Prepare: a nonempty snapshot is prepared even if
+        // Airlift omits Info.plist or its declared executable. Refuse a
+        // definite conflicting bundle ID, but distinguish missing metadata
+        // from a failed read and do not falsely claim an installable IPA.
+        if let info = NSDictionary(contentsOf: url.appendingPathComponent("Info.plist")) as? [String: Any],
+           let declared = info["CFBundleIdentifier"] as? String,
+           !declared.isEmpty, declared != bundleID {
+            return nil
+        }
         return url
     }
 
@@ -121,6 +127,9 @@ enum FilzaAirliftIPAExporter {
                   !items.isEmpty else { throw ExportError.emptyBundle }
             guard validatedAppDirectory(appURL, bundleID: bundleID) != nil
             else { throw ExportError.invalidBundle }
+            if NSDictionary(contentsOf: appURL.appendingPathComponent("Info.plist")) == nil {
+                FilzaDiagnosticsAppend("IPA", "Prepared nonempty app snapshot, but Airlift did not expose readable Info.plist; installation may fail")
+            }
             try restoreExecutablePermissions(in: appURL)
             let manifest = FilzaPreparedAppManifest(
                 bundleID: bundleID, displayName: displayName, sourcePath: bundlePath,
@@ -186,7 +195,9 @@ enum FilzaAirliftIPAExporter {
             "\(name)-\(UUID().uuidString.prefix(8)).ipa"
         )
         try fm.moveItem(at: zip, to: exported)
-        let status = try inspectIPA(exported)
+        let status = (try? inspectIPA(exported))
+            ?? "IPA repackaged; executable metadata not verified, FairPlay unchanged"
+        FilzaDiagnosticsAppend("IPA", "Erosion IPA packaging succeeded: \(exported.lastPathComponent); \(status)")
         return FilzaAirliftIPAResult(fileURL: exported, encryptionStatus: status)
     }
 

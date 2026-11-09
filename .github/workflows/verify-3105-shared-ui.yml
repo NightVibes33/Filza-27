@@ -75,7 +75,7 @@ jobs:
           grep -Fq 'Filza-27-AppGroup-signed-arm64' .github/workflows/diagnose-full-build.yml
           grep -Fq 'Sign Filza 27 with real App Group' .github/workflows/sign-filza27-appgroup.yml
           grep -Fq 'FILZA_APPGROUP_PROFILE_BASE64' .github/workflows/sign-filza27-appgroup.yml
-          python3 -m py_compile scripts/patch-3105-worse-query.py scripts/patch-3105-wq-discovery.py
+          python3 -m py_compile scripts/patch-3105-worse-query.py scripts/patch-3105-wq-discovery.py scripts/patch-3105-paired-cache-catalog.py
           grep -Fq 'FZContainerDiscovery.m' Makefile
           grep -Fq 'FZContainerDiscoveryStart' MCMFilzaIntegration.m
           python3 - <<'PY'
@@ -152,6 +152,9 @@ jobs:
           python3 scripts/patch-3105-cleaner-all-apps.py
           python3 scripts/patch-3105-worse-query.py
           python3 scripts/patch-3105-wq-discovery.py
+          python3 scripts/patch-3105-paired-cache-catalog.py
+          grep -Fq 'scanNewApps(pairedApps)' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'pairedInventory.refresh()' ThirdParty/3105/Sources/CleanerView.swift
           python3 -m py_compile scripts/patch-3105-cleaner-all-apps.py
           grep -Fq 'FILZA_REAL_WORSE_QUERY_APP_ACCESS' ThirdParty/3105/Sources/ContainerStore.swift
           grep -Fq 'let metadataWQ = directMetadata == nil' ThirdParty/3105/Sources/ContainerStore.swift

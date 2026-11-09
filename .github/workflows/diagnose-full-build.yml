@@ -16,6 +16,7 @@ on:
       - 'scripts/patch-3105-cleaner-all-apps.py'
       - 'scripts/patch-3105-worse-query.py'
       - 'scripts/patch-3105-wq-discovery.py'
+      - 'scripts/patch-3105-paired-cache-catalog.py'
       - 'FZContainerDiscovery.*'
       - 'scripts/verify-worse-query.py'
       - '.github/workflows/diagnose-full-build.yml'
@@ -271,6 +272,8 @@ jobs:
           python3 scripts/verify-worse-query.py
           grep -Fq 'FZWorseQueryGrantDirectory' FilzaWorseQueryBridge.m
           grep -Fq 'FZContainerDiscoveryStart' MCMFilzaIntegration.m
+          grep -Fq 'MCMStartVerifiedWQDiscovery' MCMFilzaIntegration.m
+          grep -Fq 'scanNewApps(pairedApps)' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'FZLiveContainerPath' Tweak.m
           grep -Fq 'FILZA_WQFILES_DYNAMIC_DISCOVERY' ThirdParty/3105/Sources/ContainerStore.swift
           grep -Fq 'ER0SION_PREPARE_PARITY' ThirdParty/3105/Sources/AppDataBrowserView.swift
