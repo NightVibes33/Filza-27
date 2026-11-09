@@ -80,6 +80,8 @@ before-FilzaApplySandboxExt-all::
 	@bash scripts/verify-mond-source-completeness.sh
 	@bash scripts/stage-mond-embedded-resources.sh
 	@bash scripts/patch-mond-embedded-parity.sh
+	@python3 scripts/patch-mond-worse-query-routing.py
+	@grep -Fq 'FILZA_MOND_WQ_CONTAINER_FALLBACK' ThirdParty/mond-current/Generated/Mond/exploit_unsbx.swift
 	@test -f scripts/verify-mond-source-completeness.sh || (echo "Missing Mond completeness verifier" >&2; exit 1)
 	@test -f scripts/stage-mond-embedded-resources.sh || (echo "Missing Mond resource staging script" >&2; exit 1)
 	@test -f scripts/patch-mond-embedded-parity.sh || (echo "Missing Mond embedded parity adapter" >&2; exit 1)

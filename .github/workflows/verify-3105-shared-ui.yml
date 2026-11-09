@@ -271,6 +271,9 @@ jobs:
           ! grep -Fq 'FilzaMondModern.dylib' FilzaMondBridge.m
           ! grep -Fq 'dlopen' FilzaMondBridge.m
           grep -Fq 'MondEmbeddedHostFactory' FilzaMondBridge.m
+          python3 -m py_compile scripts/patch-mond-worse-query-routing.py
+          grep -Fq 'scripts/patch-mond-worse-query-routing.py' FilzaByeTunesNetwork.mk
+          grep -Fq 'matching.count == 1' FilzaAirliftIPAExporter.swift
           ! grep -Fq 'ios16Backport' FilzaMondCurrentHost.swift
 
       - name: Verify embedding boundaries

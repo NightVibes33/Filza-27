@@ -46,6 +46,9 @@ assert "FilzaWorseQueryBridge.m" in make
 assert "FilzaErosionPosterBoardWriter.swift" in make
 assert "FilzaAirliftCleaner.swift" in make
 assert "FilzaUnifiedPairing.swift" in make
+assert "scripts/patch-mond-worse-query-routing.py" in network
+assert "FZWorseQueryGrantDirectory" in read("scripts/patch-mond-worse-query-routing.py")
+assert "matching.count == 1" in read("FilzaAirliftIPAExporter.swift")
 assert "scripts/patch-3105-ipa-export.sh" in network
 assert "scripts/patch-3105-cleaner-all-apps.py" in network
 assert "scripts/patch-3105-erosion-features.py" in network

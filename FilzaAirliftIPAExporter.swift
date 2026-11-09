@@ -30,13 +30,36 @@ enum FilzaAirliftIPAExporter {
             try fm.createDirectory(at: workspace, withIntermediateDirectories: true)
             let working = workspace.appendingPathComponent("build-\(UUID().uuidString)", isDirectory: true)
             defer { try? fm.removeItem(at: working) }
-            let payload = working.appendingPathComponent("Payload", isDirectory: true)
+            // Erosion snapshots may contain the app contents directly or a
+            // nested .app directory. Resolve the local ZIP once; never issue
+            // another remote read as a ZIP-layout fallback.
+            let extracted = working.appendingPathComponent("Extracted", isDirectory: true)
+            try fm.createDirectory(at: extracted, withIntermediateDirectories: true)
+            try fm.unzipItem(at: archive, to: extracted)
             let appName = URL(fileURLWithPath: bundlePath).lastPathComponent
+            let directChildren = (try? fm.contentsOfDirectory(
+                at: extracted, includingPropertiesForKeys: [.isDirectoryKey]
+            )) ?? []
+            let payloadChildren = (try? fm.contentsOfDirectory(
+                at: extracted.appendingPathComponent("Payload", isDirectory: true),
+                includingPropertiesForKeys: [.isDirectoryKey]
+            )) ?? []
+            let matching = ([extracted] + directChildren + payloadChildren).filter { candidate in
+                guard let metadata = NSDictionary(
+                    contentsOf: candidate.appendingPathComponent("Info.plist")
+                ) as? [String: Any] else { return false }
+                return metadata["CFBundleIdentifier"] as? String == app.bundleID
+            }
+            guard matching.count == 1, let sourceBundle = matching.first else {
+                throw ExportError.invalidBundle
+            }
+            let payload = working.appendingPathComponent("Payload", isDirectory: true)
             let appURL = payload.appendingPathComponent(appName, isDirectory: true)
-            try fm.createDirectory(at: appURL, withIntermediateDirectories: true)
-            try fm.unzipItem(at: archive, to: appURL)
+            try fm.createDirectory(at: payload, withIntermediateDirectories: true)
+            try fm.copyItem(at: sourceBundle, to: appURL)
             let infoURL = appURL.appendingPathComponent("Info.plist")
-            guard let plist = NSDictionary(contentsOf: infoURL) as? [String: Any]
+            guard let plist = NSDictionary(contentsOf: infoURL) as? [String: Any],
+                  plist["CFBundleIdentifier"] as? String == app.bundleID
             else { throw ExportError.invalidBundle }
             guard let executableName = plist["CFBundleExecutable"] as? String,
                   !executableName.isEmpty,
