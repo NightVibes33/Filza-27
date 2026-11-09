@@ -82,7 +82,7 @@ assert "Catalog counts: API=" in clean
 # contains the forbidden views.
 assert "assert name not in view" in clean
 assert "for name in (" in clean
-assert "Text(airliftCatalog.message)" not in airlift_patch
+assert "assert 'Text(airliftCatalog.message)' not in s" in airlift_patch
 assert "mergedWithAirlift" in airlift_patch
 assert "FilzaAirliftWorkspaceView(" not in airlift_patch
 assert "kRequiredIdentifier" in read("MCMFilzaIntegration.m")
