@@ -7,8 +7,15 @@ on:
     branches: [ main ]
     paths:
       - 'FilzaAirlift*.swift'
+      - 'FilzaWorseQueryBridge.*'
+      - 'MCMFilzaIntegration.*'
+      - 'Tweak.m'
       - 'scripts/stage-nfcard.sh'
       - 'scripts/patch-3105-airlift.py'
+      - 'scripts/patch-3105-ipa-export.sh'
+      - 'scripts/patch-3105-cleaner-all-apps.py'
+      - 'scripts/patch-3105-worse-query.py'
+      - 'scripts/verify-worse-query.py'
       - '.github/workflows/diagnose-full-build.yml'
   workflow_dispatch:
 
