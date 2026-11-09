@@ -23,7 +23,7 @@ FilzaApplySandboxExt_FILES = Tweak.m FilzaNFCARDBridge.m AppsMusicFix.m AppsMana
 FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/AppIconHelper.m
 FilzaApplySandboxExt_FILES += $(THREEONE_ROOT)/Sources/wallpaper_zip.c FilzaFairPlayRuntime.c
 FilzaApplySandboxExt_FILES += $(BAD_QUERY_ROOT)/bad_query/bad_query.c
-FilzaApplySandboxExt_FILES += ThirdParty/worse_query/worse_query.m ThirdParty/worse_query/pathleak.m FilzaWorseQueryBridge.m
+FilzaApplySandboxExt_FILES += ThirdParty/worse_query/worse_query.m ThirdParty/worse_query/pathleak.m FilzaWorseQueryBridge.m FZContainerDiscovery.m
 FilzaApplySandboxExt_FILES += $(MOND_GEN)/mond_bad_query.c
 FilzaApplySandboxExt_FILES += $(NFCARD_IOS)/GrappaHelper.m
 

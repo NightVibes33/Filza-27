@@ -92,6 +92,22 @@ static void FZNativeCoreMediaRegisterPage(id page) {
     dispatch_once(&once, ^{
         gFZNativeCoreMediaPages = [NSHashTable weakObjectsHashTable];
         [[NSNotificationCenter defaultCenter]
+            addObserverForName:@"FilzaVerifiedContainerLinksReady"
+                        object:nil queue:NSOperationQueue.mainQueue
+                    usingBlock:^(__unused NSNotification *note) {
+            for (id browser in gFZNativeCoreMediaPages.allObjects) {
+                SEL current = NSSelectorFromString(@"currentPath");
+                SEL load = NSSelectorFromString(@"doLoadingPage");
+                if (![browser respondsToSelector:current] ||
+                    ![browser respondsToSelector:load]) continue;
+                NSString *path = ((id(*)(id, SEL))objc_msgSend)(browser, current);
+                NSString *root = MCMFilzaVirtualRoot();
+                if ([path isEqualToString:root] ||
+                    [path hasPrefix:[root stringByAppendingString:@"/"]])
+                    ((void(*)(id, SEL))objc_msgSend)(browser, load);
+            }
+        }];
+        [[NSNotificationCenter defaultCenter]
             addObserverForName:@"FilzaNativeCoreMediaDirectoryReady"
                         object:nil queue:NSOperationQueue.mainQueue
                     usingBlock:^(NSNotification *notification) {
@@ -235,8 +251,68 @@ static void hook_fileSystemUpdateEditableUI(id self, SEL _cmd) {
     FZEnsurePairedFolderButton(self);
 }
 
+// A verified link lives in the ORIGINAL Filza Device Storage hierarchy.
+// Later token eviction must not strand that link: renew access lazily when
+// the user enters its destination, even through the Filza virtual alias.
+static BOOL FZLiveContainerPath(NSString *path) {
+    if (![path isKindOfClass:NSString.class] || !path.isAbsolutePath) return NO;
+    NSString *p = [path hasPrefix:@"/var/"] ? [@"/private" stringByAppendingString:path] : path;
+    for (NSString *root in @[
+        @"/private/var/mobile/Containers/Data/Application/",
+        @"/private/var/mobile/Containers/Data/InternalDaemon/",
+        @"/private/var/mobile/Containers/Data/PluginKitPlugin/",
+        @"/private/var/mobile/Containers/Shared/AppGroup/",
+        @"/private/var/containers/Shared/SystemGroup/",
+        @"/private/var/containers/Data/System/"
+    ]) if ([p hasPrefix:root]) return YES;
+    return NO;
+}
+
+static NSString *FZProtectedAliasTarget(NSString *browserPath) {
+    NSString *root = MCMFilzaVirtualRoot();
+    if (![browserPath isKindOfClass:NSString.class] ||
+        ![browserPath hasPrefix:[root stringByAppendingString:@"/"]]) return nil;
+    NSString *tail = [browserPath substringFromIndex:root.length + 1];
+    NSArray<NSString *> *parts = [tail pathComponents];
+    if (parts.count < 2) return nil;
+    if (![@[
+        @"[MHA-C2] App Data", @"[MHA-C7] App Groups",
+        @"[MHA-C4] Extension Data", @"[MHA-C10] Service Data",
+        @"[MHA-C13] System Groups", @"[MHA-C12] System Data"
+    ] containsObject:parts.firstObject]) return nil;
+    NSString *link = [[root stringByAppendingPathComponent:parts[0]]
+        stringByAppendingPathComponent:parts[1]];
+    char target[PATH_MAX] = {0};
+    ssize_t count = readlink(link.fileSystemRepresentation, target, sizeof(target) - 1);
+    if (count <= 0) return nil;
+    target[count] = '\0';
+    NSString *native = [NSString stringWithUTF8String:target];
+    return FZLiveContainerPath(native) ? native : nil;
+}
+
 static void hook_fileSystemSetCurrentPath(id self, SEL _cmd, id requestedPath) {
     NSString *path = redirectedLegacyBrowserPath(requestedPath);
+    NSString *native = FZLiveContainerPath(path) ? path : FZProtectedAliasTarget(path);
+    // Background WQ grant only when the original Filza navigation needs it.
+    // A path/inode from discovery is NEVER treated as a permission.
+    if (native && access(native.fileSystemRepresentation, R_OK) != 0 &&
+        !FZWorseQueryPathHasActiveGrant(native)) {
+        NSString *originalNavigation = path ?: requestedPath;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            NSString *granted = FZWorseQueryGrantDirectory(native);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSString *destination = originalNavigation;
+                ((void(*)(id, SEL, id))orig_fileSystemSetCurrentPath)(self, _cmd, destination);
+                refreshWallpaperButton(self, destination);
+                FZEnsurePairedFolderButton(self);
+                FZNativeCoreMediaRequest(destination);
+                SEL reload = NSSelectorFromString(@"doLoadingPage");
+                if (granted && [self respondsToSelector:reload])
+                    ((void(*)(id, SEL))objc_msgSend)(self, reload);
+            });
+        });
+        return;
+    }
     if (path && ![path isEqual:requestedPath])
         NSLog(@"[DeviceStorage] redirected legacy browser path to %@", path);
     ((void(*)(id, SEL, id))orig_fileSystemSetCurrentPath)(self, _cmd, path ?: requestedPath);

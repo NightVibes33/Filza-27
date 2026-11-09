@@ -27,7 +27,7 @@ state_replacement = '''    @State private var hasLoaded = false
     @State private var preparedIPAs: [String: URL] = [:]
     @State private var preparedEncryption: [String: String] = [:]
     @State private var decryptedIPAs: [String: URL] = [:]
-    @State private var pairedPrepareCandidate: InstalledApp?
+    @State private var preparedDirectories: [String: URL] = [:]
 '''
 if state_anchor not in browser:
     raise SystemExit("3105 IPA export patch: state anchor changed")
@@ -45,6 +45,10 @@ navigation_replacement = '''            .sheet(item: $ipaExportItem) { item in
                     ipaExportItem = nil
                 }
             }
+            .onAppear {
+                // Erosion's prepared .app directories persist across launches.
+                preparedDirectories = FilzaAirliftIPAExporter.preparedDirectories()
+            }
             .alert(
                 "App Preparation",
                 isPresented: Binding(
@@ -54,27 +58,7 @@ navigation_replacement = '''            .sheet(item: $ipaExportItem) { item in
             ) {
                 Button("OK", role: .cancel) { ipaExportError = nil }
             } message: {
-                Text(ipaExportError ?? "Unknown IPA export error")
-            }
-            .confirmationDialog(
-                "Prepare with paired Airlift?",
-                isPresented: Binding(
-                    get: { pairedPrepareCandidate != nil },
-                    set: { if !$0 { pairedPrepareCandidate = nil } }
-                ),
-                titleVisibility: .visible
-            ) {
-                if let request = pairedPrepareCandidate {
-                    Button("Attempt paired preparation") {
-                        pairedPrepareCandidate = nil
-                        prepareIPAViaAirlift(request)
-                    }
-                }
-                Button("Cancel", role: .cancel) { pairedPrepareCandidate = nil }
-            } message: {
-                Text("Paired folder exports can temporarily relocate a remote object. " +
-                     "Do not proceed with an unresolved restoration incident. " +
-                     "This is never an automatic fallback from normal Prepare.")
+                Text(ipaExportError ?? "Unknown IPA error")
             }
             .navigationDestination(for: FileBrowserDestination.self) { destination in
 '''
@@ -96,6 +80,10 @@ version_replacement = '''            if exportingBundleID == app.bundleID {
                 ProgressView()
                     .controlSize(.small)
                     .accessibilityLabel("Preparing IPA")
+            } else if preparedDirectories[app.bundleID] != nil {
+                Text("Prepared")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.green)
             } else if !app.version.isEmpty {
                 Text(app.version)
                     .font(.caption2)
@@ -105,39 +93,19 @@ version_replacement = '''            if exportingBundleID == app.bundleID {
         .padding(.vertical, 2)
         .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 12))
         .contextMenu {
-            if let ipa = preparedIPAs[app.bundleID] {
-                if let verified = decryptedIPAs[app.bundleID] {
-                    Button {
-                        ipaExportItem = FilzaIPAExportItem(url: verified)
-                    } label: {
-                        Label("Export decrypted IPA", systemImage: "checkmark.shield")
-                    }
-                }
-                Button {
-                    decryptPreparedIPA(app)
-                } label: {
-                    Label("Decrypt", systemImage: "lock.open")
-                }
-                .disabled(exportingBundleID != nil)
-                Button {
-                    ipaExportItem = FilzaIPAExportItem(url: ipa)
-                } label: {
-                    Label("Export prepared IPA", systemImage: "square.and.arrow.up")
-                }
-                Button {
-                    prepareIPA(app)
-                } label: {
-                    Label("Prepare again", systemImage: "arrow.clockwise")
-                }
-                .disabled(exportingBundleID != nil)
-            } else {
-                Button {
-                    prepareIPA(app)
-                } label: {
-                    Label("Prepare", systemImage: "shippingbox")
-                }
-                .disabled(exportingBundleID != nil)
+            // Erosion's ORIGINAL two-item context menu, without another tab.
+            Button {
+                prepareIPA(app)
+            } label: {
+                Label("Prepare", systemImage: "arrow.down.doc")
             }
+            .disabled(exportingBundleID != nil)
+            Button {
+                decryptPreparedIPA(app)
+            } label: {
+                Label("Decrypt", systemImage: "doc.zipper")
+            }
+            .disabled(preparedDirectories[app.bundleID] == nil || exportingBundleID != nil)
         }
     }
 '''
@@ -147,136 +115,77 @@ browser = browser.replace(version_anchor, version_replacement, 1)
 
 reload_anchor = '''    private func reload() {
 '''
-export_method = '''    // Ordinary Prepare NEVER performs a paired folder move as a fallback.
-    // A SideStore-signed app may see another bundle's metadata but lack its
-    // filesystem permissions. Preserve that error and offer an explicit
-    // alternative only when no unresolved restore incident is present.
+export_method = r'''    // ER0SION_PREPARE_PARITY: InstallationProxy app bundle path only.
+    // Prepare uses Airlift's original al_exploit_read_folder path. The
+    // resulting ZIP contains the .app CONTENTS and becomes a persistent
+    // prepared .app folder, just as Erosion AppsManagement does.
     private func prepareIPA(_ app: InstalledApp) {
         guard exportingBundleID == nil else { return }
-        let bundleID = app.bundleID
-        let displayName = app.displayName
-        let version = app.version
-        exportingBundleID = bundleID
-        ipaExportError = nil
-        preparedIPAs[bundleID] = nil
-        preparedEncryption[bundleID] = nil
-        decryptedIPAs[bundleID] = nil
-        Task {
-            do {
-                let url = try await Task.detached(priority: .userInitiated) {
-                    try FilzaAppIPAExporter.repackage(
-                        bundleID: bundleID, displayName: displayName, version: version
-                    )
-                }.value
-                let status = try await Task.detached(priority: .utility) {
-                    try FilzaAirliftIPAExporter.inspectIPA(url)
-                }.value
-                preparedIPAs[bundleID] = url
-                preparedEncryption[bundleID] = status
-                ipaExportError = "Prepared \(displayName).\\n\(status)\\nLong-press again for Decrypt or Export prepared IPA."
-            } catch {
-                FilzaDiagnosticsAppend(
-                    "IPA", "Local Prepare \(bundleID) failed: \(error.localizedDescription)"
-                )
-                // Normal Prepare never starts a remote file move itself.
-                // When local access is unavailable, offer a confirmation
-                // through the original action, with the restore lock respected.
-                if !FilzaAirlift.restorationStopped &&
-                   airliftCatalog.apps.contains(where: {
-                       $0.bundleID == bundleID && $0.bundlePath != nil
-                   }) {
-                    pairedPrepareCandidate = app
-                } else {
-                    ipaExportError = "Local Prepare unavailable for \(displayName): " +
-                        error.localizedDescription +
-                        "\\nNo remote read was attempted. Existing Airlift recovery " +
-                        "incidents must be resolved before any paired preparation."
-                }
-            }
-            exportingBundleID = nil
-        }
-    }
-
-    // Explicit, separately confirmed operation: may move remote app objects.
-    // Never bypass an unresolved original-directory restoration incident.
-    private func prepareIPAViaAirlift(_ app: InstalledApp) {
-        guard exportingBundleID == nil else { return }
         guard !FilzaAirlift.restorationStopped else {
-            ipaExportError = "SAFETY STOP: remote restoration is not verified. " +
-                "Do not retry app-bundle reads or writes until recovery is resolved."
-            return
-        }
-        guard let paired = airliftCatalog.apps.first(where: {
-            $0.bundleID == app.bundleID && $0.bundlePath != nil
-        }) else {
-            ipaExportError = "No paired app-bundle path was discovered for \(app.displayName)."
-            return
-        }
-        let bundleID = app.bundleID
-        let displayName = app.displayName
-        exportingBundleID = bundleID
-        ipaExportError = nil
-        preparedIPAs[bundleID] = nil
-        preparedEncryption[bundleID] = nil
-        decryptedIPAs[bundleID] = nil
-        Task {
-            do {
-                let export = try await FilzaAirliftIPAExporter.export(paired)
-                let status = try await Task.detached(priority: .utility) {
-                    try FilzaAirliftIPAExporter.inspectIPA(export.fileURL)
-                }.value
-                preparedIPAs[bundleID] = export.fileURL
-                preparedEncryption[bundleID] = status
-                ipaExportError = "Prepared \(displayName) using paired access.\\n\(status)" +
-                    "\\nLong-press to export or attempt decryption."
-            } catch {
-                FilzaDiagnosticsAppend(
-                    "IPA", "Paired Prepare \(bundleID) failed: \(error.localizedDescription)"
-                )
-                ipaExportError = "Paired preparation failed for \(displayName): " +
-                    error.localizedDescription
-            }
-            exportingBundleID = nil
-        }
-    }
-
-    // In-process FairPlay research backend: no second helper IPA.
-    // Airlift copies a staged bundle but cannot authorize the kernel to
-    // decrypt an original installed binary on unsupported iOS builds.
-    private func decryptPreparedIPA(_ app: InstalledApp) {
-        guard let prepared = preparedIPAs[app.bundleID],
-              exportingBundleID == nil else {
-            ipaExportError = "Prepare this app first."
-            return
-        }
-        if let existing = decryptedIPAs[app.bundleID] {
-            ipaExportItem = FilzaIPAExportItem(url: existing)
+            ipaExportError = "Airlift folder restoration has not been verified. " +
+                "IPA Prepare cannot issue another remote read."
             return
         }
         let id = app.bundleID
-        let pairedBundlePath = airliftCatalog.apps.first { $0.bundleID == id }?.bundlePath
         exportingBundleID = id
         ipaExportError = nil
         Task {
             do {
-                let result = try await Task.detached(priority: .userInitiated) {
-                    try FilzaFairPlayBackend.decryptPreparedIPA(
-                        bundleID: id, preparedIPA: prepared,
-                        pairedBundlePath: pairedBundlePath
-                    )
-                }.value
-                if result == prepared {
-                    ipaExportError = "The prepared IPA already contains unencrypted arm64 binaries. Use Export prepared IPA."
-                } else {
-                    decryptedIPAs[id] = result
-                    ipaExportError = "Decrypted IPA verified. Long-press again to Export decrypted IPA."
+                // Don't rely on a possibly empty earlier pairing/catalog scan.
+                let discovered = try await FilzaAirlift.discover()
+                guard let remote = discovered.apps.first(where: {
+                    $0.bundleID == id && $0.bundlePath != nil
+                }) else {
+                    ipaExportError = "InstallationProxy did not return an app-bundle path for \(app.displayName)."
+                    exportingBundleID = nil
+                    return
                 }
+                let prepared = try await FilzaAirliftIPAExporter.prepare(remote)
+                preparedDirectories[id] = prepared
+                preparedIPAs[id] = nil
+                decryptedIPAs[id] = nil
+                preparedEncryption[id] = nil
+                FilzaDiagnosticsAppend("IPA", "Erosion Prepare saved .app: \(id)")
+                ipaExportError = "Prepared \(app.displayName). Long-press again for Decrypt (IPA packaging)."
             } catch {
-                ipaExportError = "Decrypt failed: \(error.localizedDescription)"
+                FilzaDiagnosticsAppend("IPA", "Erosion Prepare \(id) failed: \(error.localizedDescription)")
+                ipaExportError = "Prepare failed for \(app.displayName): \(error.localizedDescription)"
             }
             exportingBundleID = nil
         }
     }
+
+    // Erosion's "Decrypt" packages Payload/<name>.app. Packaging does NOT
+    // decrypt FairPlay-encrypted code and must never be reported as such.
+    private func decryptPreparedIPA(_ app: InstalledApp) {
+        guard let prepared = preparedDirectories[app.bundleID],
+              exportingBundleID == nil else {
+            ipaExportError = "Prepare this app with Airlift first."
+            return
+        }
+        exportingBundleID = app.bundleID
+        ipaExportError = nil
+        let id = app.bundleID
+        let name = app.displayName
+        Task {
+            do {
+                let result = try await Task.detached(priority: .utility) {
+                    try FilzaAirliftIPAExporter.makeIPA(
+                        from: prepared, displayName: name, bundleID: id
+                    )
+                }.value
+                preparedIPAs[id] = result.fileURL
+                preparedEncryption[id] = result.encryptionStatus
+                FilzaDiagnosticsAppend("IPA", "Erosion-style IPA packaged \(id); \(result.encryptionStatus)")
+                ipaExportItem = FilzaIPAExportItem(url: result.fileURL)
+            } catch {
+                ipaExportError = "IPA packaging failed: \(error.localizedDescription)"
+            }
+            exportingBundleID = nil
+        }
+    }
+
+    // No FairPlay/extra app action is inserted into Erosion's IPA menu.
 
     private func reload() {
 '''
@@ -414,13 +323,15 @@ zip_text = zip_text.replace(resource_keys_anchor, unix_mode_method, 1)
 zip_path.write_text(zip_text, encoding="utf-8")
 PY
 
-grep -Fq 'Label("Prepare", systemImage:' "$BROWSER"
-grep -Fq 'Label("Decrypt", systemImage:' "$BROWSER"
-grep -Fq 'preparedIPAs[app.bundleID]' "$BROWSER"
-grep -Fq 'decryptPreparedIPA(app)' "$BROWSER"
-grep -Fq 'FilzaFairPlayBackend.decryptPreparedIPA' "$BROWSER"
-grep -Fq 'Label("Export decrypted IPA"' "$BROWSER"
-grep -Fq 'FilzaAppIPAExporter.repackage' "$BROWSER"
+# Erosion parity: the app menu exposes its original two operations.
+grep -Fq 'Label("Prepare", systemImage: "arrow.down.doc")' "$BROWSER"
+grep -Fq 'Label("Decrypt", systemImage: "doc.zipper")' "$BROWSER"
+grep -Fq 'preparedDirectories[app.bundleID]' "$BROWSER"
+grep -Fq 'FilzaAirlift.discover()' "$BROWSER"
+grep -Fq 'FilzaAirliftIPAExporter.prepare(remote)' "$BROWSER"
+grep -Fq 'FilzaAirliftIPAExporter.makeIPA(' "$BROWSER"
+! grep -Fq 'FilzaFairPlayBackend.decryptPreparedIPA' "$BROWSER"
+! grep -Fq 'FilzaAppIPAExporter.repackage' "$BROWSER"
 grep -Fq 'FilzaIPAExportDocumentPicker' "$BROWSER"
 grep -Fq '.navigationDestination(for: FileBrowserDestination.self)' "$BROWSER"
 grep -Fq 'static func writeIPA(' "$ZIP"

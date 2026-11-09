@@ -21,6 +21,8 @@ extern CFTypeRef SecTaskCopyValueForEntitlement(FZWQSecTaskRef task, CFStringRef
 static NSString *const kFZWQGroupBase = @"group.com.filza27.nigtvibes33.worsequery";
 static NSString *const kFZWQCacheRestoreStop = @"filza.worseQueryCacheRestoreStop.v1";
 static NSMutableDictionary<NSString *, NSNumber *> *gHandles;
+static NSMutableArray<NSString *> *gGrantOrder;
+static const NSUInteger kFZWQMaxLeases = 192;
 static NSString *gStatus;
 
 static NSObject *FZWQLock(void) {
@@ -29,6 +31,7 @@ static NSObject *FZWQLock(void) {
     dispatch_once(&once, ^{
         lock = [NSObject new];
         gHandles = [NSMutableDictionary dictionary];
+        gGrantOrder = [NSMutableArray array];
         gStatus = @"Not attempted";
     });
     return lock;
@@ -221,7 +224,16 @@ NSString *FZWorseQueryGrantDirectory(NSString *path) {
                 @"Missing or ambiguous SideStore-provisioned App Group based on %@", kFZWQGroupBase]);
             return nil;
         }
-        if (gHandles[target]) return target;
+        // Canonical deduplication avoids leaking duplicate sandbox leases.
+        char existing[PATH_MAX] = {0};
+        if (realpath(target.fileSystemRepresentation, existing)) {
+            NSString *key = [NSString stringWithUTF8String:existing];
+            if (gHandles[key]) {
+                [gGrantOrder removeObject:key];
+                [gGrantOrder addObject:key];
+                return key;
+            }
+        }
 
         NSString *reason = nil;
         if (!FZWQDedicatedEmptyCaches(groupID, &reason)) {
@@ -272,8 +284,17 @@ NSString *FZWorseQueryGrantDirectory(NSString *path) {
             return nil;
         }
         close(fd);
-        gHandles[target] = @(handle);
+        // Bounded token lifetime, like WQFiles. One canonical entry per
+        // extension, never duplicate handles for /var and /private/var.
+        while (gGrantOrder.count >= kFZWQMaxLeases) {
+            NSString *oldest = gGrantOrder.firstObject;
+            NSNumber *oldHandle = gHandles[oldest];
+            if (oldHandle) worse_query_release(oldHandle.longLongValue);
+            [gHandles removeObjectForKey:oldest];
+            [gGrantOrder removeObjectAtIndex:0];
+        }
         gHandles[canonical] = @(handle);
+        [gGrantOrder addObject:canonical];
         FZWQReport([NSString stringWithFormat:@"Confirmed live directory: %@", canonical]);
         return canonical;
     }

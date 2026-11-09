@@ -1,99 +1,201 @@
 import Foundation
 
-/// Adapted from Erosion's Prepare -> IPA workflow. This *repackages* the
-/// readable app bundle; it never decrypts FairPlay or impersonates a signer.
+// The exact Erosion App Decrypt workflow, embedded inside Filza's existing
+// 3105 Apps Manager: Airlift app-bundle folder read -> persist prepared .app
+// -> Decrypt menu packages Payload/<app>.app. This DOES NOT remove FairPlay.
 struct FilzaAirliftIPAResult {
     let fileURL: URL
     let encryptionStatus: String
 }
+private struct FilzaPreparedAppManifest: Codable {
+    let bundleID: String
+    let displayName: String
+    let sourcePath: String
+    let appDirectoryName: String
+    let preparedAt: Date
+}
 enum FilzaAirliftIPAExporter {
     enum ExportError: LocalizedError {
-        case missingBundle, invalidBundle, missingExecutable
+        case missingBundle, invalidBundle, missingExecutable, emptyBundle, unprepared
         var errorDescription: String? {
             switch self {
-            case .missingBundle: return "InstallationProxy did not provide a valid installed .app path."
-            case .invalidBundle: return "The prepared snapshot did not contain a valid .app Info.plist."
-            case .missingExecutable: return "The prepared .app executable could not be located."
+            case .missingBundle: return "InstallationProxy did not return an installed .app bundle path."
+            case .invalidBundle: return "The Airlift app bundle snapshot was invalid."
+            case .missingExecutable: return "The app's declared executable is missing."
+            case .emptyBundle: return "Airlift returned an empty .app snapshot."
+            case .unprepared: return "Prepare this installed app through Airlift first."
             }
         }
     }
+    nonisolated private static var root: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("FilzaAirlift/IPA", isDirectory: true)
+    }
+    nonisolated private static var preparedRoot: URL {
+        root.appendingPathComponent("Prepared", isDirectory: true)
+    }
+    nonisolated private static var exportRoot: URL {
+        root.appendingPathComponent("Exports", isDirectory: true)
+    }
+    nonisolated private static func safeName(_ name: String) -> String {
+        let cleaned = name.replacingOccurrences(
+            of: "[^A-Za-z0-9._-]", with: "_", options: .regularExpression
+        )
+        return cleaned.isEmpty ? "Application" : cleaned
+    }
 
-    static func export(_ app: FilzaAirliftApp) async throws -> FilzaAirliftIPAResult {
+    // Erosion prepared.json is a durable index of actually extracted .app
+    // snapshots, not a claim based on InstallationProxy metadata alone.
+    nonisolated static func preparedDirectories() -> [String: URL] {
+        let fm = FileManager.default
+        let entries = (try? fm.contentsOfDirectory(
+            at: preparedRoot, includingPropertiesForKeys: [.isDirectoryKey]
+        )) ?? []
+        var prepared: [String: URL] = [:]
+        for entry in entries {
+            let manifestURL = entry.appendingPathComponent("prepared.json")
+            guard let bytes = try? Data(contentsOf: manifestURL),
+                  let manifest = try? JSONDecoder().decode(FilzaPreparedAppManifest.self, from: bytes),
+                  let bundle = validatedAppDirectory(
+                    entry.appendingPathComponent(manifest.appDirectoryName, isDirectory: true),
+                    bundleID: manifest.bundleID
+                  ) else { continue }
+            prepared[manifest.bundleID] = bundle
+        }
+        return prepared
+    }
+
+    nonisolated private static func validatedAppDirectory(
+        _ url: URL, bundleID: String
+    ) -> URL? {
+        guard url.pathExtension.lowercased() == "app",
+              let info = NSDictionary(contentsOf: url.appendingPathComponent("Info.plist")) as? [String: Any],
+              info["CFBundleIdentifier"] as? String == bundleID,
+              let executable = info["CFBundleExecutable"] as? String,
+              !executable.isEmpty, executable != ".", executable != "..",
+              !executable.contains("/") else { return nil }
+        let target = url.appendingPathComponent(executable)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: target.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue else { return nil }
+        return url
+    }
+
+    // Erosion's source is the paired InstallationProxy bundle path, not an app
+    // data container, MCM symlink or a locally reconstructed application.
+    static func prepare(_ app: FilzaAirliftApp) async throws -> URL {
         guard let bundlePath = app.bundlePath, FilzaAirlift.validBundle(bundlePath)
         else { throw ExportError.missingBundle }
-        // Erosion's Airlift folder ZIP has the contents of the .app at its root.
         let archive = try await FilzaAirlift.snapshot(path: bundlePath, folder: true)
+        let bundleID = app.bundleID, displayName = app.name
         return try await Task.detached(priority: .utility) {
-            let fm = FileManager.default
-            let workspace = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("FilzaAirlift/IPA", isDirectory: true)
-            try fm.createDirectory(at: workspace, withIntermediateDirectories: true)
-            let working = workspace.appendingPathComponent("build-\(UUID().uuidString)", isDirectory: true)
-            defer { try? fm.removeItem(at: working) }
-            // Erosion snapshots may contain the app contents directly or a
-            // nested .app directory. Resolve the local ZIP once; never issue
-            // another remote read as a ZIP-layout fallback.
-            let extracted = working.appendingPathComponent("Extracted", isDirectory: true)
-            try fm.createDirectory(at: extracted, withIntermediateDirectories: true)
-            try fm.unzipItem(at: archive, to: extracted)
-            let appName = URL(fileURLWithPath: bundlePath).lastPathComponent
-            let directChildren = (try? fm.contentsOfDirectory(
-                at: extracted, includingPropertiesForKeys: [.isDirectoryKey]
-            )) ?? []
-            let payloadChildren = (try? fm.contentsOfDirectory(
-                at: extracted.appendingPathComponent("Payload", isDirectory: true),
-                includingPropertiesForKeys: [.isDirectoryKey]
-            )) ?? []
-            let matching = ([extracted] + directChildren + payloadChildren).filter { candidate in
-                guard let metadata = NSDictionary(
-                    contentsOf: candidate.appendingPathComponent("Info.plist")
-                ) as? [String: Any] else { return false }
-                return metadata["CFBundleIdentifier"] as? String == app.bundleID
-            }
-            guard matching.count == 1, let sourceBundle = matching.first else {
-                throw ExportError.invalidBundle
-            }
-            let payload = working.appendingPathComponent("Payload", isDirectory: true)
-            let appURL = payload.appendingPathComponent(appName, isDirectory: true)
-            try fm.createDirectory(at: payload, withIntermediateDirectories: true)
-            try fm.copyItem(at: sourceBundle, to: appURL)
-            let infoURL = appURL.appendingPathComponent("Info.plist")
-            guard let plist = NSDictionary(contentsOf: infoURL) as? [String: Any],
-                  plist["CFBundleIdentifier"] as? String == app.bundleID
-            else { throw ExportError.invalidBundle }
-            guard let executableName = plist["CFBundleExecutable"] as? String,
-                  !executableName.isEmpty,
-                  executableName != ".", executableName != "..",
-                  !executableName.contains("/")
-            else { throw ExportError.missingExecutable }
-            let executableURL = appURL.appendingPathComponent(executableName)
-            guard fm.fileExists(atPath: executableURL.path) else { throw ExportError.missingExecutable }
-
-            // AFC ZIP snapshots may lose executable bits. Restore declared
-            // bundle binaries without changing Mach-O content or code signatures.
-            if let enumerator = fm.enumerator(at: appURL, includingPropertiesForKeys: nil) {
-                for case let file as URL in enumerator {
-                    if file.pathExtension == "dylib" {
-                        try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path)
-                    } else if file.lastPathComponent == "Info.plist",
-                              let subInfo = NSDictionary(contentsOf: file) as? [String: Any],
-                              let subExecutable = subInfo["CFBundleExecutable"] as? String,
-                              !subExecutable.contains("/"), !subExecutable.isEmpty {
-                        let bin = file.deletingLastPathComponent().appendingPathComponent(subExecutable)
-                        try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bin.path)
-                    }
-                }
-            }
-            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executableURL.path)
-            let status = encryptionStatus(executableURL)
-            let cleaned = app.name.replacingOccurrences(
-                of: "[^A-Za-z0-9._-]", with: "-", options: .regularExpression
+            defer { try? FileManager.default.removeItem(at: archive) }
+            return try installSnapshot(
+                archive, bundlePath: bundlePath, bundleID: bundleID, displayName: displayName
             )
-            let finalName = cleaned.isEmpty ? "Application" : cleaned
-            let destination = workspace.appendingPathComponent("\(finalName)-\(UUID().uuidString.prefix(8)).ipa")
-            try fm.zipItem(at: payload, to: destination, shouldKeepParent: true)
-            FilzaDiagnosticsAppend("Airlift", "IPA repackaged; FairPlay status: \(status)")
-            return FilzaAirliftIPAResult(fileURL: destination, encryptionStatus: status)
+        }.value
+    }
+
+    // Matches Erosion's installSnapshot layout and executable permission repair.
+    nonisolated private static func installSnapshot(
+        _ archive: URL, bundlePath: String, bundleID: String, displayName: String
+    ) throws -> URL {
+        let fm = FileManager.default
+        guard bundlePath.hasPrefix("/var/containers/Bundle/Application/") ||
+              bundlePath.hasPrefix("/private/var/containers/Bundle/Application/")
+        else { throw ExportError.missingBundle }
+        let appName = URL(fileURLWithPath: bundlePath).lastPathComponent
+        let appStorage = preparedRoot.appendingPathComponent(safeName(bundleID), isDirectory: true)
+        let staging = preparedRoot.appendingPathComponent(
+            ".Working-\(UUID().uuidString)", isDirectory: true
+        )
+        let appURL = staging.appendingPathComponent(appName, isDirectory: true)
+        // SecureZIPArchive creates the destination itself and rejects an
+        // existing directory, avoiding partial overwrite of prepared data.
+        try fm.createDirectory(at: staging, withIntermediateDirectories: true)
+        do {
+            // Erosion Airlift folder archives contain .app CONTENTS at ZIP root.
+            // SecureZIPArchive refuses path traversal and symlink entries.
+            _ = try SecureZIPArchive.extract(archiveURL: archive, destinationURL: appURL)
+            guard let items = try? fm.contentsOfDirectory(atPath: appURL.path),
+                  !items.isEmpty else { throw ExportError.emptyBundle }
+            guard validatedAppDirectory(appURL, bundleID: bundleID) != nil
+            else { throw ExportError.invalidBundle }
+            try restoreExecutablePermissions(in: appURL)
+            let manifest = FilzaPreparedAppManifest(
+                bundleID: bundleID, displayName: displayName, sourcePath: bundlePath,
+                appDirectoryName: appName, preparedAt: Date()
+            )
+            let bytes = try JSONEncoder().encode(manifest)
+            try bytes.write(
+                to: staging.appendingPathComponent("prepared.json"), options: .atomic
+            )
+            if fm.fileExists(atPath: appStorage.path) {
+                try fm.removeItem(at: appStorage)
+            }
+            try fm.moveItem(at: staging, to: appStorage)
+            return appStorage.appendingPathComponent(appName, isDirectory: true)
+        } catch {
+            try? fm.removeItem(at: staging)
+            throw error
+        }
+    }
+
+    nonisolated private static func restoreExecutablePermissions(in app: URL) throws {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(at: app, includingPropertiesForKeys: nil)
+        else { return }
+        var paths = Set<String>()
+        for case let url as URL in enumerator {
+            if url.pathExtension.lowercased() == "dylib" {
+                paths.insert(url.path)
+            } else if url.lastPathComponent == "Info.plist",
+                      let info = NSDictionary(contentsOf: url) as? [String: Any],
+                      let executable = info["CFBundleExecutable"] as? String,
+                      !executable.isEmpty, executable != ".", executable != "..",
+                      !executable.contains("/") {
+                let binary = url.deletingLastPathComponent().appendingPathComponent(executable)
+                if fm.fileExists(atPath: binary.path) { paths.insert(binary.path) }
+            }
+        }
+        for path in paths { try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path) }
+    }
+
+    // Erosion's "Decrypt" button means "construct IPA from prepared bundle".
+    // Keep this exact semantic; do not claim FairPlay was actually removed.
+    nonisolated static func makeIPA(
+        from prepared: URL, displayName: String, bundleID: String
+    ) throws -> FilzaAirliftIPAResult {
+        guard validatedAppDirectory(prepared, bundleID: bundleID) != nil
+        else { throw ExportError.unprepared }
+        let fm = FileManager.default
+        try fm.createDirectory(at: exportRoot, withIntermediateDirectories: true)
+        let working = root.appendingPathComponent(
+            "Working-\(UUID().uuidString)", isDirectory: true
+        )
+        defer { try? fm.removeItem(at: working) }
+        let payload = working.appendingPathComponent("Payload", isDirectory: true)
+        try fm.createDirectory(at: payload, withIntermediateDirectories: true)
+        try fm.copyItem(
+            at: prepared, to: payload.appendingPathComponent(prepared.lastPathComponent)
+        )
+        let name = safeName(displayName)
+        let zip = working.appendingPathComponent("\(name).zip")
+        try fm.zipItem(at: payload, to: zip, shouldKeepParent: true)
+        let exported = exportRoot.appendingPathComponent(
+            "\(name)-\(UUID().uuidString.prefix(8)).ipa"
+        )
+        try fm.moveItem(at: zip, to: exported)
+        let status = try inspectIPA(exported)
+        return FilzaAirliftIPAResult(fileURL: exported, encryptionStatus: status)
+    }
+
+    // Retain API compatibility for existing callers, but single-step export
+    // is never used by the main Apps Manager's Prepare -> Decrypt flow.
+    static func export(_ app: FilzaAirliftApp) async throws -> FilzaAirliftIPAResult {
+        let prepared = try await prepare(app)
+        return try await Task.detached(priority: .utility) {
+            try makeIPA(from: prepared, displayName: app.name, bundleID: app.bundleID)
         }.value
     }
 

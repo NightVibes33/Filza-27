@@ -48,11 +48,16 @@ assert "FilzaAirliftCleaner.swift" in make
 assert "FilzaUnifiedPairing.swift" in make
 assert "scripts/patch-mond-worse-query-routing.py" in network
 assert "FZWorseQueryGrantDirectory" in read("scripts/patch-mond-worse-query-routing.py")
-assert "matching.count == 1" in read("FilzaAirliftIPAExporter.swift")
+assert "FilzaPreparedAppManifest" in read("FilzaAirliftIPAExporter.swift")
 assert "let metadataWQ = directMetadata == nil" in read("scripts/patch-3105-worse-query.py")
 assert "let verifiedWQ = handle < 0" in read("scripts/patch-3105-worse-query.py")
 assert "scripts/patch-3105-ipa-export.sh" in network
 assert "scripts/patch-3105-cleaner-all-apps.py" in network
+assert "scripts/patch-3105-wq-discovery.py" in network
+assert "FZContainerDiscovery.m" in make
+assert "FZContainerDiscoveryStart" in read("MCMFilzaIntegration.m")
+assert "FZLiveContainerPath" in read("Tweak.m")
+assert "FZContainerDiscoveryCachedPaths" in read("scripts/patch-3105-wq-discovery.py")
 assert "scripts/patch-3105-erosion-features.py" in network
 
 for action in ("writeFolder", "removeRemote", "writeFile"):
@@ -64,19 +69,21 @@ assert "static func snapshot(path original: String, folder: Bool)" in remote
 assert "if restorationStopped {" in remote
 assert "recordRestoreIncident(detail)" in remote
 
-assert "Prepare with paired Airlift" in export
-assert "pairedPrepareCandidate" in export
-assert "pairedPrepareCandidate = app" in export
-assert 'Label("Prepare with paired Airlift"' not in export
-assert 'private func prepareIPAViaAirlift(_ app: InstalledApp)' in export
-local = export.split("private func prepareIPA(_ app: InstalledApp) {", 1)[1].split(
-    "private func prepareIPAViaAirlift", 1)[0]
-assert "FilzaAppIPAExporter.repackage" in local
-assert "FilzaAirliftIPAExporter.export" not in local, "Unsafe automatic paired fallback returned"
-paired = export.split("private func prepareIPAViaAirlift(_ app: InstalledApp)", 1)[1]
-assert "guard !FilzaAirlift.restorationStopped else {" in paired
-assert "FilzaAirliftIPAExporter.export(paired)" in paired
-assert "SAFETY STOP" in paired
+assert "ER0SION_PREPARE_PARITY" in export
+assert "pairedPrepareCandidate" not in export
+assert "private func prepareIPA(_ app: InstalledApp)" in export
+assert "FilzaAirlift.discover()" in export
+assert "FilzaAirliftIPAExporter.prepare(remote)" in export
+assert "FilzaAirliftIPAExporter.makeIPA(" in export
+assert "Label(\"Prepare\", systemImage: \"arrow.down.doc\")" in export
+assert "Label(\"Decrypt\", systemImage: \"doc.zipper\")" in export
+# The shell's negative grep assertion contains this token by design.
+# Inspect the generated Swift method template, not its shell preflight.
+ipa_template = export.split("export_method = r'''", 1)[1].split("'''", 1)[0]
+assert "FilzaAppIPAExporter.repackage" not in ipa_template
+assert "SecureZIPArchive.extract" in read("FilzaAirliftIPAExporter.swift")
+assert "FilzaPreparedAppManifest" in read("FilzaAirliftIPAExporter.swift")
+assert "Erosion" in read("FilzaAirliftIPAExporter.swift")
 
 assert "FILZA_MAIN_CLEANER_PARITY" in clean
 assert "NSHomeDirectory()" in clean

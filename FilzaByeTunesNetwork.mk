@@ -22,8 +22,9 @@ before-FilzaApplySandboxExt-all::
 	@test -f scripts/patch-3105-ipa-export.sh || (echo "Missing 3105 IPA export patch" >&2; exit 1)
 	@grep -Fq 'Label("Prepare", systemImage:' ThirdParty/3105/Sources/AppDataBrowserView.swift
 	@grep -Fq 'Label("Decrypt", systemImage:' ThirdParty/3105/Sources/AppDataBrowserView.swift
-	@grep -Fq 'FilzaFairPlayBackend.decryptPreparedIPA' ThirdParty/3105/Sources/AppDataBrowserView.swift
-	@grep -Fq 'FilzaAppIPAExporter.repackage' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'FilzaAirliftIPAExporter.prepare(remote)' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'FilzaAirliftIPAExporter.prepare(remote)' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'FilzaAirliftIPAExporter.makeIPA(' ThirdParty/3105/Sources/AppDataBrowserView.swift
 	@grep -Fq 'static func writeIPA(' ThirdParty/3105/Sources/ZIPArchiveWriter.swift
 	@grep -Fq 'archiveRootName: "Payload/' ThirdParty/3105/Sources/ZIPArchiveWriter.swift
 	@grep -Fq 'filzaAppBundlePathForBundleID' ThirdParty/3105/Sources/AppIconHelper.h
@@ -44,7 +45,7 @@ before-FilzaApplySandboxExt-all::
 	@! grep -Fq 'discoverySummary(for: app)' ThirdParty/3105/Sources/AppDataBrowserView.swift
 	@grep -Fq 'Label("Prepare", systemImage:' ThirdParty/3105/Sources/AppDataBrowserView.swift
 	@grep -Fq 'Label("Decrypt", systemImage:' ThirdParty/3105/Sources/AppDataBrowserView.swift
-	@grep -Fq 'FilzaFairPlayBackend.decryptPreparedIPA' ThirdParty/3105/Sources/AppDataBrowserView.swift
+	@grep -Fq 'FilzaAirliftIPAExporter.prepare(remote)' ThirdParty/3105/Sources/AppDataBrowserView.swift
 
 	# Bridge Erosion/Airlift into the actual 3105 Cleaner and Wallpaper UI.
 	@python3 scripts/patch-3105-erosion-features.py
@@ -52,6 +53,8 @@ before-FilzaApplySandboxExt-all::
 	# Airlift/NFCARD remain available in the original native Filza file browser.
 	@python3 scripts/patch-3105-cleaner-all-apps.py
 	@python3 scripts/patch-3105-worse-query.py
+	@python3 scripts/patch-3105-wq-discovery.py
+	@grep -Fq 'FILZA_WQFILES_DYNAMIC_DISCOVERY' ThirdParty/3105/Sources/ContainerStore.swift
 	@grep -Fq 'FILZA_MAIN_CLEANER_PARITY' ThirdParty/3105/Sources/CleanerView.swift
 	@grep -Fq 'FZWorseQueryGrantDirectory(candidate)' ThirdParty/3105/Sources/CleanerView.swift
 	@! grep -Fq 'allCleanerRecords' ThirdParty/3105/Sources/CleanerView.swift

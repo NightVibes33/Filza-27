@@ -22,6 +22,35 @@ if marker in text:
     print("Mond container fallbacks already staged")
     raise SystemExit(0)
 
+# Preserve the original MobileGestalt bad_query and CMG implementations.
+# The newer path only reports MG access when the exact Gestalt file itself
+# is writable; a system-group directory sandbox extension alone is NOT enough.
+text = replace(text,
+    '''func grant_mg() -> Int64 {
+    return grant_access(MondCurrentTweakPaths.gestalt_dir, probe_leaf: "com.apple.MobileGestalt.plist", msg: "granted mg access!")
+}''',
+    '''func grant_mg() -> Int64 {
+    let legacy = grant_access(MondCurrentTweakPaths.gestalt_dir,
+                              probe_leaf: "com.apple.MobileGestalt.plist",
+                              msg: "granted mg access!")
+    if legacy >= 0 { return legacy }
+    // Ketamine-era bad_query is preserved. WQFiles documents a newer
+    // system-group route; it is a scoped WQ fallback, not a kernel bypass.
+    var mcmError: NSString?
+    let groupPath = MCMActivateContainerPath(13,
+        "systemgroup.com.apple.mobilegestaltcache", true, &mcmError)
+    let direct = groupPath ??
+        "/private/var/containers/Shared/SystemGroup/systemgroup.com.apple.mobilegestaltcache"
+    if FZWorseQueryGrantDirectory(direct) != nil &&
+       FileManager.default.isWritableFile(atPath: MondCurrentTweakPaths.gestalt) {
+        print("(wq) MobileGestalt file verified writable with system-group grant")
+        return 0 // a logical success; never release as a bad_query handle
+    }
+    print("(wq) MobileGestalt path still inaccessible; retaining original error")
+    return legacy
+}''',
+    "MobileGestalt verified WQ fallback")
+
 # The preserved upstream method selection, MG bad_query and CMG stay unchanged.
 text = replace(text,
     '        print("(bq) kernel rejected sandbox query for \(probe_dir.path)")\n        return handle',

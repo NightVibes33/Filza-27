@@ -15,6 +15,8 @@ on:
       - 'scripts/patch-3105-ipa-export.sh'
       - 'scripts/patch-3105-cleaner-all-apps.py'
       - 'scripts/patch-3105-worse-query.py'
+      - 'scripts/patch-3105-wq-discovery.py'
+      - 'FZContainerDiscovery.*'
       - 'scripts/verify-worse-query.py'
       - '.github/workflows/diagnose-full-build.yml'
   workflow_dispatch:
@@ -268,6 +270,11 @@ jobs:
           grep -aFq 'NFCARDEmbeddedHostFactory' "$DYLIB"
           python3 scripts/verify-worse-query.py
           grep -Fq 'FZWorseQueryGrantDirectory' FilzaWorseQueryBridge.m
+          grep -Fq 'FZContainerDiscoveryStart' MCMFilzaIntegration.m
+          grep -Fq 'FZLiveContainerPath' Tweak.m
+          grep -Fq 'FILZA_WQFILES_DYNAMIC_DISCOVERY' ThirdParty/3105/Sources/ContainerStore.swift
+          grep -Fq 'ER0SION_PREPARE_PARITY' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'FilzaAirliftIPAExporter.prepare(remote)' ThirdParty/3105/Sources/AppDataBrowserView.swift
           grep -Fq 'FZWorseQueryResolveAppDataContainer' MCMFilzaIntegration.m
           grep -Fq 'Open Direct' Tweak.m
           grep -Fq 'FILZA_REAL_WORSE_QUERY_APP_ACCESS' ThirdParty/3105/Sources/ContainerStore.swift
