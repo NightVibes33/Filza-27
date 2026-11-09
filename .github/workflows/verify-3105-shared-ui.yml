@@ -20,6 +20,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Verify full app inventory and critical recovery invariants
+        run: python3 scripts/verify-filza-feature-integrity.py
+
       - name: Provide plutil compatibility for source staging
         shell: bash
         run: |
@@ -169,6 +172,8 @@ jobs:
           grep -Fq 'try await FilzaAirlift.snapshot' FilzaAirliftCleaner.swift
           grep -Fq 'SecureZIPArchive.extract' FilzaAirliftCleaner.swift
           grep -Fq 'FilzaAirliftCleaner.swift' Makefile
+          grep -Fq 'No Accessible Caches Verified' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'prepareIPAViaAirlift' ThirdParty/3105/Sources/AppDataBrowserView.swift
           grep -Fq 'FilzaNativeAirliftFolderBridge.swift' Makefile
           grep -Fq 'SecureZIPArchive.extract' FilzaNativeAirliftFolderBridge.swift
           grep -Fq 'browseFolder:fromBrowser:' Tweak.m

@@ -186,6 +186,18 @@ enum FilzaAirlift {
         FilzaDiagnosticsAppend("Airlift", "SAFETY STOP persisted: " + reason)
     }
 
+    // The folder reader persists this flag when the original remote object
+    // was not confirmed restored. Absolutely no additional writes or deletes
+    // should be attempted until the user has recovered the target externally.
+    private static func requireSafeRemoteMutation() throws {
+        guard !restorationStopped else {
+            throw FilzaAirliftError.unsafeRecovery(
+                "A previous read did not confirm original-folder restoration. " +
+                "Remote writes and deletes are blocked until device recovery is verified."
+            )
+        }
+    }
+
     static func snapshot(path original: String, folder: Bool) async throws -> URL {
         if restorationStopped {
             throw FilzaAirliftError.unsafeRecovery(
@@ -256,6 +268,7 @@ enum FilzaAirlift {
     /// Applies one user-selected local file only when the paired Airlift write
     /// primitive actually returns success; never claim unrestricted / access.
     static func writeFolder(localURL: URL, remoteDirectory original: String) async throws {
+        try requireSafeRemoteMutation()
         guard let pairing = pairedRecord() else { throw FilzaAirliftError.unpaired }
         let target = try checkPath(original)
         var directory: ObjCBool = false
@@ -274,6 +287,7 @@ enum FilzaAirlift {
         }
     }
     static func removeRemote(path original: String) async throws {
+        try requireSafeRemoteMutation()
         guard let pairing = pairedRecord() else { throw FilzaAirliftError.unpaired }
         let target = try checkPath(original)
         let components = target.split(separator: "/")
@@ -293,6 +307,7 @@ enum FilzaAirlift {
     }
 
     static func writeFile(localURL: URL, remotePath original: String) async throws {
+        try requireSafeRemoteMutation()
         guard let pairing = pairedRecord() else { throw FilzaAirliftError.unpaired }
         let target = try checkPath(original)
         guard FileManager.default.isReadableFile(atPath: localURL.path)

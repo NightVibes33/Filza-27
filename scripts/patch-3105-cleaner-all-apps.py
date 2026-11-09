@@ -11,11 +11,17 @@ view_path = Path("ThirdParty/3105/Sources/CleanerView.swift")
 catalog_path = Path("ThirdParty/3105/Sources/CleanerCatalog.swift")
 
 ACT_BEFORE = "                    activateContainer: { application in\n                    var activationError: NSString?\n                        return MCMActivateContainerPath(\n                        2,\n                            application.bundleID,\n                        false,\n                        &activationError\n                        )\n                    },"
-ACT_AFTER = "                    activateContainer: { application in\n                        // FILZA_MAIN_CLEANER_PARITY: only extend the original\n                        // real root resolver; never add metadata-only rows.\n                        var activationError: NSString?\n                        if let direct = MCMActivateContainerPath(\n                            2, application.bundleID, false, &activationError\n                        ), ContainerStore.isApplicationContainerPath(direct),\n                           (try? LimitedCleanerService.scan(\n                               containerURL: URL(fileURLWithPath: direct, isDirectory: true),\n                               rootValidator: { ContainerStore.isApplicationContainerPath($0.path) }\n                           )) != nil {\n                            return direct\n                        }\n                        guard ContainerStore.isApplicationContainerPath(application.containerPath) else {\n                            return nil\n                        }\n                        return FZWorseQueryGrantDirectory(application.containerPath)\n                    },"
+ACT_AFTER = "                    activateContainer: { application in\n                        // FILZA_MAIN_CLEANER_PARITY: original UI/list, verified roots only.\n                        // A re-signed application always retains its OWN sandbox;\n                        // do not require an Apple-owned MCM identity to scan it.\n                        let selfRoot = NSHomeDirectory()\n                        if application.bundleID == Bundle.main.bundleIdentifier,\n                           ContainerStore.isApplicationContainerPath(selfRoot),\n                           (try? LimitedCleanerService.scan(\n                               containerURL: URL(fileURLWithPath: selfRoot, isDirectory: true),\n                               rootValidator: { ContainerStore.isApplicationContainerPath($0.path) }\n                           )) != nil {\n                            return selfRoot\n                        }\n                        var activationError: NSString?\n                        if let direct = MCMActivateContainerPath(\n                            2, application.bundleID, false, &activationError\n                        ), ContainerStore.isApplicationContainerPath(direct),\n                           (try? LimitedCleanerService.scan(\n                               containerURL: URL(fileURLWithPath: direct, isDirectory: true),\n                               rootValidator: { ContainerStore.isApplicationContainerPath($0.path) }\n                           )) != nil {\n                            return direct\n                        }\n                        let candidate = application.containerPath\n                        guard ContainerStore.isApplicationContainerPath(candidate) else {\n                            return nil\n                        }\n                        if (try? LimitedCleanerService.scan(\n                            containerURL: URL(fileURLWithPath: candidate, isDirectory: true),\n                            rootValidator: { ContainerStore.isApplicationContainerPath($0.path) }\n                        )) != nil { return candidate }\n                        return FZWorseQueryGrantDirectory(candidate)\n                    },"
 CLEAN_BEFORE = "                guard let containerPath = ContainerStore.resolveAppContainerPath(\n                    bundleID: record.app.bundleID\n                ) else {"
 CLEAN_AFTER = "                // Revalidate the exact root that passed the real cache scan.\n                let scannedRoot = record.app.containerPath\n                let stillReadable: String? = ContainerStore.isApplicationContainerPath(scannedRoot)\n                    && (try? LimitedCleanerService.scan(\n                        containerURL: URL(fileURLWithPath: scannedRoot, isDirectory: true),\n                        rootValidator: { ContainerStore.isApplicationContainerPath($0.path) }\n                    )) != nil ? scannedRoot : nil\n                guard let containerPath = stillReadable ??\n                    ContainerStore.resolveAppContainerPath(bundleID: record.app.bundleID) else {"
 CAT_BEFORE = "            guard shouldIncludeBundleID(bundleID),\n                  scannedBundleIDs.insert(bundleID).inserted,\n                  let containerPath = activateContainer(application),\n                  isValidContainerPath(containerPath),\n                  let usage = usageForContainer(containerPath),\n                  usage.totalBytes > 0 else {\n                continue\n            }\n            records.append("
 CAT_AFTER = "            guard shouldIncludeBundleID(bundleID),\n                  !scannedBundleIDs.contains(bundleID),\n                  let containerPath = activateContainer(application),\n                  isValidContainerPath(containerPath),\n                  let usage = usageForContainer(containerPath),\n                  usage.totalBytes > 0 else {\n                continue\n            }\n            // Failed discovery does not suppress a later valid cache root.\n            scannedBundleIDs.insert(bundleID)\n            records.append("
+EMPTY_TITLE_BEFORE = "                    Text(language.text(\"cleaner.empty_title\"))"
+EMPTY_TITLE_AFTER = "                    Text(\"No Accessible Caches Verified\")"
+EMPTY_MESSAGE_BEFORE = "                    Text(language.text(\"cleaner.empty_message\"))"
+EMPTY_MESSAGE_AFTER = "                    Text(\"Other installed apps may still contain caches. Filza found no cache folders it could verify as readable with current permissions.\")"
+SCAN_BEFORE = "                log(\n                    \"cleaner: scan complete bundles=\\(processedCount) \" +\n                        \"reclaimableApps=\\(discoveredRecords.count)\"\n                )"
+SCAN_AFTER = "                log(\n                    \"cleaner: scan complete bundles=\\(processedCount) \" +\n                        \"reclaimableApps=\\(discoveredRecords.count)\"\n                )\n                FilzaDiagnosticsAppend(\n                    \"Cleaner\",\n                    \"Catalog counts: API=\\(apiApps.count), MCM identifiers=\\(dynamicIdentifiers.count), \" +\n                    \"LaunchServices=\\(launchServicesIdentifiers.count), resolved MHA=\\(mhaApps.count), \" +\n                    \"verified cache-positive=\\(discoveredRecords.count). \" +\n                    \"No result does not mean no caches exist.\"\n                )"
 
 def one(source, before, after, label):
     count = source.count(before)
@@ -30,9 +36,15 @@ old_catalog = catalog_path.read_text(encoding="utf-8")
 assert "airliftCatalog" not in old_view, "An earlier patch altered main Cleaner UI"
 view = one(one(old_view, ACT_BEFORE, ACT_AFTER, "original MCM route"),
            CLEAN_BEFORE, CLEAN_AFTER, "original clean root")
+view = one(view, EMPTY_TITLE_BEFORE, EMPTY_TITLE_AFTER, "truthful empty title")
+view = one(view, EMPTY_MESSAGE_BEFORE, EMPTY_MESSAGE_AFTER, "truthful empty message")
+view = one(view, SCAN_BEFORE, SCAN_AFTER, "discovery-vs-access diagnostics")
 catalog = one(old_catalog, CAT_BEFORE, CAT_AFTER, "deduplicate verified roots only")
 assert view.replace(ACT_AFTER, ACT_BEFORE, 1).replace(
-    CLEAN_AFTER, CLEAN_BEFORE, 1) == old_view
+    CLEAN_AFTER, CLEAN_BEFORE, 1).replace(
+    EMPTY_TITLE_AFTER, EMPTY_TITLE_BEFORE, 1).replace(
+    EMPTY_MESSAGE_AFTER, EMPTY_MESSAGE_BEFORE, 1).replace(
+    SCAN_AFTER, SCAN_BEFORE, 1) == old_view
 assert catalog.replace(CAT_AFTER, CAT_BEFORE, 1) == old_catalog
 for name in (
     "allCleanerRecords", "remoteInventories", "remoteMessages",
@@ -47,7 +59,8 @@ for name in (
     "ContainerStore.installedAppsFromMHACandidates",
     "ContainerStore.launchServicesStoreIdentifiers()",
     "LimitedCleanerService.clean", "FILZA_MAIN_CLEANER_PARITY",
-    "FZWorseQueryGrantDirectory(application.containerPath)",
+    "FZWorseQueryGrantDirectory(candidate)",
+    "No Accessible Caches Verified",
 ):
     assert name in view, "Missing main feature or backend: " + name
 view_path.write_text(view, encoding="utf-8")
