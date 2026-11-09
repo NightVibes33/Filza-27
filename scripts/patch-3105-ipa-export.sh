@@ -183,14 +183,14 @@ export_method = '''    // Ordinary Prepare NEVER performs a paired folder move a
                 }.value
                 preparedIPAs[bundleID] = url
                 preparedEncryption[bundleID] = status
-                ipaExportError = "Prepared \(displayName).\n\(status)\nLong-press again for Decrypt or Export prepared IPA."
+                ipaExportError = "Prepared \(displayName).\\n\(status)\\nLong-press again for Decrypt or Export prepared IPA."
             } catch {
                 FilzaDiagnosticsAppend(
                     "IPA", "Local Prepare \(bundleID) failed: \(error.localizedDescription)"
                 )
                 ipaExportError = "Local Prepare unavailable for \(displayName): " +
                     error.localizedDescription +
-                    "\nThis does not mean the app is absent. SideStore signing does not grant " +
+                    "\\nThis does not mean the app is absent. SideStore signing does not grant " +
                     "access to other apps' private bundles. No paired remote read was attempted."
             }
             exportingBundleID = nil
@@ -227,8 +227,8 @@ export_method = '''    // Ordinary Prepare NEVER performs a paired folder move a
                 }.value
                 preparedIPAs[bundleID] = export.fileURL
                 preparedEncryption[bundleID] = status
-                ipaExportError = "Prepared \(displayName) using paired access.\n\(status)" +
-                    "\nLong-press to export or attempt decryption."
+                ipaExportError = "Prepared \(displayName) using paired access.\\n\(status)" +
+                    "\\nLong-press to export or attempt decryption."
             } catch {
                 FilzaDiagnosticsAppend(
                     "IPA", "Paired Prepare \(bundleID) failed: \(error.localizedDescription)"

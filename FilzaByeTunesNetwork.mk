@@ -53,7 +53,7 @@ before-FilzaApplySandboxExt-all::
 	@python3 scripts/patch-3105-cleaner-all-apps.py
 	@python3 scripts/patch-3105-worse-query.py
 	@grep -Fq 'FILZA_MAIN_CLEANER_PARITY' ThirdParty/3105/Sources/CleanerView.swift
-	@grep -Fq 'FZWorseQueryGrantDirectory(application.containerPath)' ThirdParty/3105/Sources/CleanerView.swift
+	@grep -Fq 'FZWorseQueryGrantDirectory(candidate)' ThirdParty/3105/Sources/CleanerView.swift
 	@! grep -Fq 'allCleanerRecords' ThirdParty/3105/Sources/CleanerView.swift
 	@! grep -Fq 'remoteMessages' ThirdParty/3105/Sources/CleanerView.swift
 	@! grep -Fq 'airliftCatalog' ThirdParty/3105/Sources/CleanerView.swift

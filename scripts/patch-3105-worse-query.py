@@ -27,7 +27,7 @@ patch(store,
 # Cleaner is upgraded in the verified-root-only main UI adapter.
 view = Path("ThirdParty/3105/Sources/CleanerView.swift").read_text()
 assert "FILZA_MAIN_CLEANER_PARITY" in view
-assert "FZWorseQueryGrantDirectory(application.containerPath)" in view
+assert "FZWorseQueryGrantDirectory(candidate)" in view
 assert "ForEach(filteredRecords)" in view
 assert "allCleanerRecords" not in view
 print("3105 main Cleaner and Apps Manager real worse_query routing PASS")

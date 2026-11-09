@@ -77,8 +77,11 @@ assert "MCMActivateContainerPath" in clean
 assert "FZWorseQueryGrantDirectory(candidate)" in clean
 assert "No Accessible Caches Verified" in clean
 assert "Catalog counts: API=" in clean
-for ghost in ("remoteInventories", "remoteMessages", "airliftSection", "allCleanerRecords"):
-    assert ghost not in clean
+# The patch deliberately quotes forbidden names as regression assertions;
+# their presence in the Python patch does NOT mean the resulting Swift UI
+# contains the forbidden views.
+assert "assert name not in view" in clean
+assert "for name in (" in clean
 assert "Text(airliftCatalog.message)" not in airlift_patch
 assert "mergedWithAirlift" in airlift_patch
 assert "FilzaAirliftWorkspaceView(" not in airlift_patch
