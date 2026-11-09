@@ -343,12 +343,11 @@ imply a directly readable filesystem path; use **Browse via Airlift** to
 attempt a real remote snapshot. Paired-device scan failures are shown rather
 than silently being treated as empty local filesystems.
 
-The 3105 **Cleaner** now has a separate **Erosion app containers** section,
-listing actual metadata paths with a **Browse remote snapshot** action. Its
-existing safe local Cache/tmp cleaning continues to remove only files in
-containers that iOS actually grants Filza direct access to. **Erosion does not
-supply a general system-cache deletion capability**, so these remote paths
-are never counted as reclaimable bytes or silently deleted.
+The 3105 **Cleaner** retains main's exact single cache-positive app list
+and original UI. No Erosion category, remote-only fake app row, inferred cache
+size or safety-stop text is placed in this screen. Only cache directories
+actually openable by Filza are eligible for main's original cleaner. Paired
+Erosion/Airlift folder snapshots are available through native Filza instead.
 
 The 3105 **Wallpapers** panel adds a user-confirmed **Apply selected pack via
 Erosion/Airlift** alternative when native MCM access is unavailable. The
@@ -432,42 +431,28 @@ The Erosion Airlift static-library cache is validated for both
 runtime must be rebuilt before Wallpapers/PosterBoard integration is accepted.
 
 
-### Cleaner for all installed apps (verified local + paired Airlift)
+### Main-branch Cleaner parity + new filesystem backend
 
-3105 Cleaner is an **installed-app cache cleaner**, not a Filza-only cleaner.
-Its local scanner discovers apps through LaunchServices, MCM and the available
-MobileHouseArrest candidates. The local app catalog no longer discards a
-bundle ID after one denied MCM lookup: only a successfully readable cache is
-marked resolved. When cleaning, it reuses the verified container instead of
-blindly repeating MCM activation. Deletion remains restricted to each app's
-`Library/Caches` and `tmp`; application documents, databases, keychains,
-preferences and home folders are excluded.
+The 3105 **Cleaner screen is the original main-branch UI**: same search,
+toolbar, selection, real cache sizes, confirmation, and one list of eligible
+apps. It is an installed-app cleaner, not a Filza-only cleaner. Existing
+MobileInstallation, MCM/MobileHouseArrest and LaunchServices discovery remain.
 
-After Filza's unified pairing connects, Cleaner also lists **all installed
-apps returned by paired InstallationProxy**, including apps without a local
-sandbox grant. Each app can explicitly request **Inspect app cache via
-Airlift**: Erosion's actual folder reader creates a ZIP snapshot of that
-app's `Library/Caches` and `tmp`, and Filza requires confirmed restore before
-inspecting the archive. Archive entries are validated, not guessed from app
-metadata. Only entries confirmed in a complete snapshot are eligible for an
-additional destructive confirmation and **Clean verified Airlift cache**.
-The remote removal uses Erosion's actual exact-path operation, stops on first
-error, and logs the accepted count and **estimated** bytes; it never presents
-transport success as verified reclaimed space. Failed, incomplete, oversized,
-unsafe, or inaccessible snapshots disable remote cleaning until a fresh scan.
+The only changes are inside directory acquisition and de-duplication.
+A failed MCM lookup no longer masks a later valid app container. A real
+OS-reported app data path can receive a genuine `worse_query` extension
+grant only when ordinary MCM access is denied; the same original
+`LimitedCleanerService` still validates readable per-app directories and
+limits removal to `Library/Caches` and `tmp`. Previously scanned roots
+are revalidated before cleaning. No other app data is cleaned implicitly.
 
-Airlift is an optional per-app fallback, not proof of universal filesystem
-access on iOS 27.0.1. Protected app containers that iOS refuses remain clearly
-unavailable. No automatic mass deletion or hidden background cleanup runs.
+Airlift/NFCARD remain compiled as additional native Filza backends with
+paired snapshots, but remote InstallationProxy metadata is not treated as
+a locally readable cache. Cleaner shows no zero-size metadata placeholders,
+remote-recovery entries, additional browser or alternate app category.
 
-
-**Cleaner compatibility invariant:** the original main-branch Cleaner UI and
-its API, LaunchServices, MCM/MobileHouseArrest, app-container resolution, and
-existing iOS-version-specific direct-access paths remain unchanged in the
-tracked 3105 source. The build overlays a verified per-app Airlift fallback
-only after the original local Cleaner is staged. Local cache scanning and
-deleting still use `LimitedCleanerService` with the original safe
-`Library/Caches` and `tmp` allowlist; paired remote data is a separately
-confirmed, explicitly selected option and is not mixed into local reclaimable
-size calculations. CI now checks the legacy routes are present after staging
-and applying the Airlift overlay.
+The build now checks that the generated Cleaner UI matches the actual
+staged main Cleaner after reversing only the backend adaptations, and the
+3105 verification fails if a remote-only row or fake list is reintroduced.
+These are integration checks, not evidence that iOS 27.0.1 has granted
+cross-app access on a device.

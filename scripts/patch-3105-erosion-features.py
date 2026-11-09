@@ -26,23 +26,7 @@ def patch(path, replacements, marker):
     file.write_text(text, encoding="utf-8")
     print(f"Patched {file}")
 
-cleaner = "ThirdParty/3105/Sources/CleanerView.swift"
-patch(cleaner, [
-    (
-        "    @State private var activeAlert: CleanerAlert?",
-        """    @State private var activeAlert: CleanerAlert?
-    // FILZA_EROSION_CLEANER_BRIDGE
-    @ObservedObject private var airliftCatalog = FilzaAirliftCatalogStore.shared"""
-    ),
-    (
-        """                hasLoaded = true
-                reload()
-            }""",
-        """                hasLoaded = true
-                reload()
-            }"""
-    ),
-], "FILZA_EROSION_CLEANER_BRIDGE")
+# Main Cleaner UI untouched. Erosion remains available to Wallpaper Lab and native Filza.
 
 wallpaper = "ThirdParty/3105/Sources/WallpaperLabView.swift"
 patch(wallpaper, [

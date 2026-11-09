@@ -24,27 +24,10 @@ patch(store,
         }
 
         // Fallback for iOS builds where MCM refuses to hand out sandbox""")
-cleaner = "ThirdParty/3105/Sources/CleanerView.swift"
-patch(cleaner,
-    """                        return MCMActivateContainerPath(
-                            2, application.bundleID, false, &activationError
-                        )
-                    },""",
-    """                        if let direct = MCMActivateContainerPath(
-                            2, application.bundleID, false, &activationError
-                        ) { return direct }
-                        // The same native backend grants a real KNOWN path,
-                        // then the original Cleaner validates actual caches.
-                        if ContainerStore.isApplicationContainerPath(application.containerPath) {
-                            return FZWorseQueryGrantDirectory(application.containerPath)
-                        }
-                        return nil
-                    },""")
-body = Path(cleaner).read_text()
-assert "FILZA_UNIFIED_CLEANER_LIST_V1" in body
-assert "ForEach(filteredRecords)" in body
-assert "airliftSection" not in body
-assert "ForEach(airliftCatalog.apps)" not in body
-assert "FZWorseQueryGrantDirectory(application.containerPath)" in body
-assert "FilzaAirliftCleaner.inspect(app)" in body
-print("3105 unified original Cleaner + Apps Manager direct WQ fallback PASS")
+# Cleaner is upgraded in the verified-root-only main UI adapter.
+view = Path("ThirdParty/3105/Sources/CleanerView.swift").read_text()
+assert "FILZA_MAIN_CLEANER_PARITY" in view
+assert "FZWorseQueryGrantDirectory(application.containerPath)" in view
+assert "ForEach(filteredRecords)" in view
+assert "allCleanerRecords" not in view
+print("3105 main Cleaner and Apps Manager real worse_query routing PASS")

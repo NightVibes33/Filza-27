@@ -281,7 +281,9 @@ jobs:
           grep -Fq 'FZNativeCoreMediaRequest' Tweak.m
           grep -Fq 'SYSTEM PATHS - READ-ONLY' FilzaNativeCoreMediaBridge.swift
           grep -Fq 'FILZA_EROSION_WALLPAPER_BRIDGE' ThirdParty/3105/Sources/WallpaperLabView.swift
-          grep -Fq 'FILZA_ALL_APP_AIRLIFT_CLEANER' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'FILZA_MAIN_CLEANER_PARITY' ThirdParty/3105/Sources/CleanerView.swift
+          ! grep -Fq 'allCleanerRecords' ThirdParty/3105/Sources/CleanerView.swift
+          ! grep -Fq 'remoteMessages' ThirdParty/3105/Sources/CleanerView.swift
           ! grep -Fq 'Erosion fallback' ThirdParty/3105/Sources/WallpaperLabView.swift
           ! grep -Fq 'Erosion app containers' ThirdParty/3105/Sources/CleanerView.swift
           # Swift string constants may not be stored as contiguous ASCII in

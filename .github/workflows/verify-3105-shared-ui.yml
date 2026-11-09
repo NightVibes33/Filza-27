@@ -128,7 +128,7 @@ jobs:
           ! grep -Fq '@python3 scripts/patch-3105-cleaner-all-apps.py' Makefile
           ! grep -Fq '@bash scripts/patch-3105-ipa-export.sh' Makefile
           ! grep -Fq '@bash scripts/patch-3105-app-manager-view-sort.sh' Makefile
-          grep -Fq 'airliftCatalog.refresh()' scripts/patch-3105-cleaner-all-apps.py
+          grep -Fq 'FILZA_MAIN_CLEANER_PARITY' scripts/patch-3105-cleaner-all-apps.py
           grep -Fq 'preferredGeneration: report?.layout.generation' scripts/patch-3105-erosion-features.py
           grep -Fq 'selectedGeneration(preferredGeneration)' FilzaErosionPosterBoardWriter.swift
 
@@ -159,15 +159,12 @@ jobs:
           grep -Fq 'ContainerStore.resolveAppContainerPath' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'LimitedCleanerService.clean' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'static let allowedRelativeDirectories = ["Library/Caches", "tmp"]' ThirdParty/3105/Sources/LimitedCleanerService.swift
-          grep -Fq 'FILZA_ALL_APP_AIRLIFT_CLEANER' ThirdParty/3105/Sources/CleanerView.swift
-          grep -Fq 'FILZA_UNIFIED_CLEANER_LIST_V1' ThirdParty/3105/Sources/CleanerView.swift
-          grep -Fq 'allCleanerRecords' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'FILZA_MAIN_CLEANER_PARITY' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'ForEach(filteredRecords)' ThirdParty/3105/Sources/CleanerView.swift
-          grep -Fq 'remoteOperationsLocked' ThirdParty/3105/Sources/CleanerView.swift
-          ! grep -Fq 'airliftSection' ThirdParty/3105/Sources/CleanerView.swift
-          ! grep -Fq 'ForEach(airliftCatalog.apps)' ThirdParty/3105/Sources/CleanerView.swift
-          grep -Fq 'FilzaAirliftCleaner.inspect(app)' ThirdParty/3105/Sources/CleanerView.swift
-          grep -Fq 'FilzaAirliftCleaner.removeVerifiedCacheEntries(inventory)' ThirdParty/3105/Sources/CleanerView.swift
+          ! grep -Fq 'allCleanerRecords' ThirdParty/3105/Sources/CleanerView.swift
+          ! grep -Fq 'remoteMessages' ThirdParty/3105/Sources/CleanerView.swift
+          ! grep -Fq 'airliftCatalog' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'scannedBundleIDs.insert(bundleID)' ThirdParty/3105/Sources/CleanerCatalog.swift
           grep -Fq 'al_exploit_remove_path' FilzaAirliftBackend.swift
           grep -Fq 'try await FilzaAirlift.snapshot' FilzaAirliftCleaner.swift
           grep -Fq 'SecureZIPArchive.extract' FilzaAirliftCleaner.swift
@@ -178,7 +175,7 @@ jobs:
           grep -Fq 'FZEnsurePairedFolderButton(self)' Tweak.m
           ! grep -Fq 'createSymbolicLink(at: alias' FilzaAirliftBackend.swift
           ! grep -Fq 'NSHomeDirectory()' ThirdParty/3105/Sources/CleanerView.swift
-          grep -Fq 'FILZA_EROSION_CLEANER_BRIDGE' ThirdParty/3105/Sources/CleanerView.swift
+          ! grep -Fq 'FILZA_EROSION_CLEANER_BRIDGE' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'FILZA_EROSION_WALLPAPER_BRIDGE' ThirdParty/3105/Sources/WallpaperLabView.swift
           grep -Fq 'FilzaErosionPosterBoardWriter.apply' ThirdParty/3105/Sources/WallpaperLabView.swift
           grep -Fq 'FilzaErosionPosterBoardWriter.swift' Makefile

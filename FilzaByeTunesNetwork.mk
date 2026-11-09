@@ -48,17 +48,16 @@ before-FilzaApplySandboxExt-all::
 
 	# Bridge Erosion/Airlift into the actual 3105 Cleaner and Wallpaper UI.
 	@python3 scripts/patch-3105-erosion-features.py
-	# Cache cleaning is per installed app: actual local grants, then opt-in paired Airlift.
+	# Preserve main Cleaner exactly; WQ is a backend-only, verified cache-root fallback.
+	# Airlift/NFCARD remain available in the original native Filza file browser.
 	@python3 scripts/patch-3105-cleaner-all-apps.py
 	@python3 scripts/patch-3105-worse-query.py
-	@grep -Fq 'FILZA_ALL_APP_AIRLIFT_CLEANER' ThirdParty/3105/Sources/CleanerView.swift
-	@grep -Fq 'FILZA_UNIFIED_CLEANER_LIST_V1' ThirdParty/3105/Sources/CleanerView.swift
-	@grep -Fq 'allCleanerRecords' ThirdParty/3105/Sources/CleanerView.swift
-	@! grep -Fq 'airliftSection' ThirdParty/3105/Sources/CleanerView.swift
-	@grep -Fq 'FilzaAirliftCleaner.inspect(app)' ThirdParty/3105/Sources/CleanerView.swift
-	@grep -Fq 'FilzaAirliftCleaner.removeVerifiedCacheEntries(inventory)' ThirdParty/3105/Sources/CleanerView.swift
+	@grep -Fq 'FILZA_MAIN_CLEANER_PARITY' ThirdParty/3105/Sources/CleanerView.swift
+	@grep -Fq 'FZWorseQueryGrantDirectory(application.containerPath)' ThirdParty/3105/Sources/CleanerView.swift
+	@! grep -Fq 'allCleanerRecords' ThirdParty/3105/Sources/CleanerView.swift
+	@! grep -Fq 'remoteMessages' ThirdParty/3105/Sources/CleanerView.swift
+	@! grep -Fq 'airliftCatalog' ThirdParty/3105/Sources/CleanerView.swift
 	@test -f FilzaAirliftCleaner.swift
-	@grep -Fq 'FILZA_EROSION_CLEANER_BRIDGE' ThirdParty/3105/Sources/CleanerView.swift
 	@grep -Fq 'FILZA_EROSION_WALLPAPER_BRIDGE' ThirdParty/3105/Sources/WallpaperLabView.swift
 	@grep -Fq 'FilzaErosionPosterBoardWriter.apply' ThirdParty/3105/Sources/WallpaperLabView.swift
 	@test -f FilzaErosionPosterBoardWriter.swift
