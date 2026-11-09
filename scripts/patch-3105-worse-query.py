@@ -24,6 +24,26 @@ patch(store,
         }
 
         // Fallback for iOS builds where MCM refuses to hand out sandbox""")
+# Preserve original bad_query handles on every iOS it supports. Where it
+# cannot grant a discovered UUID directory, worse_query can supply a verified
+# directory grant without ever masquerading as a bad_query integer handle.
+patch(store,
+    "        let metadataHandle = grantContainerAccess(directMetadataPath)\n        if metadataHandle >= 0 {",
+    """        let metadataHandle = grantContainerAccess(directMetadataPath)
+        let metadataWQ = metadataHandle < 0 &&
+            FZWorseQueryGrantDirectory(fallback.containerPath) != nil
+        if metadataHandle >= 0 || metadataWQ {""")
+patch(store,
+    "            let metadata = readContainerMetadata(containerPath: fallback.containerPath)\n            bad_query_release(metadataHandle)",
+    """            let metadata = readContainerMetadata(containerPath: fallback.containerPath)
+            if metadataHandle >= 0 { bad_query_release(metadataHandle) }""")
+patch(store,
+    "        let handle = grantContainerAccess(fallback.containerPath)\n        guard handle >= 0 else { return nil }\n        defer { bad_query_release(handle) }",
+    """        let handle = grantContainerAccess(fallback.containerPath)
+        let verifiedWQ = handle < 0 &&
+            FZWorseQueryGrantDirectory(fallback.containerPath) != nil
+        guard handle >= 0 || verifiedWQ else { return nil }
+        defer { if handle >= 0 { bad_query_release(handle) } }""")
 # Cleaner is upgraded in the verified-root-only main UI adapter.
 view = Path("ThirdParty/3105/Sources/CleanerView.swift").read_text()
 assert "FILZA_MAIN_CLEANER_PARITY" in view
