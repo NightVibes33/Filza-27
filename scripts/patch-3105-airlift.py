@@ -154,34 +154,10 @@ change(
         let emptyMessage = language.text("browser.empty")""",
 )
 
-# Display Airlift connection status *inside the app list*. The existing
-# top-right Refresh already calls reload(), which performs an Airlift scan;
-# another bottom Scan button was redundant and covered the 3105 tab bar.
-change(
-    """    private var appRows: some View {
-        List {""",
-    """    private var appRows: some View {
-        List {
-            Section {
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "network")
-                        .foregroundStyle(.secondary)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Airlift")
-                            .font(.caption.weight(.semibold))
-                        Text(airliftCatalog.message)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: 0)
-                    if airliftCatalog.scanning {
-                        ProgressView().controlSize(.mini)
-                    }
-                }
-                .accessibilityElement(children: .combine)
-            }""",
-)
-
+# Main-branch parity: appRows must stay the original installed-app list.
+# Airlift extends discovery and native Filza snapshot access as a backend,
+# not as a connection-status row, another section or a separate browser.
+assert '    private var appRows: some View {\n        List {' in s
+assert 'Text(airliftCatalog.message)' not in s
 p.write_text(s, encoding="utf-8")
-print("Applied Erosion-compatible paired metadata route to upstream 3105")
+print("GREEN: original 3105 Apps Manager rows preserved; Airlift augments metadata only")

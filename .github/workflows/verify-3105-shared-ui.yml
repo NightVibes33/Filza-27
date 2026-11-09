@@ -209,7 +209,8 @@ jobs:
           grep -Fq 'let canonicalTarget = normalize(target)' FilzaAirliftBackend.swift
           grep -Fq 'let protectedAppContainer = [' FilzaAirliftBackend.swift
           grep -Fq 'InstallationProxy returned' FilzaAirliftBackend.swift
-          grep -Fq 'Text(airliftCatalog.message)' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          ! grep -Fq 'Text(airliftCatalog.message)' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'private var appRows: some View {' ThirdParty/3105/Sources/AppDataBrowserView.swift
           ! grep -Fq 'Button("Scan")' ThirdParty/3105/Sources/AppDataBrowserView.swift
           ! grep -Fq '.safeAreaInset(edge: .bottom)' ThirdParty/3105/Sources/AppDataBrowserView.swift
           grep -Fq 'DeviceManager.shared.rpPairingFile.path' FilzaAirliftBackend.swift
