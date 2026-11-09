@@ -264,7 +264,7 @@ jobs:
           grep -Fq 'FZWorseQueryResolveAppDataContainer' MCMFilzaIntegration.m
           grep -Fq 'Open Direct' Tweak.m
           grep -Fq 'FILZA_REAL_WORSE_QUERY_APP_ACCESS' ThirdParty/3105/Sources/ContainerStore.swift
-          grep -Fq 'FZWorseQueryGrantDirectory(application.containerPath)' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'FZWorseQueryGrantDirectory(candidate)' ThirdParty/3105/Sources/CleanerView.swift
           # Airlift remains a private backend; its removed standalone app must
           # not be compiled into the IPA.
           grep -aFq 'al_list_app_containers' "$DYLIB"
