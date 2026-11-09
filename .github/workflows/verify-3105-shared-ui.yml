@@ -151,7 +151,7 @@ jobs:
           python3 scripts/patch-3105-worse-query.py
           python3 -m py_compile scripts/patch-3105-cleaner-all-apps.py
           grep -Fq 'FILZA_REAL_WORSE_QUERY_APP_ACCESS' ThirdParty/3105/Sources/ContainerStore.swift
-          grep -Fq 'let metadataWQ = metadataHandle < 0' ThirdParty/3105/Sources/ContainerStore.swift
+          grep -Fq 'let metadataWQ = directMetadata == nil' ThirdParty/3105/Sources/ContainerStore.swift
           grep -Fq 'let verifiedWQ = handle < 0' ThirdParty/3105/Sources/ContainerStore.swift
           grep -Fq 'FZWorseQueryGrantDirectory(candidate)' ThirdParty/3105/Sources/CleanerView.swift
           # Preserve the original all-iOS-version local discovery and safe cleaner.

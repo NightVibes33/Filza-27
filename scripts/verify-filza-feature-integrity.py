@@ -49,7 +49,7 @@ assert "FilzaUnifiedPairing.swift" in make
 assert "scripts/patch-mond-worse-query-routing.py" in network
 assert "FZWorseQueryGrantDirectory" in read("scripts/patch-mond-worse-query-routing.py")
 assert "matching.count == 1" in read("FilzaAirliftIPAExporter.swift")
-assert "let metadataWQ = metadataHandle < 0" in read("scripts/patch-3105-worse-query.py")
+assert "let metadataWQ = directMetadata == nil" in read("scripts/patch-3105-worse-query.py")
 assert "let verifiedWQ = handle < 0" in read("scripts/patch-3105-worse-query.py")
 assert "scripts/patch-3105-ipa-export.sh" in network
 assert "scripts/patch-3105-cleaner-all-apps.py" in network
