@@ -1,9 +1,11 @@
 name: Verify Filza 27 arm64 IPA
+# Automatic CI validation for feature-branch updates and PR synchronization.
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, feature/erozzion-airlift-ios18-27 ]
   pull_request:
+    types: [ opened, reopened, synchronize, edited ]
     branches: [ main ]
     paths:
       - 'FilzaAirlift*.swift'
@@ -273,6 +275,10 @@ jobs:
           grep -Fq 'FZWorseQueryGrantDirectory' FilzaWorseQueryBridge.m
           grep -Fq 'FZContainerDiscoveryStart' MCMFilzaIntegration.m
           grep -Fq 'MCMStartVerifiedWQDiscovery' MCMFilzaIntegration.m
+          grep -Fq 'FZLegacyLogSeed' FZContainerDiscovery.m
+          grep -Fq 'gConfirmedGrantCount % 128' FilzaWorseQueryBridge.m
+          grep -Fq 'ffiSerialQueue.sync' FilzaAirliftBackend.swift
+          grep -Fq 'awaitingPairedInventory' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'scanNewApps(pairedApps)' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'FZLiveContainerPath' Tweak.m
           grep -Fq 'FILZA_WQFILES_DYNAMIC_DISCOVERY' ThirdParty/3105/Sources/ContainerStore.swift

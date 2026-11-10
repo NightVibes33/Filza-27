@@ -24,6 +24,7 @@ static NSMutableDictionary<NSString *, NSNumber *> *gHandles;
 static NSMutableArray<NSString *> *gGrantOrder;
 static const NSUInteger kFZWQMaxLeases = 192;
 static NSString *gStatus;
+static NSUInteger gConfirmedGrantCount = 0;
 
 static NSObject *FZWQLock(void) {
     static NSObject *lock;
@@ -49,7 +50,7 @@ NSString *FZWorseQueryLastStatus(void) {
 // SideStore requests the base group from the IPA's ad-hoc entitlement
 // signature, then registers a per-team group (typically BASE.TEAMID).
 // Resolve what iOS actually granted. Do not assume a loose plist is authority.
-static NSString *FZWQInstalledGroup(void) {
+static NSString *FZWQInstalledGroupUncached(void) {
     FZWQSecTaskRef task = SecTaskCreateFromSelf(kCFAllocatorDefault);
     if (!task) return nil;
     CFErrorRef error = NULL;
@@ -79,6 +80,17 @@ static NSString *FZWQInstalledGroup(void) {
     CFRelease(task);
     // An ambiguous entitlement set must not select an arbitrary cache path.
     return matches.count == 1 ? matches.firstObject : nil;
+}
+
+// The installed signature cannot change while this process is running.
+// Avoid repeating SecTask + App Group container resolution 2,000+ times.
+static NSString *FZWQInstalledGroup(void) {
+    static NSString *group;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        group = [FZWQInstalledGroupUncached() copy];
+    });
+    return group;
 }
 
 // Inspect the live signature after SideStore installation, without running
@@ -295,7 +307,16 @@ NSString *FZWorseQueryGrantDirectory(NSString *path) {
         }
         gHandles[canonical] = @(handle);
         [gGrantOrder addObject:canonical];
-        FZWQReport([NSString stringWithFormat:@"Confirmed live directory: %@", canonical]);
+        // Do not open, write, fsync, and close Runtime.log for every
+        // successful grant in a multi-thousand-container discovery.
+        // Errors and safety stops remain immediately recorded.
+        gStatus = [NSString stringWithFormat:@"Confirmed live directory: %@", canonical];
+        gConfirmedGrantCount++;
+        if (gConfirmedGrantCount % 128 == 0) {
+            FilzaDiagnosticsAppend(@"WorseQuery",
+                [NSString stringWithFormat:@"Confirmed %lu scoped directory grants (latest=%@)",
+                    (unsigned long)gConfirmedGrantCount, canonical]);
+        }
         return canonical;
     }
 }

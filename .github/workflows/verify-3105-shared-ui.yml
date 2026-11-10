@@ -2,8 +2,9 @@ name: Verify 3105 1.1.1 + Shared Embedded UI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, feature/erozzion-airlift-ios18-27 ]
   pull_request:
+    types: [ opened, reopened, synchronize, edited ]
     branches: [ main ]
   workflow_dispatch:
 
@@ -155,6 +156,10 @@ jobs:
           python3 scripts/patch-3105-paired-cache-catalog.py
           grep -Fq 'scanNewApps(pairedApps)' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'pairedInventory.refresh()' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'awaitingPairedInventory' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'FileManager.default.homeDirectoryForCurrentUser.path' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'FZLegacyLogSeed' FZContainerDiscovery.m
+          grep -Fq 'ffiSerialQueue.sync' FilzaAirliftBackend.swift
           python3 -m py_compile scripts/patch-3105-cleaner-all-apps.py
           grep -Fq 'FILZA_REAL_WORSE_QUERY_APP_ACCESS' ThirdParty/3105/Sources/ContainerStore.swift
           grep -Fq 'let metadataWQ = directMetadata == nil' ThirdParty/3105/Sources/ContainerStore.swift

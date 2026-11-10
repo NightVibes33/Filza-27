@@ -84,8 +84,21 @@ NSString *FZContainerDiscoveryIdentifier(NSString *path) {
         isKindOfClass:NSString.class] ? metadata[@"MCMMetadataIdentifier"] : nil;
     return name.length && ![name containsString:@"/"] ? name : nil;
 }
-// Discover the data volume's live inode upper bound without assuming that a
-// fixed two-million-inode range includes recently installed apps.
+// Discover the data volume's live inode upper bound. Persist completed
+// scans so the next launch checks *new* IDs rather than rescanning 178M.
+static const NSTimeInterval kFZFullScanMaxAge = 7 * 24 * 60 * 60;
+static const NSInteger kFZScanCacheVersion = 2;
+
+static NSString *FZScanCachePath(void) {
+    NSString *support = NSSearchPathForDirectoriesInDomains(
+        NSApplicationSupportDirectory, NSUserDomainMask, YES).firstObject;
+    if (!support.length) return nil;
+    NSString *dir = [support stringByAppendingPathComponent:@"Filza27"];
+    [NSFileManager.defaultManager createDirectoryAtPath:dir
+         withIntermediateDirectories:YES attributes:nil error:nil];
+    return [dir stringByAppendingPathComponent:@"WQInodeScanCache.plist"];
+}
+
 static int64_t FZCurrentInodeBound(fsid_t *volume, int64_t *probe) {
     NSString *temp = NSTemporaryDirectory();
     NSString *path = [temp stringByAppendingPathComponent:
@@ -104,6 +117,118 @@ static int64_t FZCurrentInodeBound(fsid_t *volume, int64_t *probe) {
     return (int64_t)st.st_ino + 100000;
 }
 
+// Upgrade existing Filza installations without repeating an eight-minute
+// inode pass. Build 394 already logged each *verified* discovered candidate.
+// These paths are metadata only: all aliases must still pass a fresh WQ grant.
+// Refuse partial log sets; a missing/incomplete log falls back to a full scan.
+static NSDictionary *FZLegacyLogSeed(fsid_t volume, int64_t currentProbe) {
+    NSString *logPath = [FilzaDiagnosticsDirectory()
+        stringByAppendingPathComponent:@"Runtime.log"];
+    NSDictionary *attrs = [NSFileManager.defaultManager
+        attributesOfItemAtPath:logPath error:nil];
+    unsigned long long length = [attrs[NSFileSize] unsignedLongLongValue];
+    if (length == 0 || length > 8 * 1024 * 1024) return nil;
+    NSString *contents = [NSString stringWithContentsOfFile:logPath
+                               encoding:NSUTF8StringEncoding error:nil];
+    if (!contents.length) return nil;
+    NSMutableDictionary<NSString *, NSMutableSet<NSString *> *> *found =
+        [NSMutableDictionary dictionary];
+    for (NSString *root in FZRoots()) found[root] = [NSMutableSet set];
+    long long expected = 0, lastUpper = 0;
+    NSString *grantMarker = @" | WorseQuery | Confirmed live directory: ";
+    for (NSString *line in [contents componentsSeparatedByString:@"\n"]) {
+        NSRange done = [line rangeOfString:@" | WQDiscovery | Inode scan finished: "];
+        if (done.location != NSNotFound) {
+            NSScanner *count = [NSScanner scannerWithString:
+                [line substringFromIndex:NSMaxRange(done)]];
+            long long readCount = 0;
+            if (![count scanLongLong:&readCount]) continue;
+            NSRange upperTag = [line rangeOfString:@"; upper="];
+            long long readUpper = 0;
+            if (upperTag.location == NSNotFound ||
+                ![[NSScanner scannerWithString:
+                    [line substringFromIndex:NSMaxRange(upperTag)]]
+                    scanLongLong:&readUpper]) continue;
+            if (readCount > 0 && readUpper > 100000) {
+                expected = readCount;
+                lastUpper = readUpper;
+            }
+        }
+        NSRange marker = [line rangeOfString:grantMarker];
+        if (marker.location == NSNotFound) continue;
+        NSString *candidate = FZCanonical(
+            [line substringFromIndex:NSMaxRange(marker)]);
+        if (!FZContainerDiscoveryIsSupportedTarget(candidate)) continue;
+        for (NSString *root in FZRoots())
+            if ([candidate hasPrefix:[root stringByAppendingString:@"/"]]) {
+                [found[root] addObject:candidate];
+                break;
+            }
+    }
+    NSUInteger total = 0;
+    NSMutableDictionary *roots = [NSMutableDictionary dictionary];
+    for (NSString *root in FZRoots()) {
+        roots[root] = [found[root].allObjects
+            sortedArrayUsingSelector:@selector(compare:)];
+        total += found[root].count;
+    }
+    if (expected < 100 || total < (NSUInteger)expected ||
+        lastUpper <= 100000 ||
+        lastUpper - 100000 > currentProbe) return nil;
+    FilzaDiagnosticsAppend(@"WQDiscovery",
+        [NSString stringWithFormat:
+         @"Restored %lu previously confirmed inode candidates from Runtime.log; grants will be reverified",
+         (unsigned long)total]);
+    return @{
+        @"version": @(kFZScanCacheVersion),
+        @"fsid0": @(volume.val[0]), @"fsid1": @(volume.val[1]),
+        @"probe": @(lastUpper - 100000),
+        @"fullAt": @(NSDate.date.timeIntervalSince1970),
+        @"roots": roots
+    };
+}
+
+static NSDictionary *FZLoadScanCache(fsid_t volume, int64_t currentProbe) {
+    NSString *path = FZScanCachePath();
+    NSDictionary *saved = path ? [NSDictionary dictionaryWithContentsOfFile:path] : nil;
+    if (![saved isKindOfClass:NSDictionary.class] ||
+        [saved[@"version"] integerValue] != kFZScanCacheVersion ||
+        [saved[@"fsid0"] intValue] != volume.val[0] ||
+        [saved[@"fsid1"] intValue] != volume.val[1]) return nil;
+    int64_t prior = [saved[@"probe"] longLongValue];
+    NSTimeInterval age = NSDate.date.timeIntervalSince1970 -
+        [saved[@"fullAt"] doubleValue];
+    if (age < 0 || age >= kFZFullScanMaxAge ||
+        prior < 1 || prior > currentProbe) return nil;
+    NSDictionary *roots = saved[@"roots"];
+    if (![roots isKindOfClass:NSDictionary.class]) return nil;
+    for (NSString *root in FZRoots()) {
+        NSArray *items = roots[root];
+        if (![items isKindOfClass:NSArray.class]) return nil;
+        for (id candidate in items)
+            if (![candidate isKindOfClass:NSString.class] ||
+                !FZContainerDiscoveryIsSupportedTarget(candidate)) return nil;
+    }
+    return saved;
+}
+
+static void FZStoreScanCache(fsid_t volume, int64_t probe,
+                             NSTimeInterval fullAt, NSDictionary *roots) {
+    NSString *path = FZScanCachePath();
+    if (!path.length) return;
+    NSDictionary *saved = @{
+        @"version": @(kFZScanCacheVersion),
+        @"fsid0": @(volume.val[0]),
+        @"fsid1": @(volume.val[1]),
+        @"probe": @(probe),
+        @"fullAt": @(fullAt),
+        @"roots": roots ?: @{}
+    };
+    if (![saved writeToFile:path atomically:YES])
+        FilzaDiagnosticsAppend(@"WQDiscovery",
+            @"Cannot persist inode scan cache. Next launch may rescan all IDs.");
+}
+
 void FZContainerDiscoveryStart(void (^completion)(NSDictionary<NSString *, NSArray<NSString *> *> *roots)) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -112,61 +237,93 @@ void FZContainerDiscoveryStart(void (^completion)(NSDictionary<NSString *, NSArr
             int64_t probe = 0;
             int64_t upper = FZCurrentInodeBound(&volume, &probe);
             if (upper < 1 || upper > INT64_MAX - 32768) {
-                FilzaDiagnosticsAppend(@"WQDiscovery", @"No same-volume inode bound; candidate scan unavailable");
+                FilzaDiagnosticsAppend(@"WQDiscovery",
+                    @"No same-volume inode bound; discovery unavailable");
                 if (completion) completion(@{});
                 return;
             }
-            FilzaDiagnosticsAppend(@"WQDiscovery",
-                [NSString stringWithFormat:@"Scanning inode candidates through %lld (background)",
-                    (long long)upper]);
+
+            NSDictionary *saved = FZLoadScanCache(volume, probe);
+            if (!saved) saved = FZLegacyLogSeed(volume, probe);
+            int64_t begin = saved ? [saved[@"probe"] longLongValue] + 1 : 1;
+            NSTimeInterval fullAt = saved ? [saved[@"fullAt"] doubleValue]
+                : NSDate.date.timeIntervalSince1970;
             NSArray<NSString *> *roots = FZRoots();
-            NSMutableDictionary<NSString *, NSMutableSet<NSString *> *> *found = [NSMutableDictionary dictionary];
-            for (NSString *root in roots) found[root] = [NSMutableSet set];
+            NSMutableDictionary<NSString *, NSMutableSet<NSString *> *> *found =
+                [NSMutableDictionary dictionary];
+            for (NSString *root in roots)
+                found[root] = [NSMutableSet setWithArray:saved[@"roots"][root] ?: @[]];
+
+            FilzaDiagnosticsAppend(@"WQDiscovery",
+                [NSString stringWithFormat:
+                    @"%@ inode scan: range %lld-%lld (%lld IDs), max four utility workers",
+                    saved ? @"Incremental cached" : @"First full",
+                    (long long)begin, (long long)upper,
+                    (long long)MAX((int64_t)0, upper - begin + 1)]);
+
             NSObject *guard = [NSObject new];
+            NSLock *counterLock = [NSLock new];
+            __block int64_t nextChunk = 0;
             const int64_t chunk = 32768;
-            size_t chunks = (size_t)((upper + chunk - 1) / chunk);
-            dispatch_apply(chunks, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^(size_t batch) {
-                @autoreleasepool {
-                    int64_t begin = (int64_t)batch * chunk + 1;
-                    int64_t end = MIN(begin + chunk - 1, upper);
-                    NSMutableDictionary<NSString *, NSMutableArray<NSString *> *> *local =
-                        [NSMutableDictionary dictionary];
-                    fsid_t vol = volume;
-                    char buffer[1200];
-                    for (int64_t ino = begin; ino <= end; ino++) {
-                        ssize_t length = fsgetpath(buffer, sizeof(buffer), &vol, (uint64_t)ino);
-                        if (length <= 0 || length >= (ssize_t)sizeof(buffer)) continue;
-                        NSString *candidate = [NSString stringWithUTF8String:buffer];
-                        if (!FZContainerDiscoveryIsSupportedTarget(candidate)) continue;
-                        NSString *canonical = FZCanonical(candidate);
-                        for (NSString *root in roots) {
-                            if (![canonical hasPrefix:[root stringByAppendingString:@"/"]]) continue;
-                            if (!local[root]) local[root] = [NSMutableArray array];
-                            [local[root] addObject:canonical];
-                            break;
+            int64_t total = MAX((int64_t)0, upper - begin + 1);
+            int64_t chunkCount = (total + chunk - 1) / chunk;
+            NSUInteger cores = NSProcessInfo.processInfo.activeProcessorCount;
+            size_t workers = (size_t)MAX((NSUInteger)1,
+                MIN((NSUInteger)4, cores / 2));
+
+            dispatch_apply(workers, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0),
+              ^(size_t __unused worker) {
+                fsid_t vol = volume;
+                char buffer[1200];
+                for (;;) {
+                    [counterLock lock];
+                    int64_t selected = nextChunk++;
+                    [counterLock unlock];
+                    if (selected >= chunkCount) break;
+                    @autoreleasepool {
+                        int64_t first = begin + selected * chunk;
+                        int64_t last = MIN(first + chunk - 1, upper);
+                        NSMutableDictionary<NSString *, NSMutableArray<NSString *> *> *local =
+                            [NSMutableDictionary dictionary];
+                        for (int64_t ino = first; ino <= last; ino++) {
+                            ssize_t length = fsgetpath(buffer, sizeof(buffer),
+                                                       &vol, (uint64_t)ino);
+                            if (length <= 0 || length >= (ssize_t)sizeof(buffer)) continue;
+                            NSString *candidate = [NSString stringWithUTF8String:buffer];
+                            if (!FZContainerDiscoveryIsSupportedTarget(candidate)) continue;
+                            NSString *canonical = FZCanonical(candidate);
+                            for (NSString *root in roots) {
+                                if (![canonical hasPrefix:[root stringByAppendingString:@"/"]])
+                                    continue;
+                                if (!local[root]) local[root] = [NSMutableArray array];
+                                [local[root] addObject:canonical];
+                                break;
+                            }
                         }
-                    }
-                    @synchronized (guard) {
-                        for (NSString *root in local)
-                            for (NSString *candidate in local[root])
-                                [found[root] addObject:candidate];
+                        @synchronized (guard) {
+                            for (NSString *root in local)
+                                for (NSString *candidate in local[root])
+                                    [found[root] addObject:candidate];
+                        }
                     }
                 }
             });
+
             NSMutableDictionary *snapshot = [NSMutableDictionary dictionary];
             NSUInteger count = 0;
             for (NSString *root in roots) {
-                NSArray *list = [found[root].allObjects sortedArrayUsingSelector:@selector(compare:)];
+                NSArray *list = [found[root].allObjects
+                    sortedArrayUsingSelector:@selector(compare:)];
                 snapshot[root] = list;
                 count += list.count;
             }
             @synchronized (FZLock()) { gCached = [snapshot copy]; }
-            int64_t check = 0;
-            fsid_t checkVolume = {{0}};
-            FZCurrentInodeBound(&checkVolume, &check);
+            FZStoreScanCache(volume, probe, fullAt, snapshot);
             FilzaDiagnosticsAppend(@"WQDiscovery",
-                [NSString stringWithFormat:@"Inode scan finished: %lu candidate paths; upper=%lld, followup=%lld. Paths are not permissions.",
-                   (unsigned long)count, (long long)upper, (long long)check]);
+                [NSString stringWithFormat:
+                    @"%@ scan complete: %lu candidate paths; %lld new inode IDs inspected",
+                    saved ? @"Incremental" : @"Full", (unsigned long)count,
+                    (long long)total]);
             if (completion) completion([snapshot copy]);
         });
     });

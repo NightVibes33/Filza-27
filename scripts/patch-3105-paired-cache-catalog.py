@@ -24,6 +24,7 @@ once(
     // existing local cache scanner. They do not grant read/write privileges.
     @ObservedObject private var pairedInventory = FilzaAirliftCatalogStore.shared
     @State private var needsPairedRescan = false
+    @State private var awaitingPairedInventory = false
     @State private var records: [CleanerAppRecord] = []""",
     "state")
 
@@ -38,8 +39,14 @@ once(
                 hasLoaded = true
                 // InstallationProxy discovery is metadata-only. Nothing in
                 // this step remotely modifies or reads an app folder.
-                pairedInventory.refresh()
-                reload()
+                if pairedInventory.apps.isEmpty && FilzaAirlift.pairedRecord() != nil {
+                    // Do not scan 341 containers twice. Wait briefly for
+                    // InstallationProxy's metadata-only catalog first.
+                    awaitingPairedInventory = true
+                    pairedInventory.refresh()
+                } else {
+                    reload()
+                }
             }""",
     "metadata-only catalog start")
 
@@ -47,14 +54,32 @@ once(
     """            .onReceive(NotificationCenter.default.publisher(""",
     """            .onReceive(pairedInventory.$apps) { apps in
                 guard hasLoaded, !apps.isEmpty else { return }
-                if isScanning {
+                if awaitingPairedInventory {
+                    awaitingPairedInventory = false
+                    reload()
+                } else if isScanning {
+                    // Refresh once only if new metadata actually arrives.
                     needsPairedRescan = true
-                } else if !isCleaning {
+                } else if !isCleaning && records.isEmpty {
                     reload()
                 }
             }
+            .onReceive(pairedInventory.$scanning) { active in
+                guard hasLoaded, awaitingPairedInventory, !active else { return }
+                // Failed pairing/empty catalog: use the original local scan.
+                awaitingPairedInventory = false
+                reload()
+            }
             .onReceive(NotificationCenter.default.publisher(""",
     "refresh when paired catalog arrives")
+
+# A full inode pass may finish minutes after an otherwise successful Cleaner
+# scan. Do not automatically rescan 341 healthy apps for a directory-list
+# notification; empty results can retry and Refresh remains available.
+once(
+    "                if !isBusy { reload() }",
+    "                if !isBusy && records.isEmpty { reload() }",
+    "skip pointless post-inode rescan")
 
 once(
     """        let requestID = UUID()
@@ -94,8 +119,7 @@ once(
     """                isScanning = false
                 if needsPairedRescan {
                     needsPairedRescan = false
-                    // A catalog that arrived midscan must be scanned once
-                    // using its current local candidates, not fake UI rows.
+                    // Defer one rescan only for a newly arrived paired list.
                     DispatchQueue.main.async { reload() }
                 }
                 log(
@@ -123,6 +147,8 @@ once(
     "renew selected app grants safely")
 
 assert "pairedInventory.$apps" in view
+assert "awaitingPairedInventory" in view
+assert "pairedInventory.$scanning" in view
 assert "scanNewApps(pairedApps)" in view
 assert "FZWorseQueryGrantDirectory(scannedRoot)" in view
 for token in ("airliftSection", "allCleanerRecords", "Not inspected •"):

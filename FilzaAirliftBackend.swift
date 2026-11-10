@@ -29,6 +29,13 @@ enum FilzaAirliftError: LocalizedError {
     }
 }
 enum FilzaAirlift {
+    // All FileOperations/InstallationProxy FFI calls share the paired remote
+    // transport. Keep them serialized so an app scan cannot overlap an ATC
+    // folder-read manifest transaction and close its channel prematurely.
+    private static let ffiSerialQueue = DispatchQueue(
+        label: "com.filza27.airlift.serial",
+        qos: .utility
+    )
     private struct Reply {
         let status: Int32
         let json: String?
@@ -78,10 +85,24 @@ enum FilzaAirlift {
         run: @escaping (UnsafePointer<CChar>, UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>, UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>) -> Int32
     ) async -> Reply {
         await Task.detached(priority: .utility) {
-            var json: UnsafeMutablePointer<CChar>?
-            var error: UnsafeMutablePointer<CChar>?
-            let status = pairing.withCString { run($0, &json, &error) }
-            return Reply(status: status, json: takeString(json), error: takeString(error))
+            ffiSerialQueue.sync {
+                let started = Date()
+                var json: UnsafeMutablePointer<CChar>?
+                var error: UnsafeMutablePointer<CChar>?
+                let status = pairing.withCString { run($0, &json, &error) }
+                let response = Reply(
+                    status: status, json: takeString(json), error: takeString(error)
+                )
+                let duration = Date().timeIntervalSince(started)
+                if duration > 8 || status != 0 {
+                    // Never log the pairing record or JSON token contents.
+                    FilzaDiagnosticsAppend(
+                        "Airlift",
+                        "Serialized remote operation: status=\(status), elapsed=\(Int(duration))s"
+                    )
+                }
+                return response
+            }
         }.value
     }
     private static func decoded(_ reply: Reply) throws -> [String: Any] {
@@ -220,6 +241,12 @@ enum FilzaAirlift {
             result = try decoded(reply)
         } catch {
             let detail = reply.error ?? reply.json ?? ""
+            if folder && detail.localizedCaseInsensitiveContains("ATC manifest") {
+                FilzaDiagnosticsAppend(
+                    "IPA",
+                    "Airlift remote ATC manifest failed before a valid local .app snapshot; this is a remote transfer/service failure, not ZIP packaging. Remote folder restoration must be verified before retrying."
+                )
+            }
             if folder && (detail.lowercased().contains("restore") ||
                           detail.lowercased().contains("recover") ||
                           detail.lowercased().contains("safety stop")) {
