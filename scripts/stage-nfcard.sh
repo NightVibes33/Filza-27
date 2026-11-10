@@ -23,6 +23,8 @@ if [[ -f "$DEST/NFCARD_PINNED_REVISION" &&
       -s "$DEST/ios-app/PairingController.swift" &&
       -s "$DEST/ios-app/AirCardLibrary.swift" &&
       -s "$DEST/ios-app/RemotePairingPortDiscovery.swift" &&
+      -s "$DEST/rust-core/src/exploit.rs" &&
+      "$(grep -c 'FILZA_AIRLIFT_APP_BUNDLE_SAFE_ROUTE' "$DEST/rust-core/src/exploit.rs" || true)" -ge 1 &&
       -s "$DEST/AirliftFFI/lib/libairlift_ffi.a" &&
       -s "$DEST/AirliftFFI/include/AirliftFFI/airlift.h" &&
       "$(grep -c 'al_exploit_inject_folder' "$DEST/AirliftFFI/include/AirliftFFI/airlift.h" || true)" -ge 1 &&
@@ -67,6 +69,10 @@ cp "$PATCH_WORK/Sources/AirCardLibrary.swift" "$DEST/ios-app/AirCardLibrary.swif
 cp "$PATCH_WORK/Sources/RemotePairingPortDiscovery.swift" "$DEST/ios-app/RemotePairingPortDiscovery.swift"
 cp "$PATCH_WORK/Sources/NFCARDNativeShell.swift" "$DEST/ios-app/NFCARDNativeShell.swift"
 python3 "$PATCH_WORK/scripts/patch-upstream.py" "$DEST"
+# Preserve Erosion's restoration-aware reader for installed .app bundles.
+# Cached libraries without this exact patch marker must be rebuilt.
+python3 "$ROOT/scripts/patch-erosion-app-bundle-safe-read.py" "$DEST/rust-core/src/exploit.rs"
+grep -Fq 'FILZA_AIRLIFT_APP_BUNDLE_SAFE_ROUTE' "$DEST/rust-core/src/exploit.rs"
 
 rm -f "$DEST/ios-app/AirCardApp.swift"
 

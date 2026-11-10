@@ -53,6 +53,8 @@ assert "let metadataWQ = directMetadata == nil" in read("scripts/patch-3105-wors
 assert "let verifiedWQ = handle < 0" in read("scripts/patch-3105-worse-query.py")
 assert "scripts/patch-3105-ipa-export.sh" in network
 assert "scripts/patch-3105-ipa-context-menus.py" in network
+assert "scripts/patch-erosion-app-bundle-safe-read.py" in read("scripts/stage-nfcard.sh")
+assert "FILZA_AIRLIFT_APP_BUNDLE_SAFE_ROUTE" in read("scripts/patch-erosion-app-bundle-safe-read.py")
 assert "scripts/patch-3105-ipa-snapshot-extraction.py" in network
 assert "appSnapshot: true" in read("FilzaAirliftIPAExporter.swift")
 assert "scripts/patch-3105-cleaner-all-apps.py" in network

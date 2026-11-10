@@ -166,6 +166,8 @@ jobs:
           grep -Fq 'FILZA_3105_IPA_CONTEXT_PARITY' ThirdParty/3105/Sources/AppDataBrowserView.swift
           grep -Fq 'appSnapshot: true' FilzaAirliftIPAExporter.swift
           python3 -m py_compile scripts/patch-3105-ipa-context-menus.py scripts/patch-3105-ipa-snapshot-extraction.py
+          python3 -m py_compile scripts/patch-erosion-app-bundle-safe-read.py
+          grep -Fq 'FILZA_AIRLIFT_APP_BUNDLE_SAFE_ROUTE' scripts/patch-erosion-app-bundle-safe-read.py
           python3 -m py_compile scripts/patch-3105-cleaner-all-apps.py
           grep -Fq 'FILZA_REAL_WORSE_QUERY_APP_ACCESS' ThirdParty/3105/Sources/ContainerStore.swift
           grep -Fq 'let metadataWQ = directMetadata == nil' ThirdParty/3105/Sources/ContainerStore.swift
