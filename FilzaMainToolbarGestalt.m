@@ -30,6 +30,8 @@ static NSString *const FMTGestaltIdentifier =
     @"com.nightvibes33.filzaslop.toolbar.gestalt";
 static NSString *const FMTNFCARDIdentifier =
     @"com.nightvibes33.filzaslop.toolbar.nfcard";
+static NSString *const FMTAirliftIdentifier =
+    @"com.nightvibes33.filzaslop.toolbar.airlift-files";
 static NSString *const FMTLegacyPatchesIdentifier =
     @"com.nightvibes33.filzaslop.toolbar.patches";
 static NSString *const FMTAppsIdentifier =
@@ -48,9 +50,11 @@ static BOOL FMTIsUtilityItem(UIBarButtonItem *item)
     NSString *identifier = item.accessibilityIdentifier;
     return [identifier isEqualToString:FMTGestaltIdentifier] ||
         [identifier isEqualToString:FMTNFCARDIdentifier] ||
+        [identifier isEqualToString:FMTAirliftIdentifier] ||
         [identifier isEqualToString:FMTLegacyPatchesIdentifier] ||
         item.action == NSSelectorFromString(@"fz_openMondGestalt") ||
         item.action == NSSelectorFromString(@"fz_openNFCARD") ||
+        item.action == NSSelectorFromString(@"fz_openAirliftFiles") ||
         item.action == NSSelectorFromString(@"fz_open3105Patches");
 }
 
@@ -164,7 +168,7 @@ static void FMTEnsureUtilityItems(id mainView)
     [toolbar setItems:items animated:NO];
     gFMTMutatingToolbar = NO;
     FilzaDiagnosticsAppend(@"Toolbar", [NSString stringWithFormat:
-        @"ensured persistent Apps/Music/Gestalt/NFCARD bottom toolbar apps=%ld music=%ld",
+        @"ensured persistent Apps/Music/Gestalt/NFCARD toolbar apps=%ld music=%ld",
         (long)appsIndex, (long)musicIndex]);
 }
 

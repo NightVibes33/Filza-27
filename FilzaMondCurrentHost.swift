@@ -162,14 +162,22 @@ private struct MondEmbeddedRoot: View {
                     state.append_poster_file(url)
                 }
                 .onAppear {
+                    // The pinned Mond beta notice is just a version check,
+                    // not an actual result of the integrated WQ backend.
                     if !is_supported() {
-                        MondCurrentAlertinator.shared.alert(
-                            title: "Not supported!",
-                            body: "Your iOS version may not be supported by mond.\nMond only supports iOS 27.0 developer beta 1 - 4."
+                        FilzaDiagnosticsAppend(
+                            "mond",
+                            "iOS \(UIDevice.current.systemVersion) is beyond pinned Mond beta support; running verified capability probes instead of claiming unsupported access"
                         )
                     }
-
                     grant_all(state: state)
+                }
+                .onChange(of: state.granting_mg) { _, pending in
+                    guard !pending else { return }
+                    FilzaDiagnosticsAppend(
+                        "mond",
+                        "Access results: MG=\(String(describing: state.mg_granted)), PosterBoard=\(String(describing: state.pb_granted)), Apps=\(String(describing: state.apps_granted)), signed WQ group=\(FZWorseQueryEntitlementPresent() ? "yes" : "no")"
+                    )
                 }
                 .overlay {
                     if state.show_respring {

@@ -10,6 +10,9 @@
 
 // Native 3105 App Data Browser and portable Patches integration.
 #import "MCMBridge.h"
+#import "MCMFilzaIntegration.h"
+#import "FilzaWorseQueryBridge.h"
+#import "FZContainerDiscovery.h"
 #import "ThirdParty/bad_query/bad_query/bad_query.h"
 #import "ThirdParty/3105/Sources/AppIconHelper.h"
 

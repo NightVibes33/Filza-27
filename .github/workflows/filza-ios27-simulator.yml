@@ -1,0 +1,220 @@
+name: Filza 27 - iOS 27 Simulator UI Smoke Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/erozzion-airlift-ios18-27
+    paths:
+      - '.github/workflows/filza-ios27-simulator.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  simulator:
+    name: Boot iOS 27 and launch embedded 3105 Cleaner + Wallpapers UI
+    runs-on: xcode-27
+    timeout-minutes: 55
+    steps:
+      - name: Checkout Filza 27 source
+        uses: actions/checkout@v4
+
+      - name: Boot real iOS 27 simulator and exercise embedded upstream 3105 UI
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p .sim/evidence .sim/screenshots .sim/logs .sim/derived
+          SIM_UDID=""
+          CREATED_SIMULATOR="false"
+          cleanup() {
+            if test -n "$SIM_UDID"; then
+              xcrun simctl shutdown "$SIM_UDID" >/dev/null 2>&1 || true
+              if test "$CREATED_SIMULATOR" = true; then
+                xcrun simctl delete "$SIM_UDID" >/dev/null 2>&1 || true
+              fi
+            fi
+          }
+          trap cleanup EXIT
+
+          cat > .sim/evidence/RESULT.md <<'EOF'
+          # Filza 27 iOS Simulator regression
+
+          The production Filza IPA is a device-only iOS binary with a Theos
+          arm64-apple-ios dylib. It cannot run inside the iOS Simulator. This
+          lane compiles and launches the **real upstream 3105 SwiftUI app**
+          pinned by Filza, including Cleaner and Wallpapers tab UI. It is
+          a *partial UI smoke test*, NOT an execution of the Filza IPA or
+          proof that Airlift, bad_query, shared pairing, cross-app cleaning
+          and PosterBoard writes work on a physical iPhone.
+
+          Cleaner is launched with upstream simulator test fixture records.
+          Those are synthetic rows, not real discovered apps.
+          EOF
+
+          xcodebuild -version | tee .sim/evidence/xcode.txt
+          sw_vers | tee .sim/evidence/macos.txt
+          uname -m | tee .sim/evidence/arch.txt
+          test "$(uname -m)" = arm64
+          xcrun simctl list -j runtimes > .sim/evidence/runtimes.json
+          xcrun simctl list -j devicetypes > .sim/evidence/device-types.json
+          xcrun simctl list -j devices > .sim/evidence/devices.json
+          python3 - <<'PY'
+          import json, re
+          from pathlib import Path
+          base = Path('.sim/evidence')
+          runtimes = json.loads((base/'runtimes.json').read_text())['runtimes']
+          eligible = [r for r in runtimes if r.get('isAvailable', True)
+                      and r.get('name', '').startswith('iOS 27')]
+          if not eligible:
+              raise SystemExit('No installed iOS 27 Simulator runtime')
+          eligible.sort(key=lambda r: tuple(int(n) for n in re.findall(r'\d+', r.get('version','0'))), reverse=True)
+          devices = json.loads((base/'devices.json').read_text()).get('devices', {})
+          preferred_names = ('iPhone 18 Pro', 'iPhone 18', 'iPhone 17 Pro', 'iPhone 17', 'iPhone 16')
+          runtime, existing = None, None
+          for candidate in eligible:
+              matched = [d for d in devices.get(candidate['identifier'], [])
+                         if d.get('isAvailable', True) and d.get('name','').startswith('iPhone ')]
+              if matched:
+                  runtime = candidate
+                  existing = sorted(matched, key=lambda d:
+                      preferred_names.index(d['name']) if d['name'] in preferred_names else 99)[0]
+                  break
+          if runtime is None:
+              runtime = eligible[0]
+          (base/'runtime-id.txt').write_text(runtime['identifier'])
+          (base/'runtime-name.txt').write_text(runtime['name'])
+          if existing:
+              (base/'existing-simulator-udid.txt').write_text(existing['udid'])
+              (base/'device-name.txt').write_text(existing['name'])
+              print('Compatible precreated simulator:', existing['name'], runtime['name'])
+          else:
+              types = json.loads((base/'device-types.json').read_text())['devicetypes']
+              phones = [d for d in types if d['name'].startswith('iPhone ')]
+              phones.sort(key=lambda d: preferred_names.index(d['name'])
+                          if d['name'] in preferred_names else 99)
+              (base/'candidate-types.txt').write_text('\n'.join(d['identifier'] for d in phones))
+              print('Attempting compatible iPhone types for:', runtime['name'])
+          PY
+
+          RUNTIME_ID="$(cat .sim/evidence/runtime-id.txt)"
+          if test -s .sim/evidence/existing-simulator-udid.txt; then
+            SIM_UDID="$(cat .sim/evidence/existing-simulator-udid.txt)"
+            CREATED_SIMULATOR="false"
+          else
+            CREATED_SIMULATOR="true"
+            while IFS= read -r DEVICE_ID; do
+              if SIM_UDID="$(xcrun simctl create Filza27-3105-Regression "$DEVICE_ID" "$RUNTIME_ID" 2>>.sim/logs/create-attempts.log)"; then
+                break
+              fi
+            done < .sim/evidence/candidate-types.txt
+            test -n "$SIM_UDID" || { echo 'No compatible iPhone device type could be created'; exit 1; }
+          fi
+          echo "$SIM_UDID" > .sim/evidence/simulator-udid.txt
+          xcrun simctl boot "$SIM_UDID" || true
+          xcrun simctl bootstatus "$SIM_UDID" -b | tee .sim/logs/boot.log
+          # iPhone Duo has two separate simulator displays. Capture the main
+          # LCD rather than failing with CoreSimulator's ambiguous-display error.
+          SCREENSHOT_DISPLAY_ARGS=()
+          if grep -qi "Duo" .sim/evidence/device-name.txt; then
+            SCREENSHOT_DISPLAY_ARGS=(--display=1)
+          fi
+          xcrun simctl io "$SIM_UDID" screenshot "${SCREENSHOT_DISPLAY_ARGS[@]}" .sim/screenshots/00-boot.png
+
+          # Check exact production integration source contracts on the same commit.
+          grep -Fq 'f1b81047a01a1817c7fb17e6938929eef108f1aa' scripts/stage-3105-v1.sh
+          grep -Fq '@python3 scripts/patch-3105-erosion-features.py' FilzaByeTunesNetwork.mk
+          grep -Fq '@python3 scripts/patch-3105-cleaner-all-apps.py' FilzaByeTunesNetwork.mk
+          ! grep -Fq '@python3 scripts/patch-3105-erosion-features.py' Makefile
+          ! grep -Fq '@python3 scripts/patch-3105-cleaner-all-apps.py' Makefile
+          grep -Fq 'FilzaAirliftCleaner.inspect(app)' scripts/patch-3105-cleaner-all-apps.py
+          grep -Fq 'FilzaErosionPosterBoardWriter.apply' scripts/patch-3105-erosion-features.py
+          grep -Fq 'FilzaNativeCoreMediaBridge.swift' Makefile
+          git rev-parse HEAD > .sim/evidence/filza-source-commit.txt
+
+          # A separate 3105 simulator executable is required: Filza's arm64
+          # physical-device Mach-O and injected tweak cannot run in Simulator.
+          git clone --filter=blob:none https://github.com/YangJiiii/3105.git .sim/upstream-3105
+          git -C .sim/upstream-3105 checkout --detach f1b81047a01a1817c7fb17e6938929eef108f1aa
+          test "$(git -C .sim/upstream-3105 rev-parse HEAD)" = f1b81047a01a1817c7fb17e6938929eef108f1aa
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('.sim/upstream-3105/ThreeOneOSFive/App.swift')
+          s=p.read_text()
+          old='@State private var showOnboarding = OnboardingStore.shouldShow()'
+          new=('@State private var showOnboarding = '+
+               'ProcessInfo.processInfo.arguments.contains("--filza-simulator-test") '+
+               '? false : OnboardingStore.shouldShow()')
+          assert s.count(old)==1, '3105 onboarding changed'
+          p.write_text(s.replace(old,new))
+          PY
+
+          xcodebuild -list -project .sim/upstream-3105/ThreeOneOSFive.xcodeproj \
+            2>&1 | tee .sim/logs/3105-schemes.log
+
+          xcodebuild build \
+            -project .sim/upstream-3105/ThreeOneOSFive.xcodeproj \
+            -scheme 3105 -configuration Debug \
+            -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$SIM_UDID" \
+            -derivedDataPath "$PWD/.sim/derived/3105" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            PRODUCT_BUNDLE_IDENTIFIER=com.nightvibes33.filza27.simulator3105 \
+            2>&1 | tee .sim/logs/3105-build.log
+
+          APP="$(find .sim/derived/3105/Build/Products -type d -name '*.app' -print -quit)"
+          test -n "$APP"
+          BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist")"
+          test -n "$BUNDLE_ID"
+          printf '%s\n' "$BUNDLE_ID" > .sim/evidence/bundle-id.txt
+          xcrun simctl install "$SIM_UDID" "$APP"
+
+          xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" \
+            --filza-simulator-test --simulate-cleaner-tab --simulate-cleaner-data \
+            2>&1 | tee .sim/logs/cleaner-launch.log
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot "${SCREENSHOT_DISPLAY_ARGS[@]}" .sim/screenshots/01-cleaner-sample.png
+          test -s .sim/screenshots/01-cleaner-sample.png
+          CLEANER_PID="$(sed -nE 's/.*: ([0-9]+)$/\1/p' .sim/logs/cleaner-launch.log | tail -1)"
+          test -n "$CLEANER_PID"
+          kill -0 "$CLEANER_PID"
+
+          xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID"
+          xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" \
+            --filza-simulator-test --simulate-wallpaper-tab \
+            2>&1 | tee .sim/logs/wallpaper-launch.log
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot "${SCREENSHOT_DISPLAY_ARGS[@]}" .sim/screenshots/02-wallpapers.png
+          test -s .sim/screenshots/02-wallpapers.png
+          WALLPAPER_PID="$(sed -nE 's/.*: ([0-9]+)$/\1/p' .sim/logs/wallpaper-launch.log | tail -1)"
+          test -n "$WALLPAPER_PID"
+          kill -0 "$WALLPAPER_PID"
+
+          cat >> .sim/evidence/RESULT.md <<'EOF'
+
+          ## Result
+          - iOS 27 Simulator boot: PASS
+          - Original upstream 3105 app compiled for iOS Simulator: PASS
+          - Cleaner preview launch with upstream sample data: PASS
+          - Wallpapers preview launch: PASS
+          - Filza device IPA, Airlift transport and system paths: NOT TESTABLE IN SIMULATOR
+          EOF
+
+      - name: Publish summary
+        if: always()
+        run: |
+          if test -f .sim/evidence/RESULT.md; then
+            cat .sim/evidence/RESULT.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload real simulator logs and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: filza-ios27-simulator-evidence
+          path: |
+            .sim/evidence/
+            .sim/screenshots/
+            .sim/logs/
+          retention-days: 14
+          if-no-files-found: warn

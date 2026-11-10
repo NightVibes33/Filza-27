@@ -257,20 +257,26 @@ static BOOL FilzaSSHIsSyntheticSection(id controller, UITableView *table, NSInte
     return displaySection == FilzaSSHInsertionBoundary(controller, table);
 }
 
+static BOOL FilzaSSHIsPairingSection(id controller, UITableView *table, NSInteger displaySection)
+{
+    return displaySection == FilzaSSHInsertionBoundary(controller, table) + 1;
+}
+
 static NSInteger FilzaSSHOriginalSectionForDisplay(id controller, UITableView *table, NSInteger displaySection)
 {
     NSInteger insertion = FilzaSSHInsertionBoundary(controller, table);
-    return displaySection > insertion ? displaySection - 1 : displaySection;
+    return displaySection > insertion + 1 ? displaySection - 2 : displaySection;
 }
 
 static NSInteger FilzaSSHSections(id controller, __unused SEL selector, UITableView *table)
 {
-    return FilzaSSHOriginalSectionCount(controller, table) + 1;
+    return FilzaSSHOriginalSectionCount(controller, table) + 2;
 }
 
 static NSInteger FilzaSSHRows(id controller, __unused SEL selector, UITableView *table, NSInteger displaySection)
 {
     if (FilzaSSHIsSyntheticSection(controller, table, displaySection)) return 4;
+    if (FilzaSSHIsPairingSection(controller, table, displaySection)) return 2;
     NSInteger originalSection = FilzaSSHOriginalSectionForDisplay(controller, table, displaySection);
     return FilzaSSHOriginalRows ? FilzaSSHOriginalRows(controller, @selector(tableView:numberOfRowsInSection:), table, originalSection) : 0;
 }
@@ -278,12 +284,15 @@ static NSInteger FilzaSSHRows(id controller, __unused SEL selector, UITableView 
 static NSString *FilzaSSHHeader(id controller, __unused SEL selector, UITableView *table, NSInteger displaySection)
 {
     if (FilzaSSHIsSyntheticSection(controller, table, displaySection)) return @"SSH SERVER";
+    if (FilzaSSHIsPairingSection(controller, table, displaySection)) return @"DEVICE & SIGNING";
     NSInteger originalSection = FilzaSSHOriginalSectionForDisplay(controller, table, displaySection);
     return FilzaSSHOriginalHeader ? FilzaSSHOriginalHeader(controller, @selector(tableView:titleForHeaderInSection:), table, originalSection) : nil;
 }
 
 static NSString *FilzaSSHFooter(id controller, __unused SEL selector, UITableView *table, NSInteger displaySection)
 {
+    if (FilzaSSHIsPairingSection(controller, table, displaySection))
+        return @"Shared RP pairing plus the SideStore-installed Apple App Group capability.";
     if (FilzaSSHIsSyntheticSection(controller, table, displaySection)) {
         if (FilzaSSHServerIsRunning()) return FilzaSSHServerConnectionSummary();
         NSString *failure = FilzaSSHServerLastError();
@@ -295,6 +304,16 @@ static NSString *FilzaSSHFooter(id controller, __unused SEL selector, UITableVie
 
 static UITableViewCell *FilzaSSHCell(id controller, __unused SEL selector, UITableView *table, NSIndexPath *displayPath)
 {
+    if (FilzaSSHIsPairingSection(controller, table, displayPath.section)) {
+        UITableViewCell *cell = [table dequeueReusableCellWithIdentifier:@"FilzaUnifiedPairingSetting"];
+        if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1
+                                                 reuseIdentifier:@"FilzaUnifiedPairingSetting"];
+        cell.textLabel.text = displayPath.row == 0 ? @"Device Pairing" : @"SideStore App Group";
+        cell.detailTextLabel.text = displayPath.row == 0 ? @"Manage" : @"Check";
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+        return cell;
+    }
     if (!FilzaSSHIsSyntheticSection(controller, table, displayPath.section)) {
         NSInteger originalSection = FilzaSSHOriginalSectionForDisplay(controller, table, displayPath.section);
         NSIndexPath *originalPath = [NSIndexPath indexPathForRow:displayPath.row inSection:originalSection];
@@ -334,6 +353,25 @@ static UITableViewCell *FilzaSSHCell(id controller, __unused SEL selector, UITab
 
 static void FilzaSSHDidSelect(id controller, __unused SEL selector, UITableView *table, NSIndexPath *displayPath)
 {
+    if (FilzaSSHIsPairingSection(controller, table, displayPath.section)) {
+        [table deselectRowAtIndexPath:displayPath animated:YES];
+        NSString *factoryName = displayPath.row == 0
+            ? @"FilzaUnifiedPairingHostFactory" : @"FilzaSideStoreSigningHostFactory";
+        Class factory = NSClassFromString(factoryName);
+        SEL selector = NSSelectorFromString(@"makeViewController");
+        if (!factory || ![factory respondsToSelector:selector]) {
+            FilzaDiagnosticsAppend(@"Settings", [@"Settings factory missing: " stringByAppendingString:factoryName]);
+            return;
+        }
+        UIViewController *next = ((id (*)(id, SEL))objc_msgSend)(factory, selector);
+        UIViewController *presenter = FilzaSSHViewController(controller);
+        if (next && presenter.navigationController) {
+            [presenter.navigationController pushViewController:next animated:YES];
+        } else if (next && presenter) {
+            [presenter presentViewController:next animated:YES completion:nil];
+        }
+        return;
+    }
     if (!FilzaSSHIsSyntheticSection(controller, table, displayPath.section)) {
         NSInteger originalSection = FilzaSSHOriginalSectionForDisplay(controller, table, displayPath.section);
         NSIndexPath *originalPath = [NSIndexPath indexPathForRow:displayPath.row inSection:originalSection];
@@ -394,7 +432,7 @@ static void FilzaSSHInstallPreferences(void)
     class_addMethod(cls, NSSelectorFromString(@"filzaSSHServerSwitchChanged:"), (IMP)FilzaSSHServerSwitchChanged, "v@:@");
 
     FilzaSSHPreferencesInstalled = YES;
-    FilzaDiagnosticsAppend(@"SSH", @"SSH + SFTP v2 preferences installed with first-enable password setup");
+    FilzaDiagnosticsAppend(@"SSH", @"SSH + SFTP v2 preferences and unified Device Pairing section installed");
 
     if ([NSUserDefaults.standardUserDefaults boolForKey:FilzaSSHEnabledKey]) {
         if (FilzaSSHAuthenticationEnabled() && !FilzaSSHPasswordConfigured()) {

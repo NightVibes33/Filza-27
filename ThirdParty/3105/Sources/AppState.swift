@@ -35,9 +35,15 @@ class AppState: ObservableObject {
         }
 #endif
 
-        unsupportedMessage = supported ? nil : "iOS \(AppInfo.osVersion) (\(AppInfo.osBuild))"
-        if let unsupportedMessage {
-            exploitStatus = .unsupported(unsupportedMessage)
+        // An unavailable sandbox exploit must not disable the entire jailed
+        // Apps Manager or File Manager. iOS 18-27.0.1 can still use its own
+        // sandbox, MCM/LaunchServices and optional paired Airlift features.
+        unsupportedMessage = nil
+        if !supported {
+            exploitStatus = .unsupported(
+                "No compatible sandbox escape on this build; standard and paired-device features remain available"
+            )
+            log("app: sandbox escape unsupported; preserving read-only and paired-device workflows")
             return
         }
 

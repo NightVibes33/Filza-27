@@ -1,8 +1,27 @@
 name: Verify Filza 27 arm64 IPA
+# Automatic CI validation for feature-branch updates and PR synchronization.
 
 on:
   push:
+    branches: [ main, feature/erozzion-airlift-ios18-27 ]
+  pull_request:
+    types: [ opened, reopened, synchronize, edited ]
     branches: [ main ]
+    paths:
+      - 'FilzaAirlift*.swift'
+      - 'FilzaWorseQueryBridge.*'
+      - 'MCMFilzaIntegration.*'
+      - 'Tweak.m'
+      - 'scripts/stage-nfcard.sh'
+      - 'scripts/patch-3105-airlift.py'
+      - 'scripts/patch-3105-ipa-export.sh'
+      - 'scripts/patch-3105-cleaner-all-apps.py'
+      - 'scripts/patch-3105-worse-query.py'
+      - 'scripts/patch-3105-wq-discovery.py'
+      - 'scripts/patch-3105-paired-cache-catalog.py'
+      - 'FZContainerDiscovery.*'
+      - 'scripts/verify-worse-query.py'
+      - '.github/workflows/diagnose-full-build.yml'
   workflow_dispatch:
 
 concurrency:
@@ -21,9 +40,10 @@ jobs:
       MBEDTLS_COMMIT: 068ff080b369adfac81509f9b57b2afabaf82dc5
       WOLFSSH_COMMIT: e7c8dc2c2c54e5f0f2986be592e2243725a4dd33
       WOLFSSL_COMMIT: 9ab8a4b19debdade06b10d30cf70167de8f9b915
-      NFCARD_PIN: 4dbacf6b503d861dba605286f9ee6f7904c8a81f
+      NFCARD_PIN: 16f8bfd20a88a474f59c2d6eda291164a1cc015f
       AIRCARD_PIN: 097a058c984ffc33ccb697b9dfe8058be3e86244
-      NFCARD_CACHE_SCHEMA: v1
+      EROSION_PIN: a8dc7e48b13e130e69c28269a43fc4a8b456952a
+      NFCARD_CACHE_SCHEMA: v2
       BASE_IPA_SHA256: b11ce30a2db6f6bc77773ed30bdb855d7c847830891b14d21230f2d893d5f223
       BASE_IPA_URL: https://github.com/0xjohnnydev/FilzaSlop/releases/download/v1.0.2/FilzaSlop-v1.0.2-unsigned.ipa
 
@@ -32,6 +52,18 @@ jobs:
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '26.2'
+
+      - name: Verify macOS 26 Intel and Xcode 26.2 toolchain
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sw_vers
+          uname -m
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          test "$(sw_vers -productVersion | cut -d. -f1)" = "26"
+          test "$(uname -m)" = "x86_64"
+          test "$(xcrun --sdk iphoneos --show-sdk-version | cut -d. -f1)" = "26"
 
       - name: Checkout complete source tree
         uses: actions/checkout@v4
@@ -123,7 +155,8 @@ jobs:
             ThirdParty/NFCARD/AirliftFFI
             ThirdParty/NFCARD/NFCARD_PINNED_REVISION
             ThirdParty/NFCARD/AIRCARD_PINNED_REVISION
-          key: nfcard-runtime-${{ env.NFCARD_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-xcode26.2-ios17-${{ env.NFCARD_PIN }}-${{ env.AIRCARD_PIN }}-${{ hashFiles('scripts/stage-nfcard.sh', 'scripts/build-nfcard-ffi.sh') }}
+            ThirdParty/NFCARD/EROSION_PINNED_REVISION
+          key: nfcard-runtime-${{ env.NFCARD_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-xcode26.2-ios17-${{ env.NFCARD_PIN }}-${{ env.AIRCARD_PIN }}-${{ env.EROSION_PIN }}-${{ hashFiles('scripts/stage-nfcard.sh', 'scripts/build-nfcard-ffi.sh') }}
 
       - name: Build staged NFCARD + AirliftFFI cache
         if: steps.nfcard-runtime-cache.outputs.cache-hit != 'true'
@@ -139,12 +172,19 @@ jobs:
           set -euxo pipefail
           test "$(cat ThirdParty/NFCARD/NFCARD_PINNED_REVISION)" = "$NFCARD_PIN"
           test "$(cat ThirdParty/NFCARD/AIRCARD_PINNED_REVISION)" = "$AIRCARD_PIN"
+          test "$(cat ThirdParty/NFCARD/EROSION_PINNED_REVISION)" = "$EROSION_PIN"
           test -s ThirdParty/NFCARD/ios-app/NFCARDContentView.swift
           test -s ThirdParty/NFCARD/ios-app/AppViewModel.swift
           test -s ThirdParty/NFCARD/AirliftFFI/lib/libairlift_ffi.a
           test -s ThirdParty/NFCARD/AirliftFFI/include/AirliftFFI/airlift.h
           grep -Fq 'al_pairing_run_host' ThirdParty/NFCARD/AirliftFFI/include/AirliftFFI/airlift.h
           grep -Fq 'al_connection_endpoint_set' ThirdParty/NFCARD/AirliftFFI/include/AirliftFFI/airlift.h
+          grep -Fq 'al_list_app_containers' ThirdParty/NFCARD/AirliftFFI/include/AirliftFFI/airlift.h
+          grep -Fq 'al_exploit_read_folder' ThirdParty/NFCARD/AirliftFFI/include/AirliftFFI/airlift.h
+          grep -Fq 'al_exploit_write_dir' ThirdParty/NFCARD/AirliftFFI/include/AirliftFFI/airlift.h
+          grep -Fq 'al_exploit_remove_path' ThirdParty/NFCARD/AirliftFFI/include/AirliftFFI/airlift.h
+          grep -Fq 'al_exploit_inject_folder' ThirdParty/NFCARD/AirliftFFI/include/AirliftFFI/airlift.h
+          grep -Fq 'al_find_app_container' ThirdParty/NFCARD/AirliftFFI/include/AirliftFFI/airlift.h
           grep -Fq 'al_syslog_stream_start' ThirdParty/NFCARD/AirliftFFI/include/AirliftFFI/airlift.h
 
       - name: Save staged NFCARD + AirliftFFI cache
@@ -156,13 +196,15 @@ jobs:
             ThirdParty/NFCARD/AirliftFFI
             ThirdParty/NFCARD/NFCARD_PINNED_REVISION
             ThirdParty/NFCARD/AIRCARD_PINNED_REVISION
+            ThirdParty/NFCARD/EROSION_PINNED_REVISION
           key: ${{ steps.nfcard-runtime-cache.outputs.cache-primary-key }}
 
       - name: Verify NFCARD integration pins
         shell: bash
         run: |
           set -euxo pipefail
-          grep -Fq '4dbacf6b503d861dba605286f9ee6f7904c8a81f' scripts/stage-nfcard.sh
+          grep -Fq '16f8bfd20a88a474f59c2d6eda291164a1cc015f' scripts/stage-nfcard.sh
+          grep -Fq 'a8dc7e48b13e130e69c28269a43fc4a8b456952a' scripts/stage-nfcard.sh
           grep -Fq '097a058c984ffc33ccb697b9dfe8058be3e86244' scripts/stage-nfcard.sh
           grep -Fq 'FilzaNFCARDHost.swift' Makefile
           grep -Fq 'FilzaNFCARDBridge.m' Makefile
@@ -181,7 +223,15 @@ jobs:
           set -o pipefail
           # Mond 2.0 upstream uses iOS 17 APIs. This is a compiler/deployment
           # target only; it does not change Filza's CFBundle app version.
-          gmake -j"$(sysctl -n hw.logicalcpu)" all FINALPACKAGE=1 TARGET=iphone:clang:latest:17.0 2>&1 | tee .theos/full-build.log
+          # Combined Filza + ByeTunes + NFCARD + 3105 Swift has hundreds of
+          # sources. Limit concurrent clang jobs while Swift emits its single
+          # monolithic module to avoid exhausting the Intel runner's memory.
+          echo "=== runner resources before build ===" | tee .theos/full-build.log
+          sysctl hw.memsize hw.logicalcpu | tee -a .theos/full-build.log || true
+          vm_stat | head -n 15 | tee -a .theos/full-build.log || true
+          df -h . | tee -a .theos/full-build.log
+          echo "=== starting resource-capped Theos build ===" | tee -a .theos/full-build.log
+          gmake -j2 all FINALPACKAGE=1 TARGET=iphone:clang:latest:17.0 2>&1 | tee -a .theos/full-build.log
           rc=${PIPESTATUS[0]}
           echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
           echo "===== FAILURE/SUCCESS TAIL ====="
@@ -221,6 +271,52 @@ jobs:
           ! grep -aFq 'LocalDevVPN preflight reachable hosts=' "$DYLIB"
           ! grep -aFq 'filzaByeTunesLastRPPairingHost' "$DYLIB"
           grep -aFq 'NFCARDEmbeddedHostFactory' "$DYLIB"
+          python3 scripts/verify-worse-query.py
+          grep -Fq 'FZWorseQueryGrantDirectory' FilzaWorseQueryBridge.m
+          grep -Fq 'FZContainerDiscoveryStart' MCMFilzaIntegration.m
+          grep -Fq 'MCMStartVerifiedWQDiscovery' MCMFilzaIntegration.m
+          grep -Fq 'FZLegacyLogSeed' FZContainerDiscovery.m
+          grep -Fq 'gConfirmedGrantCount % 128' FilzaWorseQueryBridge.m
+          grep -Fq 'ffiSerialQueue.sync' FilzaAirliftBackend.swift
+          grep -Fq 'FILZA_IPA_SNAPSHOT_EXTRACTION_LIMITS' ThirdParty/3105/Sources/SecureZIPArchive.swift
+          grep -Fq 'FILZA_3105_IPA_CONTEXT_PARITY' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'awaitingPairedInventory' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'scanNewApps(pairedApps)' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'FZLiveContainerPath' Tweak.m
+          grep -Fq 'FILZA_WQFILES_DYNAMIC_DISCOVERY' ThirdParty/3105/Sources/ContainerStore.swift
+          grep -Fq 'ER0SION_PREPARE_PARITY' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'FilzaAirliftIPAExporter.prepare(remote)' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'FZWorseQueryResolveAppDataContainer' MCMFilzaIntegration.m
+          grep -Fq 'Open Direct' Tweak.m
+          grep -Fq 'FILZA_REAL_WORSE_QUERY_APP_ACCESS' ThirdParty/3105/Sources/ContainerStore.swift
+          grep -Fq 'FZWorseQueryGrantDirectory(candidate)' ThirdParty/3105/Sources/CleanerView.swift
+          # Airlift remains a private backend; its removed standalone app must
+          # not be compiled into the IPA.
+          grep -aFq 'al_list_app_containers' "$DYLIB"
+          ! grep -aFq 'FilzaAirliftHostFactory' "$DYLIB"
+          grep -Fq 'FilzaAirliftBackend.swift' Makefile
+          ! grep -Eq '^FilzaApplySandboxExt_SWIFT_FILES.*FilzaAirliftWorkspace[.]swift' Makefile
+          grep -Fq 'FilzaNativeAirliftFolderBridge.swift' Makefile
+          grep -Fq 'FZEnsurePairedFolderButton(self)' Tweak.m
+          grep -Fq 'SecureZIPArchive.extract' FilzaNativeAirliftFolderBridge.swift
+          ! grep -Fq 'createSymbolicLink(at: alias' FilzaAirliftBackend.swift
+          ! grep -Fq 'FilzaCoreMediaBrowser.swift' Makefile
+          ! grep -Fq '[items insertObject:airlift' FilzaMainToolbarGestalt.m
+          ! grep -Fq 'FMTOpenAirliftFiles' FilzaMainToolbarGestalt.m
+          grep -Fq 'FZNativeCoreMediaRequest' Tweak.m
+          grep -Fq 'SYSTEM PATHS - READ-ONLY' FilzaNativeCoreMediaBridge.swift
+          grep -Fq 'FILZA_EROSION_WALLPAPER_BRIDGE' ThirdParty/3105/Sources/WallpaperLabView.swift
+          grep -Fq 'FILZA_MAIN_CLEANER_PARITY' ThirdParty/3105/Sources/CleanerView.swift
+          ! grep -Fq 'allCleanerRecords' ThirdParty/3105/Sources/CleanerView.swift
+          ! grep -Fq 'remoteMessages' ThirdParty/3105/Sources/CleanerView.swift
+          ! grep -Fq 'Erosion fallback' ThirdParty/3105/Sources/WallpaperLabView.swift
+          ! grep -Fq 'Erosion app containers' ThirdParty/3105/Sources/CleanerView.swift
+          # Swift string constants may not be stored as contiguous ASCII in
+          # optimized arm64 code. Validate the source contract rather than
+          # treating the absence of a plaintext string as missing functionality.
+          grep -Fq 'static let filzaCoreMediaDirectoryReady = Notification.Name("FilzaCoreMediaDirectoryReady")' FilzaCoreMediaReader.swift
+          grep -Fq 'FilzaCoreMediaReader.startAtLaunch()' Tweak.m || grep -Fq 'FilzaCoreMediaReader.startAtLaunch()' FilzaCoreMediaBrowser.swift || grep -Fq 'FilzaCoreMediaReader' FilzaCoreMediaBrowser.swift
+          grep -aFq 'al_list_app_containers' "$DYLIB"
           grep -aFq 'Pair with NFCARD' "$DYLIB"
           grep -aFq 'cardmaker-omega.vercel.app' "$DYLIB"
           grep -aFq 'Apps/Music/Gestalt/NFCARD' "$DYLIB"
@@ -259,7 +355,10 @@ jobs:
           unzip -q .theos/FilzaSlop-base-unsigned.ipa -d "$STAGE"
           APP="$(find "$STAGE/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
           test -n "$APP"
-          test "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Info.plist")" = "com.apple.mobile.MobileHouseArrest"
+          python3 scripts/set-filza-bundle-id.py "$APP/Info.plist"
+          test "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Info.plist")" = "com.filza27.nigtvibes33"
+          test "$(plutil -extract CFBundleDisplayName raw -o - "$APP/Info.plist")" = "Filza 27"
+          test ! -e "$APP/PlugIns/Sharing.appex"
           EXECUTABLE="$(plutil -extract CFBundleExecutable raw -o - "$APP/Info.plist")"
           test -s "$APP/$EXECUTABLE"
 
@@ -298,6 +397,9 @@ jobs:
           plutil -remove CFBundleURLTypes "$APP/Info.plist" 2>/dev/null || true
 
           test "$(plutil -extract MinimumOSVersion raw -o - "$APP/Info.plist")" = "17.0"
+          test "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Info.plist")" = "com.filza27.nigtvibes33"
+          test "$(plutil -extract CFBundleDisplayName raw -o - "$APP/Info.plist")" = "Filza 27"
+          test ! -e "$APP/PlugIns/Sharing.appex"
           test ! -e "$APP/Config.plist"
           test ! -e "$APP/Frameworks/FilzaMondModern.dylib"
           test -s "$APP/Frameworks/FilzaApplySandboxExt.dylib"
@@ -308,7 +410,17 @@ jobs:
             ! LC_ALL=C grep -aFq "$forbidden" "$APP/Frameworks/FilzaApplySandboxExt.dylib"
           done
 
-          OUTPUT="$GITHUB_WORKSPACE/.theos/Filza-27-modern-${GITHUB_SHA::7}-unsigned.ipa"
+          # This is a REQUEST CARRIER only: SideStore reads source Mach-O
+          # entitlements, registers the App Group on the user's own team,
+          # and replaces these ad-hoc signatures with its own Apple profile.
+          # Never embed someone else's provisioning profile in a public IPA.
+          codesign --force --sign - --timestamp=none --generate-entitlement-der "$APP/Frameworks/FilzaApplySandboxExt.dylib"
+          codesign --force --sign - --timestamp=none --generate-entitlement-der \
+            --entitlements "$GITHUB_WORKSPACE/Signing/Filza27WorseQuery.entitlements" "$APP"
+          codesign --verify --deep --strict "$APP"
+          python3 scripts/verify-sidestore-payload.py "$APP"
+
+          OUTPUT="$GITHUB_WORKSPACE/.theos/filza27.ipa"
           rm -f "$OUTPUT"
           (cd "$STAGE" && zip -qry "$OUTPUT" Payload)
           test -s "$OUTPUT"
@@ -335,9 +447,56 @@ jobs:
         with:
           name: Filza-27-modern-unsigned-arm64
           path: |
-            .theos/Filza-27-modern-*-unsigned.ipa
+            .theos/filza27.ipa
             .theos/IPA-SHA256.txt
             .theos/obj/FilzaApplySandboxExt.dylib
+            Signing/Filza27WorseQuery.entitlements
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14
+
+      - name: Sign Filza with real App Group when Apple credentials are configured
+        id: appgroup_sign
+        shell: bash
+        env:
+          FILZA_SIGNING_P12_BASE64: ${{ secrets.FILZA_SIGNING_P12_BASE64 }}
+          FILZA_SIGNING_P12_PASSWORD: ${{ secrets.FILZA_SIGNING_P12_PASSWORD }}
+          FILZA_APPGROUP_PROFILE_BASE64: ${{ secrets.FILZA_APPGROUP_PROFILE_BASE64 }}
+          FILZA_SIGNING_IDENTITY: ${{ secrets.FILZA_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          python3 scripts/filza27-appgroup-entitlements.py
+          if [ -z "$FILZA_SIGNING_P12_BASE64" ] &&
+             [ -z "$FILZA_SIGNING_P12_PASSWORD" ] &&
+             [ -z "$FILZA_APPGROUP_PROFILE_BASE64" ] &&
+             [ -z "$FILZA_SIGNING_IDENTITY" ]; then
+            echo "No Apple signing credentials configured; unsigned IPA remains available."
+            echo "The unsigned IPA does NOT have an authorized App Group."
+            exit 0
+          fi
+          if [ -z "$FILZA_SIGNING_P12_BASE64" ] ||
+             [ -z "$FILZA_SIGNING_P12_PASSWORD" ] ||
+             [ -z "$FILZA_APPGROUP_PROFILE_BASE64" ] ||
+             [ -z "$FILZA_SIGNING_IDENTITY" ]; then
+            echo "::error::Partial Apple Developer signing configuration. All four App Group secrets are required."
+            exit 1
+          fi
+          mkdir -p .theos/appgroup-signed
+          bash scripts/sign-filza27-appgroup.sh \
+            .theos/filza27.ipa "$PWD/.theos/appgroup-signed/filza27.ipa"
+          shasum -a 256 .theos/appgroup-signed/filza27.ipa \
+            | tee .theos/appgroup-signed/IPA-SHA256.txt
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+          echo "Real Apple-provisioned App Group signature validated." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Apple-signed Filza IPA with App Group
+        if: steps.appgroup_sign.outputs.signed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Filza-27-AppGroup-signed-arm64
+          path: |
+            .theos/appgroup-signed/filza27.ipa
+            .theos/appgroup-signed/IPA-SHA256.txt
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 14

@@ -1,0 +1,82 @@
+name: Sign Filza 27 with real App Group
+
+on:
+  workflow_dispatch:
+    inputs:
+      unsigned_run_id:
+        description: Successful Verify Filza 27 arm64 IPA run ID
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  apple-appgroup-signing:
+    runs-on: macos-26-intel
+    timeout-minutes: 25
+    steps:
+      - name: Checkout signing workflow
+        uses: actions/checkout@v4
+
+      - name: Verify Apple's App Group provisioning prerequisites
+        shell: bash
+        env:
+          FILZA_SIGNING_P12_BASE64: ${{ secrets.FILZA_SIGNING_P12_BASE64 }}
+          FILZA_SIGNING_P12_PASSWORD: ${{ secrets.FILZA_SIGNING_P12_PASSWORD }}
+          FILZA_APPGROUP_PROFILE_BASE64: ${{ secrets.FILZA_APPGROUP_PROFILE_BASE64 }}
+          FILZA_SIGNING_IDENTITY: ${{ secrets.FILZA_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          python3 scripts/filza27-appgroup-entitlements.py
+          if [ -z "$FILZA_SIGNING_P12_BASE64" ] ||
+             [ -z "$FILZA_SIGNING_P12_PASSWORD" ] ||
+             [ -z "$FILZA_APPGROUP_PROFILE_BASE64" ] ||
+             [ -z "$FILZA_SIGNING_IDENTITY" ]; then
+            echo "::error::Signing requires your Apple Developer certificate, its P12 password, a provisioned App Group profile and matching identity. Add the four GitHub Actions secrets described in Signing/README-AppGroup.md."
+            exit 1
+          fi
+
+      - name: Fetch unsigned Filza IPA from specified successful build
+        uses: actions/download-artifact@v4
+        with:
+          name: Filza-27-modern-unsigned-arm64
+          run-id: ${{ inputs.unsigned_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: unsigned
+
+      - name: Sign Filza and validate real code-signature entitlements
+        shell: bash
+        env:
+          FILZA_SIGNING_P12_BASE64: ${{ secrets.FILZA_SIGNING_P12_BASE64 }}
+          FILZA_SIGNING_P12_PASSWORD: ${{ secrets.FILZA_SIGNING_P12_PASSWORD }}
+          FILZA_APPGROUP_PROFILE_BASE64: ${{ secrets.FILZA_APPGROUP_PROFILE_BASE64 }}
+          FILZA_SIGNING_IDENTITY: ${{ secrets.FILZA_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          IPA="$(find unsigned -type f -name filza27.ipa -print -quit)"
+          test -n "$IPA"
+          test -s "$IPA"
+          COUNT="$(find unsigned -type f -name filza27.ipa | wc -l | tr -d ' ')"
+          test "$COUNT" = "1"
+          mkdir -p signed
+          bash scripts/sign-filza27-appgroup.sh "$IPA" "$PWD/signed/filza27.ipa"
+          shasum -a 256 signed/filza27.ipa | tee signed/IPA-SHA256.txt
+          {
+            echo "## Signed Filza 27 with verified App Group"
+            echo "Source unsigned workflow run: ${{ inputs.unsigned_run_id }}"
+            echo "Bundle ID: com.filza27.nigtvibes33"
+            echo "Provisioned App Group: group.com.filza27.nigtvibes33.worsequery"
+            echo "Code signature verified. Device-level worse_query exploit success is not implied."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload verified signed Filza 27
+        uses: actions/upload-artifact@v4
+        with:
+          name: Filza-27-AppGroup-signed-arm64
+          path: |
+            signed/filza27.ipa
+            signed/IPA-SHA256.txt
+          if-no-files-found: error
+          retention-days: 14

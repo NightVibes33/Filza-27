@@ -49,16 +49,15 @@ unzip -q "$BASE_IPA" -d "$STAGE_ROOT/stage"
 APP="$(find "$STAGE_ROOT/stage/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
 [[ -n "$APP" ]] || { echo "Payload app not found" >&2; exit 65; }
 
-BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw -o - "$APP/Info.plist")"
-[[ "$BUNDLE_ID" == "com.apple.mobile.MobileHouseArrest" ]] || {
-  echo "unexpected bundle identifier: $BUNDLE_ID" >&2
-  exit 65
-}
-
 if codesign -d "$APP" >/dev/null 2>&1; then
   echo "base app is signed; use an unsigned base IPA" >&2
   exit 65
 fi
+
+# An ordinary application identifier can be replaced by SideStore/AltStore or
+# another signer. Special MobileHouseArrest code identity is not required for
+# installing Filza or using its independent backends.
+python3 "$REPO_ROOT/scripts/set-filza-bundle-id.py" "$APP/Info.plist"
 
 cp "$DYLIB" "$APP/Frameworks/FilzaApplySandboxExt.dylib"
 codesign --remove-signature "$APP/Frameworks/FilzaApplySandboxExt.dylib"
@@ -110,6 +109,9 @@ elif [[ -e "$APP/MCMIdentifiers.plist" ]]; then
 fi
 
 [[ "$(plutil -extract MinimumOSVersion raw -o - "$APP/Info.plist")" == "17.0" ]] || { echo "unexpected MinimumOSVersion" >&2; exit 70; }
+[[ "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Info.plist")" == "com.filza27.nigtvibes33" ]] || { echo "unexpected release bundle identifier" >&2; exit 70; }
+[[ "$(plutil -extract CFBundleDisplayName raw -o - "$APP/Info.plist")" == "Filza 27" ]] || { echo "unexpected Filza app name" >&2; exit 70; }
+[[ ! -e "$APP/PlugIns/Sharing.appex" ]] || { echo "legacy share extension incompatible with sideload signing" >&2; exit 70; }
 [[ ! -e "$APP/Frameworks/FilzaMondModern.dylib" ]] || { echo "stale split Mond runtime present" >&2; exit 70; }
 
 # Enforce the public-source ByeTunes policy on the actual packaged binary.

@@ -1,6 +1,9 @@
 #import "MCMFilzaIntegration.h"
+#import "FZContainerDiscovery.h"
+#import "FilzaDiagnostics.h"
 
 #import "MCMBridge.h"
+#import "FilzaWorseQueryBridge.h"
 #import <fcntl.h>
 #import <limits.h>
 #import <notify.h>
@@ -294,7 +297,7 @@ NSString *MCMContainerPathForIdentifier(uint64_t containerClass,
                                         BOOL group,
                                         NSString **error)
 {
-    return MCMActivate(containerClass, identifier, group, error);
+    return MCMActivateContainerPath(containerClass, identifier, group, error);
 }
 
 NSString *MCMActivateContainerPath(uint64_t containerClass,
@@ -302,7 +305,14 @@ NSString *MCMActivateContainerPath(uint64_t containerClass,
                                    BOOL group,
                                    NSString **error)
 {
-    return MCMActivate(containerClass, identifier, group, error);
+    NSString *path = MCMActivate(containerClass, identifier, group, error);
+    if (!path && containerClass == 2 && !group) {
+        // Require an actual LaunchServices data URL, a signed App Group,
+        // a consumed upstream token, and a verified open of the directory.
+        path = FZWorseQueryResolveAppDataContainer(identifier);
+        if (!path && error) *error = FZWorseQueryLastStatus();
+    }
+    return path;
 }
 
 int64_t MCMActivateContainer(uint64_t containerClass,
@@ -310,7 +320,7 @@ int64_t MCMActivateContainer(uint64_t containerClass,
                              BOOL group,
                              NSString **error)
 {
-    return MCMActivate(containerClass, identifier, group, error) ? 1 : -1;
+    return MCMActivateContainerPath(containerClass, identifier, group, error) ? 1 : -1;
 }
 
 static NSString *MCMActivateScoped(uint64_t containerClass, NSString *identifier,
@@ -361,7 +371,7 @@ static NSString *MCMActivateScoped(uint64_t containerClass, NSString *identifier
 
 NSString *MCMFilzaDataContainerPath(NSString *identifier, NSString **error)
 {
-    return MCMActivate(2, identifier, NO, error);
+    return MCMActivateContainerPath(2, identifier, NO, error);
 }
 
 static BOOL MCMPathIsInsideRoot(NSString *path, NSString *root)
@@ -393,6 +403,8 @@ BOOL MCMFilzaPathHasActiveLease(NSString *path)
         MCMPathIsInsideRoot(path, filesTraversalRoot)) return NO;
     if (MCMPathIsInsideRoot(path, virtualRoot) ||
         MCMPathIsInsideRoot(path, MCMFilzaArchivePath())) return YES;
+    if (!MCMFilzaIsRunningInLiveContainer() &&
+        MCMPathIsInsideRoot(path, NSHomeDirectory())) return YES;
     if (MCMFilzaIsRunningInLiveContainer()) {
         for (NSString *root in MCMLiveContainerAuthorityRoots())
             if (MCMPathIsInsideRoot(path, root)) return YES;
@@ -403,7 +415,9 @@ BOOL MCMFilzaPathHasActiveLease(NSString *path)
         for (MCMLease *lease in gLeases.allValues)
             if (lease.activated && MCMPathIsInsideRoot(path, lease.rootPath)) return YES;
     }
-    return NO;
+    // Preserve Filza's original file actions for verified worse_query
+    // directories. The actual filesystem permissions still control writes.
+    return FZWorseQueryPathHasActiveGrant(path);
 }
 
 static void MCMInstallLiveContainerLink(NSFileManager *manager, NSString *root,
@@ -459,6 +473,49 @@ static void MCMInstallArchiveAlias(NSFileManager *manager, NSString *root)
         NSLog(@"[Archive] alias failed %@ -> %@ errno=%d", link, archive, errno);
     else
         NSLog(@"[Archive] alias ready %@ -> %@", link, archive);
+}
+
+// Normal sideloads use an ordinary bundle ID, including IDs rewritten by the
+// user's signing tool. This is deliberately sandbox-only; it never acquires an
+// MCM lease or pretends that a changed Info.plist grants MHA authority.
+static void MCMInstallStandardSandboxRoot(void)
+{
+    NSFileManager *manager = NSFileManager.defaultManager;
+    NSString *root = MCMFilzaVirtualRoot();
+    if (![manager createDirectoryAtPath:root withIntermediateDirectories:YES
+                             attributes:@{NSFilePosixPermissions: @0700} error:nil]) {
+        NSLog(@"[MCMFilza] sandbox root unavailable %@", root);
+        return;
+    }
+    MCMInstallArchiveAlias(manager, root);
+
+    NSArray<NSArray<NSString *> *> *links = @[
+        @[@"[Sandbox] Library", NSSearchPathForDirectoriesInDomains(
+            NSLibraryDirectory, NSUserDomainMask, YES).firstObject ?: @""],
+        @[@"[Sandbox] Temporary", NSTemporaryDirectory() ?: @""],
+    ];
+    for (NSArray<NSString *> *entry in links) {
+        NSString *target = entry[1];
+        BOOL isDirectory = NO;
+        if (!target.isAbsolutePath ||
+            ![manager fileExistsAtPath:target isDirectory:&isDirectory] ||
+            !isDirectory) continue;
+        NSString *link = [root stringByAppendingPathComponent:entry[0]];
+        struct stat status = {0};
+        // Do not replace a file or an existing user-managed symlink.
+        if (lstat(link.fileSystemRepresentation, &status) == 0) continue;
+        if (symlink(target.fileSystemRepresentation, link.fileSystemRepresentation) != 0)
+            NSLog(@"[MCMFilza] sandbox alias failed %@ errno=%d", link, errno);
+    }
+
+    NSString *message = [NSString stringWithFormat:
+        @"Filza-27 standard sideload mode\\n\\nSigned code identity: %@\\n"
+         "MobileHouseArrest privileges: not assumed.\\n"
+         "This folder, Library, Temporary and Archive are app-owned storage.\\n"
+         "Use Apps Manager for supported paired Airlift per-app operations.\\n"
+         "Read-only CoreMedia system snapshots are inside Device Storage.\\n",
+        MCMSignedCodeIdentifier() ?: @"unavailable"];
+    MCMWriteGeneratedString(message, [root stringByAppendingPathComponent:@"README.txt"]);
 }
 
 static void MCMInstallLiveContainerRoot(void)
@@ -569,6 +626,69 @@ static void MCMInstallDirectFilesystemLinks(NSString *directory,
             NSLog(@"[MCMFilza] direct symlink failed id=%@ target=%@ errno=%d",
                   identifier, target, errno);
     }
+}
+
+// WQFiles-inspired discovery provides paths, never permissions. Install
+// ONLY aliases whose actual directories were opened after a live grant.
+// This supplements (and does not replace) the main MCM/bad_query links.
+static void MCMInstallVerifiedWQDiscovery(NSDictionary<NSString *, NSArray<NSString *> *> *paths) {
+    NSFileManager *fm = NSFileManager.defaultManager;
+    NSString *root = MCMFilzaVirtualRoot();
+    NSDictionary<NSString *, NSString *> *destinations = @{
+        @"/private/var/mobile/Containers/Data/Application": kMCMAppDataDirectoryName,
+        @"/private/var/mobile/Containers/Shared/AppGroup": kMCMAppGroupsDirectoryName,
+        @"/private/var/mobile/Containers/Data/PluginKitPlugin": kMCMExtensionDataDirectoryName,
+        @"/private/var/mobile/Containers/Data/InternalDaemon": kMCMServiceDataDirectoryName,
+        @"/private/var/containers/Shared/SystemGroup": kMCMSystemGroupsDirectoryName,
+        @"/private/var/containers/Data/System": kMCMSystemDataDirectoryName,
+    };
+    NSUInteger added = 0, denied = 0;
+    for (NSString *containerRoot in destinations) {
+        NSString *output = [root stringByAppendingPathComponent:destinations[containerRoot]];
+        for (NSString *candidate in paths[containerRoot] ?: @[]) {
+            if (!FZContainerDiscoveryIsSupportedTarget(candidate)) continue;
+            NSString *verified = FZWorseQueryGrantDirectory(candidate);
+            if (!verified) { denied++; continue; }
+            NSString *label = FZContainerDiscoveryIdentifier(verified);
+            if (!MCMSafeIdentifier(label)) label = candidate.lastPathComponent;
+            if (!MCMSafeIdentifier(label)) continue;
+            // Existing Filza prunes empty generated categories. Recreate a
+            // category only after an actual directory grant succeeds.
+            NSError *directoryError = nil;
+            if (![fm createDirectoryAtPath:output withIntermediateDirectories:YES
+                               attributes:nil error:&directoryError]) continue;
+            NSString *link = [output stringByAppendingPathComponent:label];
+            // Never remove or replace an existing user path or MCM alias.
+            struct stat st = {0};
+            if (lstat(link.fileSystemRepresentation, &st) == 0) continue;
+            if (errno != ENOENT) continue;
+            if (symlink(verified.fileSystemRepresentation, link.fileSystemRepresentation) == 0)
+                added++;
+        }
+    }
+    FilzaDiagnosticsAppend(@"WQDiscovery",
+       [NSString stringWithFormat:@"Main Filza browser: %lu verified live aliases; %lu denied. No fake entries.",
+        (unsigned long)added, (unsigned long)denied]);
+    if (added) dispatch_async(dispatch_get_main_queue(), ^{
+        [NSNotificationCenter.defaultCenter postNotificationName:@"FilzaVerifiedContainerLinksReady"
+                                                          object:nil];
+    });
+}
+
+// The legacy MobileHouseArrest identity gate must not disable independently
+// provisioned WQ sandbox extensions in a custom SideStore-signed Filza app.
+static void MCMStartVerifiedWQDiscovery(void) {
+    NSString *signedID = MCMSignedCodeIdentifier() ?: @"unavailable";
+    if (!FZWorseQueryEntitlementPresent()) {
+        FilzaDiagnosticsAppend(@"WQDiscovery",
+            [NSString stringWithFormat:@"No signed WQ App Group for %@; not claiming access", signedID]);
+        return;
+    }
+    FilzaDiagnosticsAppend(@"WQDiscovery",
+        [NSString stringWithFormat:@"Starting separate WQ discovery for signed identity=%@", signedID]);
+    FZContainerDiscoveryStart(^(NSDictionary<NSString *, NSArray<NSString *> *> *found) {
+        MCMInstallVerifiedWQDiscovery(found);
+    });
 }
 
 static void MCMMigrateStorageEntry(NSFileManager *manager, NSString *directory,
@@ -1564,16 +1684,21 @@ void MCMFilzaStart(void)
         MCMEnsureState();
         if (MCMFilzaIsRunningInLiveContainer()) {
             MCMInstallLiveContainerRoot();
+            MCMStartVerifiedWQDiscovery();
             return;
         }
         NSString *actual = MCMSignedCodeIdentifier();
         if (![actual isEqualToString:kRequiredIdentifier]) {
-            NSLog(@"[MCMFilza] disabled: signed code identifier %@ must be %@ (bundle=%@)",
-                  actual, kRequiredIdentifier, NSBundle.mainBundle.bundleIdentifier);
+            NSLog(@"[MCMFilza] MHA unavailable for signed identity %@ (bundle=%@); using app sandbox",
+                  actual, NSBundle.mainBundle.bundleIdentifier);
+            MCMInstallStandardSandboxRoot();
+            MCMStartVerifiedWQDiscovery();
             return;
         }
         if (!MCMBridgeAvailable()) {
-            NSLog(@"[MCMFilza] disabled: ContainerManager symbols unavailable");
+            NSLog(@"[MCMFilza] ContainerManager symbols unavailable; using app sandbox");
+            MCMInstallStandardSandboxRoot();
+            MCMStartVerifiedWQDiscovery();
             return;
         }
         NSFileManager *fm = NSFileManager.defaultManager;
@@ -1753,5 +1878,8 @@ void MCMFilzaStart(void)
         NSArray *visibleEntries = [fm contentsOfDirectoryAtPath:root error:&listError];
         NSLog(@"[MCMFilza] ready root=%@ active_leases=%lu entries=%@ list_error=%@", root,
               (unsigned long)gLeases.count, visibleEntries, listError);
+        // One background inode scan shared by Filza and 3105. Never run this
+        // on Filza navigation/UI thread and never treat paths as grants.
+        MCMStartVerifiedWQDiscovery();
     });
 }

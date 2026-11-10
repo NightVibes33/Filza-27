@@ -14,6 +14,8 @@
 #include <sys/sysctl.h>
 
 #include "MCMFilzaIntegration.h"
+#include "FilzaWorseQueryBridge.h"
+#include "FilzaDiagnostics.h"
 #include "PosterBoardFeature.h"
 #include "kexploit/kexploit_opa334.h"
 #include "kexploit/kutils.h"
@@ -62,6 +64,174 @@ static NSString *redirectedLegacyBrowserPath(id requestedPath) {
     return path;
 }
 
+// CoreMedia only supplies bytes for an app-owned read-only mirror inside
+// Filza's original Device Storage browser. There is no fifth app or browser.
+static NSHashTable *gFZNativeCoreMediaPages;
+
+static Class FZNativeCoreMediaBridge(void) {
+    return NSClassFromString(@"FilzaNativeCoreMediaBridge");
+}
+
+static void FZNativeCoreMediaPrepareRoot(void) {
+    Class bridge = FZNativeCoreMediaBridge();
+    SEL selector = NSSelectorFromString(@"prepareNativeRoot");
+    if (bridge && [bridge respondsToSelector:selector])
+        ((void(*)(id, SEL))objc_msgSend)(bridge, selector);
+}
+
+static void FZNativeCoreMediaRequest(NSString *path) {
+    if (![path isKindOfClass:NSString.class]) return;
+    Class bridge = FZNativeCoreMediaBridge();
+    SEL selector = NSSelectorFromString(@"refreshNativeDirectory:");
+    if (bridge && [bridge respondsToSelector:selector])
+        ((void(*)(id, SEL, id))objc_msgSend)(bridge, selector, path);
+}
+
+static void FZNativeCoreMediaRegisterPage(id page) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        gFZNativeCoreMediaPages = [NSHashTable weakObjectsHashTable];
+        [[NSNotificationCenter defaultCenter]
+            addObserverForName:@"FilzaVerifiedContainerLinksReady"
+                        object:nil queue:NSOperationQueue.mainQueue
+                    usingBlock:^(__unused NSNotification *note) {
+            for (id browser in gFZNativeCoreMediaPages.allObjects) {
+                SEL current = NSSelectorFromString(@"currentPath");
+                SEL load = NSSelectorFromString(@"doLoadingPage");
+                if (![browser respondsToSelector:current] ||
+                    ![browser respondsToSelector:load]) continue;
+                NSString *path = ((id(*)(id, SEL))objc_msgSend)(browser, current);
+                NSString *root = MCMFilzaVirtualRoot();
+                if ([path isEqualToString:root] ||
+                    [path hasPrefix:[root stringByAppendingString:@"/"]])
+                    ((void(*)(id, SEL))objc_msgSend)(browser, load);
+            }
+        }];
+        [[NSNotificationCenter defaultCenter]
+            addObserverForName:@"FilzaNativeCoreMediaDirectoryReady"
+                        object:nil queue:NSOperationQueue.mainQueue
+                    usingBlock:^(NSNotification *notification) {
+            NSString *readyPath = notification.userInfo[@"path"];
+            if (!readyPath.length) return;
+            for (id browser in gFZNativeCoreMediaPages.allObjects) {
+                SEL currentSelector = NSSelectorFromString(@"currentPath");
+                SEL reloadSelector = NSSelectorFromString(@"doLoadingPage");
+                if (![browser respondsToSelector:currentSelector] ||
+                    ![browser respondsToSelector:reloadSelector]) continue;
+                NSString *current = ((id(*)(id, SEL))objc_msgSend)(
+                    browser, currentSelector);
+                if ([current isEqualToString:readyPath])
+                    ((void(*)(id, SEL))objc_msgSend)(browser, reloadSelector);
+            }
+        }];
+    });
+    [gFZNativeCoreMediaPages addObject:page];
+}
+
+// Native Filza folder action. Erosion's al_exploit_read_folder still does a
+// temporary device staging/restore transaction. On success, its ZIP transport
+// is securely extracted and shown in THIS file controller, not a fifth app.
+static NSString *const kFZPairedFolderButtonID = @"com.filza27.browser.paired-folder";
+static void FZNativeAirliftShowFolderPrompt(id self, SEL _cmd) {
+    if (![self isKindOfClass:UIViewController.class]) return;
+    UIViewController *browser = (UIViewController *)self;
+    UIAlertController *alert = [UIAlertController
+        alertControllerWithTitle:@"Open Paired Folder"
+        message:@"Enter a specific container path. Open Direct uses worse_query (signed App Group required); Read Folder uses paired Airlift and temporarily stages/restores the source."
+        preferredStyle:UIAlertControllerStyleAlert];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
+        field.placeholder = @"/var/mobile/Containers/Data/Application/…";
+        field.text = @""; // Require an explicit, narrowly scoped folder selection.
+        field.autocorrectionType = UITextAutocorrectionTypeNo;
+        field.autocapitalizationType = UITextAutocapitalizationTypeNone;
+        field.clearButtonMode = UITextFieldViewModeWhileEditing;
+    }];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel"
+        style:UIAlertActionStyleCancel handler:nil]];
+    __weak UIViewController *weakBrowser = browser;
+    __weak UIAlertController *weakAlert = alert;
+    // Real live folder access using forcequitOS worse_query, not an archive
+    // mirror. Never block Filza's UIKit thread on a ContainerManager query.
+    [alert addAction:[UIAlertAction actionWithTitle:@"Open Direct"
+        style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        NSString *input = weakAlert.textFields.firstObject.text ?: @"";
+        NSString *requested = [[input stringByTrimmingCharactersInSet:
+            NSCharacterSet.whitespaceAndNewlineCharacterSet] copy];
+        if (!weakBrowser) return;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            NSString *granted = FZWorseQueryGrantDirectory(requested);
+            NSString *status = FZWorseQueryLastStatus();
+            dispatch_async(dispatch_get_main_queue(), ^{
+                UIViewController *active = weakBrowser;
+                if (!active) return;
+                SEL navigate = NSSelectorFromString(@"setCurrentPath:");
+                if (granted && [active respondsToSelector:navigate]) {
+                    ((void(*)(id,SEL,id))objc_msgSend)(active, navigate, granted);
+                    SEL reload = NSSelectorFromString(@"doLoadingPage");
+                    if ([active respondsToSelector:reload])
+                        ((void(*)(id,SEL))objc_msgSend)(active, reload);
+                } else {
+                    UIAlertController *warning = [UIAlertController
+                        alertControllerWithTitle:@"Direct Folder Access"
+                        message:status preferredStyle:UIAlertControllerStyleAlert];
+                    [warning addAction:[UIAlertAction actionWithTitle:@"OK"
+                        style:UIAlertActionStyleDefault handler:nil]];
+                    [active presentViewController:warning animated:YES completion:nil];
+                }
+            });
+        });
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Read Folder"
+        style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        UIViewController *activeBrowser = weakBrowser;
+        NSString *raw = weakAlert.textFields.firstObject.text ?: @"";
+        NSString *remotePath = [raw stringByTrimmingCharactersInSet:
+            NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        Class bridge = NSClassFromString(@"FilzaNativeAirliftFolderBridge");
+        SEL selector = NSSelectorFromString(@"browseFolder:fromBrowser:");
+        if (activeBrowser && bridge && [bridge respondsToSelector:selector]) {
+            ((void(*)(id, SEL, id, id))objc_msgSend)(
+                bridge, selector, remotePath, activeBrowser);
+        } else {
+            FilzaDiagnosticsAppend(@"NativeAirlift",
+                @"Native paired-folder bridge unavailable");
+        }
+    }]];
+    [browser presentViewController:alert animated:YES completion:nil];
+}
+
+static void FZEnsurePairedFolderButton(id controller) {
+    if (![controller isKindOfClass:UIViewController.class]) return;
+    UINavigationItem *nav = ((UIViewController *)controller).navigationItem;
+    if (!nav) return;
+    NSMutableArray<UIBarButtonItem *> *items =
+        [NSMutableArray arrayWithArray:nav.rightBarButtonItems ?: @[]];
+    for (UIBarButtonItem *button in items) {
+        if ([button.accessibilityIdentifier isEqualToString:kFZPairedFolderButtonID]
+            || button.action == NSSelectorFromString(@"fz_openPairedFolder"))
+            return;
+    }
+    UIImage *image = [UIImage systemImageNamed:@"folder.badge.gearshape"];
+    UIBarButtonItem *button = image
+        ? [[UIBarButtonItem alloc] initWithImage:image
+            style:UIBarButtonItemStylePlain
+            target:controller action:NSSelectorFromString(@"fz_openPairedFolder")]
+        : [[UIBarButtonItem alloc] initWithTitle:@"Paired Folder"
+            style:UIBarButtonItemStylePlain
+            target:controller action:NSSelectorFromString(@"fz_openPairedFolder")];
+    button.accessibilityIdentifier = kFZPairedFolderButtonID;
+    button.accessibilityLabel = @"Open Paired Folder in Filza";
+    [items insertObject:button atIndex:0];
+    nav.rightBarButtonItems = items;
+}
+
+static void FZNativeAirliftRetireOldShortcut(void) {
+    Class bridge = NSClassFromString(@"FilzaNativeAirliftFolderBridge");
+    SEL selector = NSSelectorFromString(@"retireLegacyArchiveShortcut");
+    if (bridge && [bridge respondsToSelector:selector])
+        ((void(*)(id, SEL))objc_msgSend)(bridge, selector);
+}
+
 static IMP orig_fileSystemSetCurrentPath = NULL;
 static IMP orig_fileSystemUpdateEditableUI = NULL;
 static void refreshWallpaperButton(id controller, id fallbackPath) {
@@ -78,14 +248,77 @@ static void hook_fileSystemUpdateEditableUI(id self, SEL _cmd) {
     // This is the exact Filza routine that restores the Edit item. Apply the
     // Wallpaper Lab action after Filza has completed that update.
     refreshWallpaperButton(self, nil);
+    FZEnsurePairedFolderButton(self);
+}
+
+// A verified link lives in the ORIGINAL Filza Device Storage hierarchy.
+// Later token eviction must not strand that link: renew access lazily when
+// the user enters its destination, even through the Filza virtual alias.
+static BOOL FZLiveContainerPath(NSString *path) {
+    if (![path isKindOfClass:NSString.class] || !path.isAbsolutePath) return NO;
+    NSString *p = [path hasPrefix:@"/var/"] ? [@"/private" stringByAppendingString:path] : path;
+    for (NSString *root in @[
+        @"/private/var/mobile/Containers/Data/Application/",
+        @"/private/var/mobile/Containers/Data/InternalDaemon/",
+        @"/private/var/mobile/Containers/Data/PluginKitPlugin/",
+        @"/private/var/mobile/Containers/Shared/AppGroup/",
+        @"/private/var/containers/Shared/SystemGroup/",
+        @"/private/var/containers/Data/System/"
+    ]) if ([p hasPrefix:root]) return YES;
+    return NO;
+}
+
+static NSString *FZProtectedAliasTarget(NSString *browserPath) {
+    NSString *root = MCMFilzaVirtualRoot();
+    if (![browserPath isKindOfClass:NSString.class] ||
+        ![browserPath hasPrefix:[root stringByAppendingString:@"/"]]) return nil;
+    NSString *tail = [browserPath substringFromIndex:root.length + 1];
+    NSArray<NSString *> *parts = [tail pathComponents];
+    if (parts.count < 2) return nil;
+    if (![@[
+        @"[MHA-C2] App Data", @"[MHA-C7] App Groups",
+        @"[MHA-C4] Extension Data", @"[MHA-C10] Service Data",
+        @"[MHA-C13] System Groups", @"[MHA-C12] System Data"
+    ] containsObject:parts.firstObject]) return nil;
+    NSString *link = [[root stringByAppendingPathComponent:parts[0]]
+        stringByAppendingPathComponent:parts[1]];
+    char target[PATH_MAX] = {0};
+    ssize_t count = readlink(link.fileSystemRepresentation, target, sizeof(target) - 1);
+    if (count <= 0) return nil;
+    target[count] = '\0';
+    NSString *native = [NSString stringWithUTF8String:target];
+    return FZLiveContainerPath(native) ? native : nil;
 }
 
 static void hook_fileSystemSetCurrentPath(id self, SEL _cmd, id requestedPath) {
     NSString *path = redirectedLegacyBrowserPath(requestedPath);
+    NSString *native = FZLiveContainerPath(path) ? path : FZProtectedAliasTarget(path);
+    // Background WQ grant only when the original Filza navigation needs it.
+    // A path/inode from discovery is NEVER treated as a permission.
+    if (native && access(native.fileSystemRepresentation, R_OK) != 0 &&
+        !FZWorseQueryPathHasActiveGrant(native)) {
+        NSString *originalNavigation = path ?: requestedPath;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            NSString *granted = FZWorseQueryGrantDirectory(native);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSString *destination = originalNavigation;
+                ((void(*)(id, SEL, id))orig_fileSystemSetCurrentPath)(self, _cmd, destination);
+                refreshWallpaperButton(self, destination);
+                FZEnsurePairedFolderButton(self);
+                FZNativeCoreMediaRequest(destination);
+                SEL reload = NSSelectorFromString(@"doLoadingPage");
+                if (granted && [self respondsToSelector:reload])
+                    ((void(*)(id, SEL))objc_msgSend)(self, reload);
+            });
+        });
+        return;
+    }
     if (path && ![path isEqual:requestedPath])
         NSLog(@"[DeviceStorage] redirected legacy browser path to %@", path);
     ((void(*)(id, SEL, id))orig_fileSystemSetCurrentPath)(self, _cmd, path ?: requestedPath);
     refreshWallpaperButton(self, path ?: requestedPath);
+    FZEnsurePairedFolderButton(self);
+    FZNativeCoreMediaRequest(path ?: requestedPath);
     // Filza rebuilds its Edit item after loading a directory. Re-apply the
     // lab action after those deferred navigation updates have completed.
     for (NSNumber *delay in @[@100, @500]) {
@@ -99,6 +332,9 @@ static void hook_fileSystemSetCurrentPath(id self, SEL _cmd, id requestedPath) {
 static IMP orig_fileSystemViewWillAppear = NULL;
 static BOOL gNormalizedInitialBrowserPath = NO;
 static void hook_fileSystemViewWillAppear(id self, SEL _cmd, BOOL animated) {
+    FZNativeCoreMediaRegisterPage(self);
+    FZNativeCoreMediaPrepareRoot();
+    FZNativeAirliftRetireOldShortcut();
     NSString *currentPath = [self respondsToSelector:NSSelectorFromString(@"currentPath")]
         ? ((id(*)(id, SEL))objc_msgSend)(self, NSSelectorFromString(@"currentPath")) : nil;
     NSString *redirected = redirectedLegacyBrowserPath(currentPath);
@@ -116,6 +352,7 @@ static void hook_fileSystemViewWillAppear(id self, SEL _cmd, BOOL animated) {
             currentPath, redirected);
     }
     ((void(*)(id, SEL, BOOL))orig_fileSystemViewWillAppear)(self, _cmd, animated);
+    FZEnsurePairedFolderButton(self);
 
     if (firstAppearance && currentPath.length == 0) {
         ((void(*)(id, SEL, id))objc_msgSend)(self,
@@ -135,6 +372,7 @@ static void hook_fileSystemViewWillAppear(id self, SEL _cmd, BOOL animated) {
     NSString *visiblePath = [self respondsToSelector:visiblePathSelector]
         ? ((id(*)(id, SEL))objc_msgSend)(self, visiblePathSelector) : redirected;
     PBWallpaperConfigureBrowser(self, visiblePath);
+    FZNativeCoreMediaRequest(visiblePath);
 
     // State restoration can leave the browser's table model empty even after
     // its path is correct. Reload on the next main-loop turn, after the view
@@ -1310,6 +1548,9 @@ static void installHooks(void) {
 
     Class fileSystemController = NSClassFromString(@"TGFileSystemListViewController");
     if (fileSystemController) {
+        class_addMethod(fileSystemController,
+            NSSelectorFromString(@"fz_openPairedFolder"),
+            (IMP)FZNativeAirliftShowFolderPrompt, "v@:");
         Method setCurrentPath = class_getInstanceMethod(
             fileSystemController, NSSelectorFromString(@"setCurrentPath:"));
         if (setCurrentPath) {

@@ -6,9 +6,15 @@ OUT="${2:?output root required}"
 
 if [[ -s "$OUT/lib/libairlift_ffi.a" &&
       -s "$OUT/include/AirliftFFI/airlift.h" &&
+      "$(grep -c 'al_exploit_inject_folder' "$OUT/include/AirliftFFI/airlift.h" || true)" -ge 1 &&
+      "$(grep -c 'al_find_app_container' "$OUT/include/AirliftFFI/airlift.h" || true)" -ge 1 &&
       -s "$OUT/include/AirliftFFI/module.modulemap" ]]; then
   grep -Fq 'al_pairing_run_host' "$OUT/include/AirliftFFI/airlift.h"
   grep -Fq 'al_connection_endpoint_set' "$OUT/include/AirliftFFI/airlift.h"
+  grep -Fq 'al_list_app_containers' "$OUT/include/AirliftFFI/airlift.h"
+  grep -Fq 'al_exploit_read_folder' "$OUT/include/AirliftFFI/airlift.h"
+  grep -Fq 'al_exploit_inject_folder' "$OUT/include/AirliftFFI/airlift.h"
+  grep -Fq 'al_find_app_container' "$OUT/include/AirliftFFI/airlift.h"
   grep -Fq 'al_syslog_stream_start' "$OUT/include/AirliftFFI/airlift.h"
   echo "Reused cached NFCARD AirliftFFI runtime"
   exit 0
@@ -36,6 +42,10 @@ EOF
 test -s "$OUT/lib/libairlift_ffi.a"
 grep -Fq 'al_pairing_run_host' "$OUT/include/AirliftFFI/airlift.h"
 grep -Fq 'al_connection_endpoint_set' "$OUT/include/AirliftFFI/airlift.h"
+grep -Fq 'al_list_app_containers' "$OUT/include/AirliftFFI/airlift.h"
+grep -Fq 'al_exploit_read_folder' "$OUT/include/AirliftFFI/airlift.h"
+  grep -Fq 'al_exploit_inject_folder' "$OUT/include/AirliftFFI/airlift.h"
+  grep -Fq 'al_find_app_container' "$OUT/include/AirliftFFI/airlift.h"
 grep -Fq 'al_syslog_stream_start' "$OUT/include/AirliftFFI/airlift.h"
 
 echo "Built NFCARD AirliftFFI runtime"
