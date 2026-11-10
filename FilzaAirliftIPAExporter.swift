@@ -123,7 +123,7 @@ enum FilzaAirliftIPAExporter {
         do {
             // Erosion Airlift folder archives contain .app CONTENTS at ZIP root.
             // SecureZIPArchive refuses path traversal and symlink entries.
-            _ = try SecureZIPArchive.extract(archiveURL: archive, destinationURL: appURL)
+            _ = try SecureZIPArchive.extract(archiveURL: archive, destinationURL: appURL, appSnapshot: true)
             guard let items = try? fm.contentsOfDirectory(atPath: appURL.path),
                   !items.isEmpty else { throw ExportError.emptyBundle }
 

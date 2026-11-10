@@ -148,7 +148,9 @@ jobs:
           bash scripts/patch-3105-embedded-compat.sh
           python3 scripts/patch-3105-airlift.py
           bash scripts/patch-3105-ipa-export.sh
+          python3 scripts/patch-3105-ipa-snapshot-extraction.py
           bash scripts/patch-3105-app-manager-view-sort.sh
+          python3 scripts/patch-3105-ipa-context-menus.py
           python3 scripts/patch-3105-erosion-features.py
           python3 scripts/patch-3105-cleaner-all-apps.py
           python3 scripts/patch-3105-worse-query.py
@@ -160,6 +162,10 @@ jobs:
           grep -Fq 'let ownHome = NSHomeDirectory()' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'FZLegacyLogSeed' FZContainerDiscovery.m
           grep -Fq 'ffiSerialQueue.sync' FilzaAirliftBackend.swift
+          grep -Fq 'FILZA_IPA_SNAPSHOT_EXTRACTION_LIMITS' ThirdParty/3105/Sources/SecureZIPArchive.swift
+          grep -Fq 'FILZA_3105_IPA_CONTEXT_PARITY' ThirdParty/3105/Sources/AppDataBrowserView.swift
+          grep -Fq 'appSnapshot: true' FilzaAirliftIPAExporter.swift
+          python3 -m py_compile scripts/patch-3105-ipa-context-menus.py scripts/patch-3105-ipa-snapshot-extraction.py
           python3 -m py_compile scripts/patch-3105-cleaner-all-apps.py
           grep -Fq 'FILZA_REAL_WORSE_QUERY_APP_ACCESS' ThirdParty/3105/Sources/ContainerStore.swift
           grep -Fq 'let metadataWQ = directMetadata == nil' ThirdParty/3105/Sources/ContainerStore.swift

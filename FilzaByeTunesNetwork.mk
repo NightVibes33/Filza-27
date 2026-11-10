@@ -19,6 +19,7 @@ FilzaApplySandboxExt_FILES += FilzaSupportPrompt.m
 before-FilzaApplySandboxExt-all::
 	# Add Apps Manager IPA repackaging/export integration.
 	@bash scripts/patch-3105-ipa-export.sh
+	@python3 scripts/patch-3105-ipa-snapshot-extraction.py
 	@test -f scripts/patch-3105-ipa-export.sh || (echo "Missing 3105 IPA export patch" >&2; exit 1)
 	@grep -Fq 'Label("Prepare", systemImage:' ThirdParty/3105/Sources/AppDataBrowserView.swift
 	@grep -Fq 'Label("Decrypt", systemImage:' ThirdParty/3105/Sources/AppDataBrowserView.swift
@@ -46,6 +47,9 @@ before-FilzaApplySandboxExt-all::
 	@grep -Fq 'Label("Prepare", systemImage:' ThirdParty/3105/Sources/AppDataBrowserView.swift
 	@grep -Fq 'Label("Decrypt", systemImage:' ThirdParty/3105/Sources/AppDataBrowserView.swift
 	@grep -Fq 'FilzaAirliftIPAExporter.prepare(remote)' ThirdParty/3105/Sources/AppDataBrowserView.swift
+
+	# Restore 3105 IPA actions to the outer NavigationLink context menus.
+	@python3 scripts/patch-3105-ipa-context-menus.py
 
 	# Bridge Erosion/Airlift into the actual 3105 Cleaner and Wallpaper UI.
 	@python3 scripts/patch-3105-erosion-features.py

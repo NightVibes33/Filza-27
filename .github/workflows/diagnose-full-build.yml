@@ -278,6 +278,8 @@ jobs:
           grep -Fq 'FZLegacyLogSeed' FZContainerDiscovery.m
           grep -Fq 'gConfirmedGrantCount % 128' FilzaWorseQueryBridge.m
           grep -Fq 'ffiSerialQueue.sync' FilzaAirliftBackend.swift
+          grep -Fq 'FILZA_IPA_SNAPSHOT_EXTRACTION_LIMITS' ThirdParty/3105/Sources/SecureZIPArchive.swift
+          grep -Fq 'FILZA_3105_IPA_CONTEXT_PARITY' ThirdParty/3105/Sources/AppDataBrowserView.swift
           grep -Fq 'awaitingPairedInventory' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'scanNewApps(pairedApps)' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'FZLiveContainerPath' Tweak.m

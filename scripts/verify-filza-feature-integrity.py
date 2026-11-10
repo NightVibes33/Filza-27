@@ -52,6 +52,9 @@ assert "FilzaPreparedAppManifest" in read("FilzaAirliftIPAExporter.swift")
 assert "let metadataWQ = directMetadata == nil" in read("scripts/patch-3105-worse-query.py")
 assert "let verifiedWQ = handle < 0" in read("scripts/patch-3105-worse-query.py")
 assert "scripts/patch-3105-ipa-export.sh" in network
+assert "scripts/patch-3105-ipa-context-menus.py" in network
+assert "scripts/patch-3105-ipa-snapshot-extraction.py" in network
+assert "appSnapshot: true" in read("FilzaAirliftIPAExporter.swift")
 assert "scripts/patch-3105-cleaner-all-apps.py" in network
 assert "scripts/patch-3105-wq-discovery.py" in network
 assert "FZContainerDiscovery.m" in make
