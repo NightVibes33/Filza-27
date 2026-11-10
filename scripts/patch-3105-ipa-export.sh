@@ -89,6 +89,28 @@ version_replacement = '''            if exportingBundleID == app.bundleID {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+            // A discoverable menu in every 3105 app row, in addition to
+            // the original long-press context menu. No extra Erosion tab.
+            Menu {
+                Button {
+                    prepareIPA(app)
+                } label: {
+                    Label("Prepare with Airlift", systemImage: "arrow.down.doc")
+                }
+                .disabled(exportingBundleID != nil || FilzaAirlift.restorationStopped)
+                Button {
+                    decryptPreparedIPA(app)
+                } label: {
+                    Label("Package prepared IPA", systemImage: "doc.zipper")
+                }
+                .disabled(preparedDirectories[app.bundleID] == nil || exportingBundleID != nil)
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 44, minHeight: 44)
+            }
+            .accessibilityLabel("Airlift IPA actions for \(app.displayName)")
         }
         .padding(.vertical, 2)
         .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 12))

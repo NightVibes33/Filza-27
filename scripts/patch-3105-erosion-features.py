@@ -153,3 +153,20 @@ patch(wallpaper, [
     private var accessSection: some View {"""
     )
 ], "FILZA_EROSION_WALLPAPER_BRIDGE")
+
+# The upstream 3105 wallpaper view uses a private log sink. Mirror exact
+# access and install failures to Filza's exportable Runtime.log.
+patch(wallpaper, [
+    (
+        '                    log("wallpaper: probe failed \\(error.localizedDescription)")',
+        '''                    log("wallpaper: probe failed \\(error.localizedDescription)")
+                    FilzaDiagnosticsAppend("WallpaperLab",
+                        "PosterBoard local access probe failed: " + error.localizedDescription)'''
+    ),
+    (
+        '                    log("wallpaper: install failed \\(error.localizedDescription)")',
+        '''                    log("wallpaper: install failed \\(error.localizedDescription)")
+                    FilzaDiagnosticsAppend("WallpaperLab",
+                        "3105 local wallpaper install failed: " + error.localizedDescription)'''
+    )
+], "PosterBoard local access probe failed:")

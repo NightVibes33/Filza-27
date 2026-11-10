@@ -7,6 +7,8 @@ import AirliftFFI
 enum FilzaErosionPosterBoardWriter {
     enum Failure: LocalizedError {
         case pairingUnavailable
+        case unsafeRecovery
+        case unverifiedLayout
         case posterBoardUnavailable
         case invalidSource
         case partial(Int, String)
@@ -15,6 +17,10 @@ enum FilzaErosionPosterBoardWriter {
             switch self {
             case .pairingUnavailable:
                 return "Pair with NFCARD and enable LocalDevVPN before applying wallpapers."
+            case .unsafeRecovery:
+                return "Airlift has an unresolved remote restore safety stop. Verify device recovery before any further PosterBoard writes."
+            case .unverifiedLayout:
+                return "PosterBoard layout generation could not be verified on this iOS build. Refusing an unverified system-folder injection."
             case .posterBoardUnavailable:
                 return "InstallationProxy did not return a valid PosterBoard data container."
             case .invalidSource:
@@ -30,12 +36,35 @@ enum FilzaErosionPosterBoardWriter {
     /// than forcing Erosion's generation 61 on every iOS release.
     /// Retain generation 61 only as the historical upstream fallback when
     /// the OS denies layout enumeration, and report that uncertainty.
-    private static let upstreamFallbackGeneration = "61"
-    private static func selectedGeneration(_ measured: String?) -> String {
-        guard let measured, measured.count <= 4,
-              !measured.isEmpty, measured.allSatisfy({ $0.isNumber }),
-              Int(measured) != nil else { return upstreamFallbackGeneration }
-        return measured
+    private static func selectedGeneration(_ measured: String?, container: String) throws -> String {
+        if let measured, measured.count <= 4,
+           !measured.isEmpty, measured.allSatisfy({ $0.isNumber }),
+           Int(measured) != nil {
+            return measured
+        }
+        // A hidden PosterBoard container may not appear in 3105's local
+        // class-2 app scan. Probe existing versions read-only; never invent
+        // or create a remote generation directory.
+        let store = URL(fileURLWithPath: container, isDirectory: true)
+            .appendingPathComponent("Library/Application Support/PRBPosterExtensionDataStore",
+                                  isDirectory: true)
+        _ = FZWorseQueryGrantDirectory(store.path)
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: store.path)) ?? []
+        let generations = names.filter {
+            !$0.isEmpty && $0.count <= 4 && $0.allSatisfy({ $0.isNumber })
+        }.sorted { (Int($0) ?? 0) > (Int($1) ?? 0) }
+        guard let verified = generations.first(where: {
+            FileManager.default.fileExists(atPath: store
+                .appendingPathComponent($0)
+                .appendingPathComponent("Extensions", isDirectory: true).path)
+        }) else {
+            FilzaDiagnosticsAppend("WallpaperLab",
+                "No confirmed PosterBoard generation; remote injection blocked")
+            throw Failure.unverifiedLayout
+        }
+        FilzaDiagnosticsAppend("WallpaperLab",
+            "Read-only PosterBoard generation discovered: \(verified)")
+        return verified
     }
     private static let allowedExtensions: Set<String> = [
         WallpaperPosterLayout.collectionsExtension,
@@ -47,6 +76,7 @@ enum FilzaErosionPosterBoardWriter {
         guard let pairing = FilzaAirlift.pairedRecord() else {
             throw Failure.pairingUnavailable
         }
+        guard !FilzaAirlift.restorationStopped else { throw Failure.unsafeRecovery }
         guard !payload.descriptors.isEmpty,
               payload.descriptors.count <= WallpaperLabLimits.maximumDescriptorCount
         else { throw Failure.invalidSource }
@@ -55,13 +85,10 @@ enum FilzaErosionPosterBoardWriter {
         // unfiltered InstallationProxy app scan. Resolve this one bundle
         // explicitly, using the same pinned AirliftFFI lookup.
         let posterBoard = try await findPosterBoardContainer(pairing: pairing)
-        let generation = selectedGeneration(preferredGeneration)
+        let generation = try selectedGeneration(preferredGeneration, container: posterBoard)
         FilzaDiagnosticsAppend(
             "WallpaperLab",
-            "Airlift PosterBoard generation=\(generation) " +
-            (preferredGeneration == nil
-                ? "(upstream default, not measured; may fail on this iOS build)"
-                : "(measured by 3105 local read-only access probe)")
+            "Airlift PosterBoard generation=\(generation) from verified local layout"
         )
 
         let fm = FileManager.default
@@ -149,7 +176,11 @@ enum FilzaErosionPosterBoardWriter {
             String(path.dropFirst("/private".count)) : path
         let prefixes = [
             "/var/mobile/Containers/Data/Application/",
-            "/var/containers/Data/Application/"
+            "/var/containers/Data/Application/",
+            "/var/mobile/Containers/Data/InternalDaemon/",
+            "/var/mobile/Containers/Data/PluginKitPlugin/",
+            "/var/containers/Data/InternalDaemon/",
+            "/var/containers/Data/PluginKitPlugin/"
         ]
         for prefix in prefixes where normalized.hasPrefix(prefix) {
             let suffix = String(normalized.dropFirst(prefix.count))
@@ -162,6 +193,7 @@ enum FilzaErosionPosterBoardWriter {
         pairing: String, source: String,
         targetParent: String, destination: String
     ) async throws {
+        guard !FilzaAirlift.restorationStopped else { throw Failure.unsafeRecovery }
         try await Task.detached(priority: .utility) {
             var err: UnsafeMutablePointer<CChar>?
             let code = pairing.withCString { pair in

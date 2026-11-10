@@ -90,6 +90,45 @@ text = replace(text,
 
     print("(bq) no app containers found")''',
     "Installed apps access")
+# Mond's pinned PosterBoard backend probes generation 61 unconditionally.
+# Read the real version directories first; a newer layout can otherwise make
+# a working WQ grant appear to fail on iOS 27.
+ptext = replace(ptext,
+    '''    static func poster_extensions_root(container: URL) -> URL {
+        container
+            .appendingPathComponent("Library")
+            .appendingPathComponent("Application Support")
+            .appendingPathComponent("PRBPosterExtensionDataStore")
+            .appendingPathComponent(ext_version)
+            .appendingPathComponent("Extensions")
+    }''',
+    '''    static func poster_extensions_root(container: URL) -> URL {
+        let store = container
+            .appendingPathComponent("Library")
+            .appendingPathComponent("Application Support")
+            .appendingPathComponent("PRBPosterExtensionDataStore")
+        // FILZA_MOND_POSTERBOARD_DYNAMIC_GENERATION: real on-device layout
+        // takes precedence over Mond 2.2's historical generation 61.
+        _ = FZWorseQueryGrantDirectory(store.path)
+        let generations = ((try? FileManager.default.contentsOfDirectory(
+            atPath: store.path
+        )) ?? []).filter {
+            !$0.isEmpty && $0.count <= 4 && $0.allSatisfy({ $0.isNumber })
+        }.sorted { (Int($0) ?? 0) > (Int($1) ?? 0) }
+        let selected = generations.first(where: {
+            FileManager.default.fileExists(atPath: store
+                .appendingPathComponent($0)
+                .appendingPathComponent("Extensions").path)
+        }) ?? ext_version
+        if selected != ext_version {
+            FilzaDiagnosticsAppend("mond",
+                "PosterBoard discovered generation \(selected), not pinned 61")
+        }
+        return store.appendingPathComponent(selected)
+            .appendingPathComponent("Extensions")
+    }''',
+    "dynamic PosterBoard generation")
+
 ptext = replace(ptext, '        throw MondCurrentPosterError.container_404',
     '''        // Filza Mond MCM/WQ resolver: retain original bad_query discovery.
         // Class-2 MCM activation invokes Filza's verified WQ fallback.
@@ -107,9 +146,34 @@ ptext = replace(ptext,
         guard handle >= 0 || filzaWQ else { return nil }
         defer { if handle >= 0 { mond_bad_query_release(handle) } }''',
     "PosterBoard metadata")
+# Keep the original backup/rollback logic, but block an empty cache write
+# and give an actionable failure instead of Mond's generic pop-up.
+mgpath = root / "helpers_mg.swift"
+mgtext = mgpath.read_text()
+mgtext = replace(mgtext, '''func mg_apply() {
+    do {''',
+    '''func mg_apply() {
+    guard mg_dict_now.count > 0, mg_dict_now["CacheData"] != nil else {
+        FilzaDiagnosticsAppend("mond", "MobileGestalt Apply refused: cache has not loaded")
+        MondCurrentAlertinator.shared.alert(title: "MobileGestalt not loaded",
+            body: "Reopen MobileGestalt and verify the cache loads before applying.")
+        return
+    }
+    do {''', "unloaded MG write protection")
+mgtext = replace(mgtext,
+    '''        print("(mg) failed to apply mobilegestalt: \(error)")
+        MondCurrentAlertinator.shared.alert(title: "Failed to apply MobileGestalt!", body: "Restart the app and try again. Check logs for more detailed information.")''',
+    '''        let reason = String(describing: error)
+        FilzaDiagnosticsAppend("mond", "MobileGestalt Apply failed: \(reason)")
+        print("(mg) failed to apply mobilegestalt: \(error)")
+        MondCurrentAlertinator.shared.alert(title: "Failed to apply MobileGestalt!",
+            body: "\(reason). The cache may be readable but not writable; no success was recorded.")''',
+    "MG apply failure diagnostics")
+mgpath.write_text(mgtext)
+
 assert 'func grant_mg() -> Int64 {' in text
 assert 'MondEmbeddedParity.defaults' in text
 assert 'FZWorseQueryGrantDirectory' not in (upstream / "exploit/unsbx.swift").read_text()
 unsbx.write_text(text)
 poster.write_text(ptext)
-print("GREEN: Mond pinned bad_query/CMG intact; verified WQ app/PB fallback")
+print("GREEN: Mond pinned bad_query/CMG intact; dynamic PosterBoard generation and safe MG apply diagnostics")

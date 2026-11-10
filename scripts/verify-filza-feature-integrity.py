@@ -96,6 +96,17 @@ assert "Label(\"Decrypt\", systemImage: \"doc.zipper\")" in export
 ipa_template = export.split("export_method = r'''", 1)[1].split("'''", 1)[0]
 assert "FilzaAppIPAExporter.repackage" not in ipa_template
 assert "SecureZIPArchive.extract" in read("FilzaAirliftIPAExporter.swift")
+assert 'Label("Prepare with Airlift", systemImage:' in export
+assert 'Label("Package prepared IPA", systemImage:' in export
+assert 'Normalized wrapped Airlift .app snapshot' in read("FilzaAirliftIPAExporter.swift")
+assert 'FILZA_MOND_POSTERBOARD_DYNAMIC_GENERATION' in read("scripts/patch-mond-worse-query-routing.py")
+assert 'MobileGestalt Apply failed' in read("scripts/patch-mond-worse-query-routing.py")
+assert 'PosterBoard local access probe failed:' in read("scripts/patch-3105-erosion-features.py")
+assert 'Failure.unverifiedLayout' in read("FilzaErosionPosterBoardWriter.swift")
+assert 'MondCurrentAlertinator.shared.alert' in read("scripts/patch-mond-worse-query-routing.py")
+assert 'Data/InternalDaemon/' in read("FilzaErosionPosterBoardWriter.swift")
+assert 'Read-only PosterBoard generation discovered' in read("FilzaErosionPosterBoardWriter.swift")
+assert 'FilzaAirlift.restorationStopped' in read("FilzaErosionPosterBoardWriter.swift")
 assert "FilzaPreparedAppManifest" in read("FilzaAirliftIPAExporter.swift")
 assert "Erosion" in read("FilzaAirliftIPAExporter.swift")
 
