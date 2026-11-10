@@ -157,7 +157,7 @@ jobs:
           grep -Fq 'scanNewApps(pairedApps)' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'pairedInventory.refresh()' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'awaitingPairedInventory' ThirdParty/3105/Sources/CleanerView.swift
-          grep -Fq 'FileManager.default.homeDirectoryForCurrentUser.path' ThirdParty/3105/Sources/CleanerView.swift
+          grep -Fq 'let ownHome = NSHomeDirectory()' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'FZLegacyLogSeed' FZContainerDiscovery.m
           grep -Fq 'ffiSerialQueue.sync' FilzaAirliftBackend.swift
           python3 -m py_compile scripts/patch-3105-cleaner-all-apps.py
@@ -193,7 +193,7 @@ jobs:
           grep -Fq 'browseFolder:fromBrowser:' Tweak.m
           grep -Fq 'FZEnsurePairedFolderButton(self)' Tweak.m
           ! grep -Fq 'createSymbolicLink(at: alias' FilzaAirliftBackend.swift
-          ! grep -Fq 'NSHomeDirectory()' ThirdParty/3105/Sources/CleanerView.swift
+          ! grep -Fq 'FileManager.default.homeDirectoryForCurrentUser' ThirdParty/3105/Sources/CleanerView.swift
           ! grep -Fq 'FILZA_EROSION_CLEANER_BRIDGE' ThirdParty/3105/Sources/CleanerView.swift
           grep -Fq 'FILZA_EROSION_WALLPAPER_BRIDGE' ThirdParty/3105/Sources/WallpaperLabView.swift
           grep -Fq 'FilzaErosionPosterBoardWriter.apply' ThirdParty/3105/Sources/WallpaperLabView.swift

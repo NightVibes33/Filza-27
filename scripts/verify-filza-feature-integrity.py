@@ -61,7 +61,7 @@ assert "scripts/patch-3105-paired-cache-catalog.py" in network
 assert "scanNewApps(pairedApps)" in read("scripts/patch-3105-paired-cache-catalog.py")
 assert "pairedInventory.$apps" in read("scripts/patch-3105-paired-cache-catalog.py")
 assert "awaitingPairedInventory" in read("scripts/patch-3105-paired-cache-catalog.py")
-assert "FileManager.default.homeDirectoryForCurrentUser.path" in read("scripts/patch-3105-cleaner-all-apps.py")
+assert "let ownHome = NSHomeDirectory()" in clean
 assert "FZLoadScanCache" in read("FZContainerDiscovery.m")
 assert "FZLegacyLogSeed" in read("FZContainerDiscovery.m")
 assert "max four utility workers" in read("FZContainerDiscovery.m")
