@@ -58,3 +58,7 @@ This document deliberately excludes personal paths, pairing records, and app ide
 A green GitHub workflow demonstrates compilation, not device-level exploit
 or IPA Prepare success. The ATC and PosterBoard failures require new
 on-device evidence before they can be marked resolved.
+
+## CI validation request
+
+- A docs-only push requests a fresh feature-branch GitHub Actions run for the complete consolidated Filza 27 changes. It does not modify runtime behavior or signify on-device validation.
