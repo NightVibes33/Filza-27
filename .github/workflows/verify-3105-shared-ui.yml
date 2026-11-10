@@ -136,7 +136,7 @@ jobs:
           ! grep -Fq '@bash scripts/patch-3105-app-manager-view-sort.sh' Makefile
           grep -Fq 'FILZA_MAIN_CLEANER_PARITY' scripts/patch-3105-cleaner-all-apps.py
           grep -Fq 'preferredGeneration: report?.layout.generation' scripts/patch-3105-erosion-features.py
-          grep -Fq 'selectedGeneration(preferredGeneration)' FilzaErosionPosterBoardWriter.swift
+          grep -Fq 'selectedGeneration(preferredGeneration, container: posterBoard)' FilzaErosionPosterBoardWriter.swift
 
       - name: Verify embedded-host isolation
         shell: bash
@@ -198,8 +198,10 @@ jobs:
           grep -Fq 'FILZA_EROSION_WALLPAPER_BRIDGE' ThirdParty/3105/Sources/WallpaperLabView.swift
           grep -Fq 'FilzaErosionPosterBoardWriter.apply' ThirdParty/3105/Sources/WallpaperLabView.swift
           grep -Fq 'FilzaErosionPosterBoardWriter.swift' Makefile
-          grep -Fq 'al_exploit_inject_folder' FilzaErosionPosterBoardWriter.swift
-          grep -Fq 'al_find_app_container' FilzaErosionPosterBoardWriter.swift
+          grep -Fq 'FilzaAirlift.injectFolder(' FilzaErosionPosterBoardWriter.swift
+          grep -Fq 'FilzaAirlift.findAppContainer(' FilzaErosionPosterBoardWriter.swift
+          grep -Fq 'al_exploit_inject_folder' FilzaAirliftBackend.swift
+          grep -Fq 'al_find_app_container' FilzaAirliftBackend.swift
           python3 -m py_compile scripts/patch-3105-erosion-features.py
           grep -Fq 'Label("Prepare", systemImage:' ThirdParty/3105/Sources/AppDataBrowserView.swift
           grep -Fq 'Label("Decrypt", systemImage:' ThirdParty/3105/Sources/AppDataBrowserView.swift
