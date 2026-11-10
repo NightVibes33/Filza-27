@@ -1,5 +1,4 @@
 import Foundation
-import AirliftFFI
 
 /// Optional Erosion-style PosterBoard route for an already validated 3105
 /// .tendies payload. This makes no claim that InstallationProxy grants write
@@ -73,7 +72,7 @@ enum FilzaErosionPosterBoardWriter {
     ]
 
     static func apply(payload: TendiesPayload, preferredGeneration: String? = nil) async throws -> Int {
-        guard let pairing = FilzaAirlift.pairedRecord() else {
+        guard FilzaAirlift.pairedRecord() != nil else {
             throw Failure.pairingUnavailable
         }
         guard !FilzaAirlift.restorationStopped else { throw Failure.unsafeRecovery }
@@ -84,7 +83,7 @@ enum FilzaErosionPosterBoardWriter {
         // Match Erosion: hidden system containers may not appear in an
         // unfiltered InstallationProxy app scan. Resolve this one bundle
         // explicitly, using the same pinned AirliftFFI lookup.
-        let posterBoard = try await findPosterBoardContainer(pairing: pairing)
+        let posterBoard = try await findPosterBoardContainer()
         let generation = try selectedGeneration(preferredGeneration, container: posterBoard)
         FilzaDiagnosticsAppend(
             "WallpaperLab",
@@ -117,7 +116,7 @@ enum FilzaErosionPosterBoardWriter {
                 "\(descriptor.extensionIdentifier)/descriptors"
             do {
                 try await inject(
-                    pairing: pairing, source: source.path,
+                    source: source.path,
                     targetParent: target, destination: destName
                 )
                 completed += 1
@@ -137,35 +136,8 @@ enum FilzaErosionPosterBoardWriter {
         return completed
     }
 
-    private static func findPosterBoardContainer(pairing: String) async throws -> String {
-        let path = try await Task.detached(priority: .utility) { () throws -> String in
-            var remote: UnsafeMutablePointer<CChar>?
-            var err: UnsafeMutablePointer<CChar>?
-            let rc = pairing.withCString { pair in
-                "com.apple.PosterBoard".withCString { id in
-                    al_find_app_container(pair, id, nil, nil, &remote, &err)
-                }
-            }
-            let returned = remote.map { ptr -> String in
-                defer { al_string_free(ptr) }
-                return String(cString: ptr)
-            }
-            let error = err.map { ptr -> String in
-                defer { al_string_free(ptr) }
-                return String(cString: ptr)
-            }
-            guard rc == 0, let returned else {
-                throw NSError(
-                    domain: "FilzaErosionPosterBoard",
-                    code: Int(rc),
-                    userInfo: [
-                        NSLocalizedDescriptionKey: error ??
-                            "PosterBoard was not returned by paired InstallationProxy."
-                    ]
-                )
-            }
-            return returned
-        }.value
+    private static func findPosterBoardContainer() async throws -> String {
+        let path = try await FilzaAirlift.findAppContainer(bundleID: "com.apple.PosterBoard")
         guard isValidContainer(path) else { throw Failure.posterBoardUnavailable }
         FilzaDiagnosticsAppend("WallpaperLab", "Paired PosterBoard container resolved")
         return path
@@ -190,37 +162,12 @@ enum FilzaErosionPosterBoardWriter {
     }
 
     private static func inject(
-        pairing: String, source: String,
-        targetParent: String, destination: String
+        source: String, targetParent: String, destination: String
     ) async throws {
-        guard !FilzaAirlift.restorationStopped else { throw Failure.unsafeRecovery }
-        try await Task.detached(priority: .utility) {
-            var err: UnsafeMutablePointer<CChar>?
-            let code = pairing.withCString { pair in
-                source.withCString { path in
-                    targetParent.withCString { parent in
-                        destination.withCString { child in
-                            al_exploit_inject_folder(
-                                pair, path, parent, child, nil, nil, &err
-                            )
-                        }
-                    }
-                }
-            }
-            let detail = err.map { pointer -> String in
-                defer { al_string_free(pointer) }
-                return String(cString: pointer)
-            }
-            guard code == 0 else {
-                throw NSError(
-                    domain: "FilzaErosionPosterBoard",
-                    code: Int(code),
-                    userInfo: [
-                        NSLocalizedDescriptionKey: detail ??
-                            "Airlift folder injection failed; no success was reported."
-                    ]
-                )
-            }
-        }.value
+        try await FilzaAirlift.injectFolder(
+            localURL: URL(fileURLWithPath: source, isDirectory: true),
+            remoteParent: targetParent, destinationName: destination
+        )
     }
+
 }

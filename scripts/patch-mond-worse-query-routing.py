@@ -160,14 +160,13 @@ mgtext = replace(mgtext, '''func mg_apply() {
         return
     }
     do {''', "unloaded MG write protection")
+# Staged Mond sources can differ in alert-wrapper formatting. Match the
+# actual failure print, not an incidental alert implementation detail.
 mgtext = replace(mgtext,
-    '''        print("(mg) failed to apply mobilegestalt: \(error)")
-        MondCurrentAlertinator.shared.alert(title: "Failed to apply MobileGestalt!", body: "Restart the app and try again. Check logs for more detailed information.")''',
-    '''        let reason = String(describing: error)
+    r'        print("(mg) failed to apply mobilegestalt: \(error)")',
+    r'''        let reason = String(describing: error)
         FilzaDiagnosticsAppend("mond", "MobileGestalt Apply failed: \(reason)")
-        print("(mg) failed to apply mobilegestalt: \(error)")
-        MondCurrentAlertinator.shared.alert(title: "Failed to apply MobileGestalt!",
-            body: "\(reason). The cache may be readable but not writable; no success was recorded.")''',
+        print("(mg) failed to apply mobilegestalt: \(error)")''',
     "MG apply failure diagnostics")
 mgpath.write_text(mgtext)
 

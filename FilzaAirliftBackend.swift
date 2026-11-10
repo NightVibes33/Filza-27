@@ -294,6 +294,60 @@ enum FilzaAirlift {
     }
     /// Applies one user-selected local file only when the paired Airlift write
     /// primitive actually returns success; never claim unrestricted / access.
+    // Share one serialized FFI transport for Erosion PosterBoard lookups,
+    // injections and IPA Prepare, avoiding overlapping ATC transactions.
+    static func findAppContainer(bundleID: String) async throws -> String {
+        guard !bundleID.isEmpty, !bundleID.contains("/"), !bundleID.contains("..")
+        else { throw FilzaAirliftError.invalidPath }
+        guard let pairing = pairedRecord() else { throw FilzaAirliftError.unpaired }
+        let reply = await call(pairing: pairing) { record, output, failure in
+            bundleID.withCString { identifier in
+                al_find_app_container(record, identifier, nil, nil, output, failure)
+            }
+        }
+        guard reply.status == 0, let path = reply.json, !path.isEmpty else {
+            throw FilzaAirliftError.failed(reply.error ??
+                "Paired InstallationProxy did not return a device container.")
+        }
+        return path
+    }
+
+    static func injectFolder(localURL: URL, remoteParent original: String,
+                             destinationName: String) async throws {
+        try requireSafeRemoteMutation()
+        guard !destinationName.isEmpty, destinationName != ".",
+              destinationName != "..", !destinationName.contains("/"),
+              !destinationName.contains("\\") else {
+            throw FilzaAirliftError.invalidPath
+        }
+        guard let pairing = pairedRecord() else { throw FilzaAirliftError.unpaired }
+        let parent = try checkPath(original)
+        var directory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: localURL.path, isDirectory: &directory),
+              directory.boolValue else {
+            throw FilzaAirliftError.failed("Remote injection source is not a readable local folder.")
+        }
+        let reply = await call(pairing: pairing) { record, _, failure in
+            localURL.path.withCString { source in
+                parent.withCString { remote in
+                    destinationName.withCString { child in
+                        al_exploit_inject_folder(record, source, remote, child, nil, nil, failure)
+                    }
+                }
+            }
+        }
+        guard reply.status == 0 else {
+            let reason = reply.error ?? "Airlift folder injection failed."
+            if reason.localizedCaseInsensitiveContains("restore") ||
+               reason.localizedCaseInsensitiveContains("recovery") ||
+               reason.localizedCaseInsensitiveContains("safety stop") {
+                recordRestoreIncident(reason)
+                throw FilzaAirliftError.unsafeRecovery(reason)
+            }
+            throw FilzaAirliftError.failed(reason)
+        }
+    }
+
     static func writeFolder(localURL: URL, remoteDirectory original: String) async throws {
         try requireSafeRemoteMutation()
         guard let pairing = pairedRecord() else { throw FilzaAirliftError.unpaired }
